@@ -1311,3 +1311,30 @@ AI 매칭엔진 상세설계는 다음 FK와 스냅샷을 기준으로 작성한
 - match_reason.evidence_refs
 - filter_result
 - interaction_event와 check_in·meeting·feedback
+
+## 28. 제15단계 슬레이트·실제 노출 확장
+
+`matching.match_result`는 11~14단계의 관련성·상황 점수 정본을 유지한다. 제15단계의 목록 단위 결정은 별도 append-only 테이블로 저장해 점수 품질과 노출 정책을 분리한다.
+
+### 28.1 matching.slate_result
+
+| 컬럼 | 형식 | 설명 |
+|---|---|---|
+| slate_result_id | UUID PK | 목록 구성 실행 |
+| tenant_id, event_id | UUID FK | 행사 경계 |
+| recommendation_session_id | UUID UNIQUE FK | 추천 세션당 하나의 슬레이트 |
+| slate_policy_version_id | UUID FK | 게시된 `SLATE_POLICY` |
+| slate_size | INTEGER | 최종 항목 수 |
+| diversity_score, coverage_score | NUMERIC | ILD와 카테고리 커버리지 |
+| exposure_fairness_score | NUMERIC NULL | 노출 이력이 있을 때 조건부 기회 공정성 |
+| relevance_loss | NUMERIC NULL | 상위 10개 평균 관련성 손실 |
+| input_fingerprint, score_fingerprint | CHAR(64) | 입력·결과 SHA-256 |
+| metrics_json | JSONB | 업체 커버리지, Gini, HHI, 탐색·반복·광고 분리 지표 |
+
+### 28.2 matching.slate_item
+
+`slate_result_id`, `match_result_id`, `recommendable_id`, `exhibitor_id`, 보정 전후 순위·점수, MMR 점수, 다양성·공정성·탐색 보정, 반복·집중도 감점, 슬롯 유형, 이유 코드, 관련 제품 묶음, 항목별 입력·결과 지문을 저장한다. `(slate_result_id, final_rank)`와 `match_result_id`는 각각 UNIQUE다.
+
+### 28.3 interaction.recommendation_impression
+
+추천 응답 수가 아니라 실제 가시 카드만 기록하는 정규화 projection이다. 원본 `interaction_event`, 슬레이트·항목, 추천 대상, 업체, 당시 순위·슬롯, 가시 시간과 사용자·게스트·방문 세션을 연결한다. 사용자·게스트·방문 세션 및 업체별 시간 인덱스로 반복 노출과 행사 전체 노출 편중을 조회하며 UPDATE·DELETE는 금지한다.

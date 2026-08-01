@@ -662,6 +662,196 @@ class MatchReason(Base):
     )
 
 
+class SlateResult(Base):
+    """Immutable stage-15 list-level result for one recommendation session."""
+
+    __tablename__ = "slate_result"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "recommendation_session_id"],
+            [
+                f"{SCHEMA_MATCHING}.recommendation_session.tenant_id",
+                f"{SCHEMA_MATCHING}.recommendation_session.event_id",
+                f"{SCHEMA_MATCHING}.recommendation_session.recommendation_session_id",
+            ],
+            name="fk_slate_result_session_boundary",
+        ),
+        UniqueConstraint("recommendation_session_id", name="uq_slate_result_session"),
+        UniqueConstraint(
+            "tenant_id",
+            "event_id",
+            "slate_result_id",
+            name="uq_slate_result_boundary_id",
+        ),
+        CheckConstraint("slate_size >= 0", name="slate_size_nonneg"),
+        CheckConstraint(
+            "diversity_score IS NULL OR (diversity_score >= 0 AND diversity_score <= 1)",
+            name="diversity_score_range",
+        ),
+        CheckConstraint(
+            "coverage_score IS NULL OR (coverage_score >= 0 AND coverage_score <= 1)",
+            name="coverage_score_range",
+        ),
+        CheckConstraint(
+            "exposure_fairness_score IS NULL OR "
+            "(exposure_fairness_score >= 0 AND exposure_fairness_score <= 1)",
+            name="exposure_fairness_score_range",
+        ),
+        CheckConstraint(
+            "relevance_loss IS NULL OR relevance_loss >= 0",
+            name="relevance_loss_nonneg",
+        ),
+        Index("ix_slate_result_event_created", "tenant_id", "event_id", "created_at"),
+        {"schema": SCHEMA_MATCHING},
+    )
+
+    slate_result_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=_new_uuid
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    recommendation_session_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False
+    )
+    slate_policy_version_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_MATCHING}.match_policy_version.match_policy_version_id"),
+        nullable=False,
+    )
+    slate_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    diversity_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
+    coverage_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
+    exposure_fairness_score: Mapped[float | None] = mapped_column(
+        Numeric(), nullable=True
+    )
+    relevance_loss: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    score_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    metrics_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SlateItem(Base):
+    """Immutable stage-15 item calculation linked to the canonical match result."""
+
+    __tablename__ = "slate_item"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "slate_result_id"],
+            [
+                f"{SCHEMA_MATCHING}.slate_result.tenant_id",
+                f"{SCHEMA_MATCHING}.slate_result.event_id",
+                f"{SCHEMA_MATCHING}.slate_result.slate_result_id",
+            ],
+            name="fk_slate_item_result_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "recommendable_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.recommendable.tenant_id",
+                f"{SCHEMA_EXHIBITION}.recommendable.event_id",
+                f"{SCHEMA_EXHIBITION}.recommendable.recommendable_id",
+            ],
+            name="fk_slate_item_target_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "exhibitor_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.exhibitor.tenant_id",
+                f"{SCHEMA_EXHIBITION}.exhibitor.exhibitor_id",
+            ],
+            name="fk_slate_item_exhibitor_boundary",
+        ),
+        UniqueConstraint("slate_result_id", "final_rank", name="uq_slate_item_rank"),
+        UniqueConstraint("match_result_id", name="uq_slate_item_match_result"),
+        UniqueConstraint(
+            "tenant_id", "event_id", "slate_item_id", name="uq_slate_item_boundary_id"
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "event_id",
+            "slate_result_id",
+            "slate_item_id",
+            name="uq_slate_item_result_boundary_id",
+        ),
+        CheckConstraint("base_rank > 0 AND final_rank > 0", name="ranks_positive"),
+        CheckConstraint(
+            "base_score >= 0 AND base_score <= 1 AND slate_score >= 0 AND slate_score <= 1",
+            name="scores_range",
+        ),
+        CheckConstraint(
+            "diversity_adjustment >= -0.05 AND diversity_adjustment <= 0.05",
+            name="diversity_adjustment_range",
+        ),
+        CheckConstraint(
+            "fairness_adjustment >= -0.05 AND fairness_adjustment <= 0.05",
+            name="fairness_adjustment_range",
+        ),
+        CheckConstraint(
+            "exploration_adjustment >= 0 AND exploration_adjustment <= 0.04",
+            name="exploration_adjustment_range",
+        ),
+        CheckConstraint(
+            "repeat_penalty >= 0 AND repeat_penalty <= 0.10",
+            name="repeat_penalty_range",
+        ),
+        CheckConstraint(
+            "concentration_penalty >= 0 AND concentration_penalty <= 0.05",
+            name="concentration_penalty_range",
+        ),
+        CheckConstraint(
+            "slot_type IN ('CORE', 'CONDITIONAL', 'DIVERSITY', 'EXPLORATION', 'NEW')",
+            name="slot_type_allowed",
+        ),
+        Index("ix_slate_item_result_rank", "slate_result_id", "final_rank"),
+        {"schema": SCHEMA_MATCHING},
+    )
+
+    slate_item_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=_new_uuid
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    slate_result_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    match_result_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_MATCHING}.match_result.match_result_id"),
+        nullable=False,
+    )
+    recommendable_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    exhibitor_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=True,
+    )
+    object_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    base_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    final_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_score: Mapped[float] = mapped_column(Numeric(), nullable=False)
+    slate_score: Mapped[float] = mapped_column(Numeric(), nullable=False)
+    mmr_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
+    diversity_adjustment: Mapped[float] = mapped_column(Numeric(), nullable=False)
+    fairness_adjustment: Mapped[float] = mapped_column(Numeric(), nullable=False)
+    exploration_adjustment: Mapped[float] = mapped_column(Numeric(), nullable=False)
+    repeat_penalty: Mapped[float] = mapped_column(Numeric(), nullable=False)
+    concentration_penalty: Mapped[float] = mapped_column(Numeric(), nullable=False)
+    slot_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSONB, nullable=False)
+    related_object_ids: Mapped[list] = mapped_column(JSONB, nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    score_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class RecommendationDelivery(Base):
     """matching.recommendation_delivery - 지시사항의 "RecommendationDelivery".
 
@@ -938,6 +1128,171 @@ class InteractionClientEventDedupe(Base):
         PGUUID(as_uuid=True), nullable=False
     )
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class RecommendationImpression(Base):
+    """Normalized append-only projection of a card that was actually visible."""
+
+    __tablename__ = "recommendation_impression"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.event.tenant_id",
+                f"{SCHEMA_EXHIBITION}.event.event_id",
+            ],
+            name="fk_recommendation_impression_event_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["event_date", "interaction_event_id"],
+            [
+                f"{SCHEMA_INTERACTION}.interaction_event.event_date",
+                f"{SCHEMA_INTERACTION}.interaction_event.interaction_event_id",
+            ],
+            name="fk_recommendation_impression_interaction_event",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "visit_session_id"],
+            [
+                "profile.visit_session.tenant_id",
+                "profile.visit_session.event_id",
+                "profile.visit_session.visit_session_id",
+            ],
+            name="fk_recommendation_impression_visit_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "slate_result_id"],
+            [
+                f"{SCHEMA_MATCHING}.slate_result.tenant_id",
+                f"{SCHEMA_MATCHING}.slate_result.event_id",
+                f"{SCHEMA_MATCHING}.slate_result.slate_result_id",
+            ],
+            name="fk_recommendation_impression_slate_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "slate_result_id", "slate_item_id"],
+            [
+                f"{SCHEMA_MATCHING}.slate_item.tenant_id",
+                f"{SCHEMA_MATCHING}.slate_item.event_id",
+                f"{SCHEMA_MATCHING}.slate_item.slate_result_id",
+                f"{SCHEMA_MATCHING}.slate_item.slate_item_id",
+            ],
+            name="fk_recommendation_impression_item_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "recommendable_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.recommendable.tenant_id",
+                f"{SCHEMA_EXHIBITION}.recommendable.event_id",
+                f"{SCHEMA_EXHIBITION}.recommendable.recommendable_id",
+            ],
+            name="fk_recommendation_impression_target_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "exhibitor_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.exhibitor.tenant_id",
+                f"{SCHEMA_EXHIBITION}.exhibitor.exhibitor_id",
+            ],
+            name="fk_recommendation_impression_exhibitor_boundary",
+        ),
+        CheckConstraint(
+            "num_nonnulls(user_id, guest_session_id) <= 1",
+            name="subject_at_most_one",
+        ),
+        CheckConstraint("final_rank > 0", name="final_rank_positive"),
+        CheckConstraint("visible_duration_ms >= 0", name="visible_duration_ms_nonneg"),
+        CheckConstraint(
+            "content_type IN ('PERSONALIZED_RECOMMENDATION', 'SPONSORED_CONTENT', "
+            "'OPERATOR_NOTICE', 'EDITORIAL_CONTENT')",
+            name="content_type_allowed",
+        ),
+        CheckConstraint(
+            "slot_type IN ('CORE', 'CONDITIONAL', 'DIVERSITY', 'EXPLORATION', "
+            "'NEW', 'SPONSORED', 'NOTICE', 'EDITORIAL')",
+            name="slot_type_allowed",
+        ),
+        UniqueConstraint(
+            "event_date",
+            "interaction_event_id",
+            name="uq_recommendation_impression_interaction_event",
+        ),
+        Index(
+            "ix_recommendation_impression_subject_time",
+            "visit_session_id",
+            "occurred_at",
+        ),
+        Index(
+            "ix_recommendation_impression_user_time",
+            "tenant_id",
+            "event_id",
+            "user_id",
+            "occurred_at",
+        ),
+        Index(
+            "ix_recommendation_impression_guest_time",
+            "tenant_id",
+            "event_id",
+            "guest_session_id",
+            "occurred_at",
+        ),
+        Index(
+            "ix_recommendation_impression_exhibitor_time",
+            "tenant_id",
+            "event_id",
+            "exhibitor_id",
+            "occurred_at",
+        ),
+        {"schema": SCHEMA_INTERACTION},
+    )
+
+    impression_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=_new_uuid
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    interaction_event_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("profile.user_account.user_id"), nullable=True
+    )
+    guest_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("profile.guest_session.guest_session_id"),
+        nullable=True,
+    )
+    visit_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    slate_result_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    slate_item_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    recommendable_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    exhibitor_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=True,
+    )
+    object_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    final_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    slot_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    visible_duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

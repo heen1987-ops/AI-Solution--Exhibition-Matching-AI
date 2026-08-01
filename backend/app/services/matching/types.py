@@ -213,12 +213,12 @@ class MatchCandidate:
         7  base_scoring          -> score_components, raw_score, normalized_score
         8  reciprocal_matching   -> buyer_to_exhibitor/exhibitor_to_buyer/reciprocal_score/
                                      reciprocal_capped (+ score_components["trade_score"] 갱신)
-        9  context_reranker      -> score_components["context_score"], context_adjustment,
+        14 context_reranker      -> score_components["context_score"], context_adjustment,
                                      distance_meters/estimated_walk_minutes/estimated_wait_minutes,
                                      availability, status_observed_at, final_score
-        10 diversity_policy      -> diversity_adjustment, final_score(재계산), rank,
-                                     recommended_action
-        11 explanation_generator -> reasons
+        15 diversity_policy      -> slate_score, 노출 보정·감점, slot_type, rank,
+                                     recommended_action (관련성 final_score는 유지)
+        18 explanation_generator -> reasons
     """
 
     object_type: str
@@ -298,6 +298,19 @@ class MatchCandidate:
     status_observed_at: datetime | None = None
 
     diversity_adjustment: float = 0.0
+    slate_policy_version: str | None = None
+    slate_base_rank: int | None = None
+    slate_score: float | None = None
+    mmr_score: float | None = None
+    fairness_adjustment: float = 0.0
+    exploration_adjustment: float = 0.0
+    repeat_penalty: float = 0.0
+    concentration_penalty: float = 0.0
+    slot_type: str = "CORE"
+    slate_reason_codes: tuple[str, ...] = ()
+    related_object_ids: tuple[str, ...] = ()
+    slate_input_fingerprint: str | None = None
+    slate_score_fingerprint: str | None = None
     final_score: float = 0.0
     rank: int = 0
     recommended_action: str = "SAVE_FOR_LATER"
@@ -354,6 +367,10 @@ class PipelineTrace:
     fallback_strategy: str | None = None
     latency_ms: dict[str, int] = field(default_factory=dict)
     filter_outcomes: list[FilterOutcome] = field(default_factory=list)
+    slate_policy_version: str | None = None
+    slate_input_fingerprint: str | None = None
+    slate_score_fingerprint: str | None = None
+    slate_metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

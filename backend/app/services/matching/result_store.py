@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import ModelVersion
 from app.models.common import new_uuid7
-from app.models.matching import MatchReason, MatchResult, MatchRun
+from app.models.matching import (
+    MatchReason,
+    MatchResult,
+    MatchRun,
+    SlateItem,
+    SlateResult,
+)
 from app.models.policy import MatchPolicyVersion
 from app.services.matching import errors
 from app.services.matching.ontology_support import get_catalog
@@ -135,6 +141,17 @@ def _validate_candidates(candidates: list[MatchCandidate]) -> None:
             raise _contract_error("상황 재정렬 점수 지문이 없습니다.")
         if candidate.context_blended_score is None:
             raise _contract_error("상황 재정렬 혼합 점수가 없습니다.")
+        if not candidate.slate_policy_version:
+            raise _contract_error("슬레이트 정책 버전이 없습니다.")
+        if candidate.slate_base_rank is None or candidate.slate_base_rank <= 0:
+            raise _contract_error("슬레이트 보정 전 순위가 없습니다.")
+        if candidate.slate_score is None:
+            raise _contract_error("슬레이트 최종 점수가 없습니다.")
+        if (
+            not candidate.slate_input_fingerprint
+            or not candidate.slate_score_fingerprint
+        ):
+            raise _contract_error("슬레이트 계산 지문이 없습니다.")
         for reason in candidate.reasons:
             if reason.generated_by == "LLM" and reason.ai_run_id is None:
                 raise _contract_error(
@@ -185,6 +202,12 @@ async def _persist(
         raise errors.profile_incomplete(
             "추천 결과 저장에는 고정된 프로파일 버전이 필요합니다."
         )
+    if not (
+        trace.slate_policy_version
+        and trace.slate_input_fingerprint
+        and trace.slate_score_fingerprint
+    ):
+        raise _contract_error("슬레이트 실행 계보가 없습니다.")
 
     catalog = get_catalog()
     taxonomy_version_id = await _resolve_taxonomy_version_id(db, catalog.version)
@@ -198,6 +221,7 @@ async def _persist(
             candidate.exhibitor_directional_policy_version,
             candidate.reciprocal_policy_version,
             candidate.context_policy_version,
+            candidate.slate_policy_version,
         )
         if version is not None
     }
@@ -216,6 +240,10 @@ async def _persist(
     if primary_version is None:  # guarded by _validate_candidates
         raise AssertionError("unreachable")
     primary_policy = policies[primary_version]
+    slate_versions = {candidate.slate_policy_version for candidate in candidates}
+    if slate_versions != {trace.slate_policy_version}:
+        raise _contract_error("후보와 실행의 슬레이트 정책 버전이 다릅니다.")
+    slate_policy = policies[trace.slate_policy_version]
 
     match_run = MatchRun(
         recommendation_session_id=session_id,
@@ -250,6 +278,23 @@ async def _persist(
         latency_ms=trace.latency_ms.get("total"),
     )
     db.add(match_run)
+    await db.flush()
+
+    slate_result = SlateResult(
+        tenant_id=validated.subject.tenant_id,
+        event_id=validated.subject.event_id,
+        recommendation_session_id=session_id,
+        slate_policy_version_id=slate_policy.match_policy_version_id,
+        slate_size=len(candidates),
+        diversity_score=trace.slate_metrics.get("diversity_score"),
+        coverage_score=trace.slate_metrics.get("category_coverage"),
+        exposure_fairness_score=trace.slate_metrics.get("exposure_fairness_score"),
+        relevance_loss=trace.slate_metrics.get("relevance_loss_top10"),
+        input_fingerprint=trace.slate_input_fingerprint,
+        score_fingerprint=trace.slate_score_fingerprint,
+        metrics_json=trace.slate_metrics,
+    )
+    db.add(slate_result)
     await db.flush()
 
     for candidate in candidates:
@@ -346,6 +391,33 @@ async def _persist(
         db.add(match_result)
         await db.flush()
         candidate.match_result_id = match_result.match_result_id
+
+        db.add(
+            SlateItem(
+                tenant_id=validated.subject.tenant_id,
+                event_id=validated.subject.event_id,
+                slate_result_id=slate_result.slate_result_id,
+                match_result_id=match_result.match_result_id,
+                recommendable_id=candidate.recommendable_id,
+                exhibitor_id=candidate.exhibitor_id,
+                object_type=candidate.object_type,
+                base_rank=candidate.slate_base_rank,
+                final_rank=candidate.rank,
+                base_score=candidate.context_blended_score,
+                slate_score=candidate.slate_score,
+                mmr_score=candidate.mmr_score,
+                diversity_adjustment=candidate.diversity_adjustment,
+                fairness_adjustment=candidate.fairness_adjustment,
+                exploration_adjustment=candidate.exploration_adjustment,
+                repeat_penalty=candidate.repeat_penalty,
+                concentration_penalty=candidate.concentration_penalty,
+                slot_type=candidate.slot_type,
+                reason_codes=list(candidate.slate_reason_codes),
+                related_object_ids=list(candidate.related_object_ids),
+                input_fingerprint=candidate.slate_input_fingerprint,
+                score_fingerprint=candidate.slate_score_fingerprint,
+            )
+        )
 
         for reason in candidate.reasons:
             db.add(

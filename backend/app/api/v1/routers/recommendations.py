@@ -60,6 +60,9 @@ from app.models.matching import (
     MatchResult,
     MatchRun,
     Recommendable,
+    RecommendationImpression,
+    SlateItem,
+    SlateResult,
 )
 from app.schemas.recommendation import (
     AvailabilityView,
@@ -275,6 +278,8 @@ def _item_view(candidate: MatchCandidate) -> RecommendationItem:
         status_observed_at=candidate.status_observed_at,
         availability=AvailabilityView(**candidate.availability),
         recommended_action=candidate.recommended_action,
+        slot_type=candidate.slot_type,
+        related_object_ids=list(candidate.related_object_ids),
     )
 
 
@@ -442,11 +447,12 @@ async def list_recommendation_session_items(
         _raise_http(resource_forbidden("본인 소유의 추천 세션만 조회할 수 있습니다."))
 
     stmt = (
-        select(MatchResult, Recommendable)
+        select(MatchResult, Recommendable, SlateItem)
         .join(
             Recommendable,
             Recommendable.recommendable_id == MatchResult.recommendable_id,
         )
+        .outerjoin(SlateItem, SlateItem.match_result_id == MatchResult.match_result_id)
         .where(MatchResult.recommendation_session_id == recommendation_session_id)
     )
     if object_type:
@@ -470,7 +476,7 @@ async def list_recommendation_session_items(
     rows = rows[:limit]
 
     items: list[RecommendationItem] = []
-    for match_result, recommendable in rows:
+    for match_result, recommendable, slate_item in rows:
         context_details = match_result.context_details or {}
         reasons = (
             (
@@ -513,6 +519,10 @@ async def list_recommendation_session_items(
                     **(context_details.get("availability") or {})
                 ),
                 recommended_action=match_result.recommended_action or "SAVE_FOR_LATER",
+                slot_type=slate_item.slot_type if slate_item else "CORE",
+                related_object_ids=(
+                    slate_item.related_object_ids if slate_item else []
+                ),
             )
         )
 
@@ -745,6 +755,46 @@ async def submit_interaction_batch(
                 )
             )
             continue
+
+        slate_projection: tuple[SlateItem, SlateResult] | None = None
+        if event.event_type == "RECOMMENDATION_IMPRESSION":
+            slate_projection = (
+                await db.execute(
+                    select(SlateItem, SlateResult)
+                    .join(
+                        SlateResult,
+                        SlateResult.slate_result_id == SlateItem.slate_result_id,
+                    )
+                    .where(
+                        SlateItem.match_result_id == event.match_result_id,
+                        SlateResult.recommendation_session_id
+                        == event.recommendation_session_id,
+                        SlateResult.tenant_id == subject.tenant_id,
+                        SlateResult.event_id == subject.event_id,
+                    )
+                )
+            ).first()
+            if slate_projection is None:
+                results.append(
+                    InteractionEventResult(
+                        client_event_id=event.client_event_id,
+                        interaction_event_id=None,
+                        accepted=False,
+                        reason="SLATE_ITEM_NOT_FOUND",
+                    )
+                )
+                continue
+            slate_item, _slate_result = slate_projection
+            if event.rank_at_event != slate_item.final_rank:
+                results.append(
+                    InteractionEventResult(
+                        client_event_id=event.client_event_id,
+                        interaction_event_id=None,
+                        accepted=False,
+                        reason="IMPRESSION_RANK_MISMATCH",
+                    )
+                )
+                continue
         if (event.object_type or event.object_id) and recommendable_id is None:
             results.append(
                 InteractionEventResult(
@@ -787,6 +837,29 @@ async def submit_interaction_batch(
                             event_date=event_date,
                             interaction_event_id=row.interaction_event_id,
                             payload_hash=payload_hash,
+                        )
+                    )
+                if slate_projection is not None:
+                    slate_item, slate_result = slate_projection
+                    db.add(
+                        RecommendationImpression(
+                            tenant_id=subject.tenant_id,
+                            event_id=subject.event_id,
+                            event_date=event_date,
+                            interaction_event_id=row.interaction_event_id,
+                            user_id=subject.user_id,
+                            guest_session_id=subject.guest_session_id,
+                            visit_session_id=subject.visit_session_id,
+                            slate_result_id=slate_result.slate_result_id,
+                            slate_item_id=slate_item.slate_item_id,
+                            recommendable_id=slate_item.recommendable_id,
+                            exhibitor_id=slate_item.exhibitor_id,
+                            object_type=slate_item.object_type,
+                            final_rank=slate_item.final_rank,
+                            slot_type=slate_item.slot_type,
+                            content_type="PERSONALIZED_RECOMMENDATION",
+                            visible_duration_ms=event.visible_duration_ms or 0,
+                            occurred_at=event.occurred_at,
                         )
                     )
                 await db.flush()

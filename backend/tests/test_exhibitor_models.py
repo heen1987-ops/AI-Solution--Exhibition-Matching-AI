@@ -33,13 +33,16 @@ def test_metadata_contains_published_supply_and_filter_tables() -> None:
         "matching.match_policy_version",
         "matching.recommendation_session",
         "matching.match_result",
+        "matching.slate_result",
+        "matching.slate_item",
         "interaction.client_event_dedupe",
+        "interaction.recommendation_impression",
         "ai.model_version",
         "ai.ai_run",
     }
 
     assert expected <= set(Base.metadata.tables)
-    assert len(Base.metadata.sorted_tables) == 62
+    assert len(Base.metadata.sorted_tables) == 65
     assert "context_details" in Base.metadata.tables["matching.match_result"].c
     assert (
         "context_policy_version_id" in Base.metadata.tables["matching.match_result"].c
@@ -86,6 +89,12 @@ def test_matching_records_preserve_tenant_and_event_boundaries() -> None:
         "exhibition.recommendable.event_id",
         "exhibition.recommendable.recommendable_id",
     ) in _foreign_key_targets("interaction.interaction_event")
+    assert (
+        "matching.slate_item.tenant_id",
+        "matching.slate_item.event_id",
+        "matching.slate_item.slate_result_id",
+        "matching.slate_item.slate_item_id",
+    ) in _foreign_key_targets("interaction.recommendation_impression")
 
 
 def test_supply_attribute_code_is_bound_to_canonical_concept() -> None:
@@ -124,4 +133,4 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0010_context_rerank"]
+    assert script.get_heads() == ["0011_slate_policy"]

@@ -1162,3 +1162,25 @@ request_id
 9. 운영 대시보드·감사·권리 요청
 
 다음 산출물인 ERD와 테이블 정의서는 본 문서의 소유권, 상태, 버전, 동의, 멱등성 계약을 그대로 반영해야 한다.
+
+## 25. 제15단계 슬레이트·노출 API 확장
+
+`POST /api/v1/recommendations`의 선택 입력 `context.slate_preference`는 `BALANCED`, `ACCURACY_FIRST`, `DIVERSE`, `NEARBY_FIRST`, `NEW_DISCOVERY` 중 하나다. 응답 항목에는 내부 점수 대신 `slot_type`과 동일 업체의 관련 제품 공개 ID인 `related_object_ids`를 제공한다.
+
+실제 카드 노출은 다음처럼 행동 배치 API로 보낸다.
+
+```json
+{
+  "events": [{
+    "client_event_id": "00000000-0000-0000-0000-000000000003",
+    "event_type": "RECOMMENDATION_IMPRESSION",
+    "recommendation_session_id": "00000000-0000-0000-0000-000000000001",
+    "match_result_id": "00000000-0000-0000-0000-000000000002",
+    "rank_at_event": 2,
+    "visible_duration_ms": 1250,
+    "occurred_at": "2026-10-09T05:15:00Z"
+  }]
+}
+```
+
+클라이언트는 응답 수신 시점이 아니라 카드가 뷰포트 노출 기준을 충족한 시점에 전송한다. `client_event_id`는 한 렌더링의 같은 카드를 재전송해도 동일하게 유지한다. 서버는 멱등키, 세션 소유권, `match_result_id`, 저장된 `slate_item.final_rank`를 검증하고 통과한 이벤트만 `interaction.recommendation_impression`에 append-only로 투영한다. 광고·협찬은 이 개인 추천 이벤트와 별도 콘텐츠 유형·슬롯·성과지표를 사용한다.

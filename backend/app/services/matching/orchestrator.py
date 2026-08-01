@@ -139,9 +139,15 @@ class RecommendationOrchestrator:
 
         # ⑩ Diversity & Policy Controller
         step_start = time.perf_counter()
-        final_candidates = diversity_policy.apply_diversity_policy(
-            eligible, limit=validated.limit, profile=profile
+        slate = await diversity_policy.apply_diversity_policy(
+            db,
+            eligible,
+            limit=validated.limit,
+            profile=profile,
+            subject=validated.subject,
+            user_preference=validated.context_input.get("slate_preference", "BALANCED"),
         )
+        final_candidates = slate.items
         timings["diversity_policy"] = _elapsed_ms(step_start)
 
         # ⑪ Explanation Generator
@@ -157,6 +163,10 @@ class RecommendationOrchestrator:
             fallback_strategy="CATEGORY_BROWSE" if validated.exploration_mode else None,
             filter_outcomes=filter_evaluation.outcomes,
             latency_ms=timings,
+            slate_policy_version=slate.policy_version,
+            slate_input_fingerprint=slate.input_fingerprint,
+            slate_score_fingerprint=slate.score_fingerprint,
+            slate_metrics=slate.metrics,
         )
         trace.latency_ms["total"] = _elapsed_ms(pipeline_start)
 

@@ -84,6 +84,13 @@ class RecommendationContextRequest(BaseModel):
     remaining_minutes: int | None = Field(default=None, ge=0)
     exclude_visited: bool = True
     include_meetings: bool = True
+    slate_preference: Literal[
+        "BALANCED",
+        "ACCURACY_FIRST",
+        "DIVERSE",
+        "NEARBY_FIRST",
+        "NEW_DISCOVERY",
+    ] = "BALANCED"
 
 
 class RecommendationRequest(BaseModel):
@@ -128,6 +135,8 @@ class RecommendationItem(BaseModel):
     status_observed_at: datetime | None = None
     availability: AvailabilityView
     recommended_action: str
+    slot_type: str = "CORE"
+    related_object_ids: list[str] = Field(default_factory=list)
 
 
 class RecommendationResponse(BaseModel):
@@ -169,6 +178,7 @@ class InteractionEventIn(BaseModel):
     recommendation_session_id: uuid.UUID | None = None
     match_result_id: uuid.UUID | None = None
     rank_at_event: int | None = Field(default=None, gt=0)
+    visible_duration_ms: int | None = Field(default=None, ge=0)
     screen: str | None = Field(default=None, max_length=30)
     zone: str | None = Field(default=None, max_length=50)
     occurred_at: datetime
@@ -192,6 +202,16 @@ class InteractionEventIn(BaseModel):
         if self.match_result_id is not None and self.recommendation_session_id is None:
             raise ValueError(
                 "recommendation_session_id is required with match_result_id"
+            )
+        if self.event_type == "RECOMMENDATION_IMPRESSION" and (
+            self.client_event_id is None
+            or self.match_result_id is None
+            or self.recommendation_session_id is None
+            or self.rank_at_event is None
+            or self.visible_duration_ms is None
+        ):
+            raise ValueError(
+                "recommendation impression requires client event, session, result, rank, and visible duration"
             )
         return self
 

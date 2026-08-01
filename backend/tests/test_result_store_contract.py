@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from app.models.matching import MatchResult, MatchRun
+from app.models.matching import MatchResult, MatchRun, SlateItem, SlateResult
 from app.services.matching.errors import RecommendationError
 from app.services.matching.result_store import store_recommendation
 from app.services.matching.types import (
@@ -63,6 +63,8 @@ class _FakeSession:
         for row in self.added:
             if isinstance(row, MatchResult) and row.match_result_id is None:
                 row.match_result_id = uuid.uuid4()
+            if isinstance(row, SlateResult) and row.slate_result_id is None:
+                row.slate_result_id = uuid.uuid4()
 
     async def commit(self) -> None:
         self.commit_count += 1
@@ -151,6 +153,16 @@ def _request_data() -> tuple[
         context_input_fingerprint="b" * 64,
         context_score_fingerprint="c" * 64,
         context_blended_score=0.86,
+        slate_policy_version="slate-policy-v1.0",
+        slate_base_rank=1,
+        slate_score=0.87,
+        mmr_score=0.81,
+        fairness_adjustment=0.01,
+        slot_type="CORE",
+        slate_reason_codes=("CORE_RELEVANCE", "EXPOSURE_DEFICIT"),
+        related_object_ids=("related-product-001",),
+        slate_input_fingerprint="d" * 64,
+        slate_score_fingerprint="e" * 64,
         score_components={
             "preference_score": 0.8,
             "goal_score": 1.0,
@@ -167,6 +179,15 @@ def _request_data() -> tuple[
         result_count=1,
         source_channel_counts={"CATEGORY": 4},
         latency_ms={"total": 37},
+        slate_policy_version="slate-policy-v1.0",
+        slate_input_fingerprint="f" * 64,
+        slate_score_fingerprint="0" * 64,
+        slate_metrics={
+            "diversity_score": 0.42,
+            "category_coverage": 0.75,
+            "exposure_fairness_score": 0.83,
+            "relevance_loss_top10": 0.02,
+        },
     )
     return validated, profile, context, candidate, trace
 
@@ -188,6 +209,8 @@ async def test_store_uses_real_registry_ids_and_commits_once() -> None:
     assert session.commit_count == 1
     run = next(row for row in session.added if isinstance(row, MatchRun))
     result = next(row for row in session.added if isinstance(row, MatchResult))
+    slate_result = next(row for row in session.added if isinstance(row, SlateResult))
+    slate_item = next(row for row in session.added if isinstance(row, SlateItem))
     assert run.filter_evaluation_id == uuid.UUID(candidate.filter_evaluation_id)
     assert run.policy_version_id == session.policy_version_id
     assert run.ranking_model_version_id == session.model_version_id
@@ -204,6 +227,16 @@ async def test_store_uses_real_registry_ids_and_commits_once() -> None:
     assert result.context_details["availability"] == {}
     assert result.context_details["policy_version"] == "context-rerank-v1.0"
     assert result.context_details["context_blended_score"] == 0.86
+    assert slate_result.slate_policy_version_id == session.policy_version_id
+    assert slate_result.input_fingerprint == "f" * 64
+    assert slate_result.score_fingerprint == "0" * 64
+    assert slate_result.relevance_loss == 0.02
+    assert slate_item.match_result_id == result.match_result_id
+    assert slate_item.slate_result_id == slate_result.slate_result_id
+    assert slate_item.base_rank == 1
+    assert slate_item.final_rank == 1
+    assert slate_item.slot_type == "CORE"
+    assert slate_item.related_object_ids == ["related-product-001"]
     assert candidate.match_result_id == result.match_result_id
     assert outcome.policy_version == "consumer-score-v1.0"
 

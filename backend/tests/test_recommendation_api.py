@@ -12,7 +12,14 @@ from app.core.config import Settings
 from app.core.site_context import sign_site_context, verify_site_context
 from app.db.session import get_db
 from app.main import app
-from app.models.matching import InteractionClientEventDedupe
+from app.models.matching import (
+    InteractionClientEventDedupe,
+    MatchResult,
+    MatchRun,
+    RecommendationImpression,
+    SlateItem,
+)
+from app.schemas.recommendation import InteractionEventIn
 from app.services.matching import candidate_generator, request_validator
 from app.services.matching.errors import RecommendationError
 from app.services.matching.types import (
@@ -224,6 +231,8 @@ def test_create_recommendation_returns_versioned_envelope(monkeypatch) -> None:
         final_score=0.91,
         rank=1,
         recommended_action="VISIT_NOW",
+        slot_type="EXPLORATION",
+        related_object_ids=("related-product-001",),
         availability={"tasting": True},
         reasons=[
             MatchReasonDraft(
@@ -276,6 +285,31 @@ def test_create_recommendation_returns_versioned_envelope(monkeypatch) -> None:
     assert body["data"]["policy_version"] == "consumer-score-v1.0"
     assert body["data"]["ranking_version"] == "match-v1.0-baseline"
     assert body["data"]["items"][0]["match_level"] == "VERY_HIGH"
+    assert body["data"]["items"][0]["slot_type"] == "EXPLORATION"
+    assert body["data"]["items"][0]["related_object_ids"] == ["related-product-001"]
+
+
+def test_visible_impression_requires_persisted_slate_coordinates() -> None:
+    common = {
+        "event_type": "RECOMMENDATION_IMPRESSION",
+        "occurred_at": datetime.now(UTC),
+    }
+
+    with pytest.raises(ValidationError):
+        InteractionEventIn.model_validate(common)
+
+    event = InteractionEventIn.model_validate(
+        {
+            **common,
+            "client_event_id": uuid.uuid4(),
+            "recommendation_session_id": uuid.uuid4(),
+            "match_result_id": uuid.uuid4(),
+            "rank_at_event": 2,
+            "visible_duration_ms": 1_250,
+        }
+    )
+    assert event.rank_at_event == 2
+    assert event.visible_duration_ms == 1_250
 
 
 def test_recommendation_errors_use_the_public_error_envelope() -> None:
@@ -400,6 +434,50 @@ class _ScalarQueryResult:
         return self.value
 
 
+class _ImpressionQueryResult(_ScalarQueryResult):
+    def __init__(self, value: Any = None, *, first: Any = None) -> None:
+        super().__init__(value)
+        self._first = first
+
+    def first(self) -> Any:
+        return self._first
+
+
+class _ImpressionSession(_InteractionSession):
+    def __init__(self) -> None:
+        super().__init__(fail_at_flush=None)
+        self.recommendable_id = uuid.uuid4()
+        self.slate_result_id = uuid.uuid4()
+        self.slate_item_id = uuid.uuid4()
+        self.exhibitor_id = uuid.uuid4()
+
+    async def execute(self, statement: Any) -> _ImpressionQueryResult:
+        entities = {
+            description.get("entity") for description in statement.column_descriptions
+        }
+        if MatchRun in entities:
+            return _ImpressionQueryResult(uuid.uuid4())
+        if MatchResult in entities:
+            return _ImpressionQueryResult(self.recommendable_id)
+        if SlateItem in entities:
+            return _ImpressionQueryResult(
+                first=(
+                    SimpleNamespace(
+                        slate_item_id=self.slate_item_id,
+                        recommendable_id=self.recommendable_id,
+                        exhibitor_id=self.exhibitor_id,
+                        object_type="PRODUCT",
+                        final_rank=2,
+                        slot_type="EXPLORATION",
+                    ),
+                    SimpleNamespace(slate_result_id=self.slate_result_id),
+                )
+            )
+        if InteractionClientEventDedupe in entities:
+            return _ImpressionQueryResult(None)
+        raise AssertionError(f"unexpected statement: {statement}")
+
+
 def test_interaction_batch_isolates_failed_rows_with_savepoints() -> None:
     session = _InteractionSession()
 
@@ -477,3 +555,45 @@ def test_interaction_client_event_dedupe_reuses_or_rejects_by_payload() -> None:
     assert data["results"][1]["reason"] == "DUPLICATE_IGNORED"
     assert data["results"][2]["reason"] == "IDEMPOTENCY_CONFLICT"
     assert session.flush_count == 1
+
+
+def test_visible_impression_projects_the_verified_slate_item() -> None:
+    session = _ImpressionSession()
+
+    async def fake_db():
+        yield session
+
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        response = TestClient(app).post(
+            "/api/v1/interactions/batch",
+            headers=_subject_headers(),
+            json={
+                "events": [
+                    {
+                        "event_type": "RECOMMENDATION_IMPRESSION",
+                        "client_event_id": str(uuid.uuid4()),
+                        "recommendation_session_id": str(uuid.uuid4()),
+                        "match_result_id": str(uuid.uuid4()),
+                        "rank_at_event": 2,
+                        "visible_duration_ms": 1_250,
+                        "occurred_at": datetime.now(UTC).isoformat(),
+                    }
+                ]
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["accepted"] == 1
+    impression = next(
+        row for row in session.rows if isinstance(row, RecommendationImpression)
+    )
+    assert impression.slate_result_id == session.slate_result_id
+    assert impression.slate_item_id == session.slate_item_id
+    assert impression.recommendable_id == session.recommendable_id
+    assert impression.exhibitor_id == session.exhibitor_id
+    assert impression.final_rank == 2
+    assert impression.slot_type == "EXPLORATION"
+    assert impression.visible_duration_ms == 1_250
