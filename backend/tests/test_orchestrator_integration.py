@@ -656,6 +656,7 @@ async def _seed_buyer_scenario(
     require_channel: bool = False,
     tag_exhibitor_channel: bool = False,
     available_capacity: int | None = None,
+    verification_status: str | None = None,
 ) -> BuyerRecommendationRequest:
     suffix = _unique_suffix()
     category_label = "category" if with_matching_category else "no-category"
@@ -754,12 +755,13 @@ async def _seed_buyer_scenario(
             )
             await session.flush()
 
-    if available_capacity is not None:
+    if available_capacity is not None or verification_status is not None:
         session.add(
             SupplyCapability(
                 exhibitor_id=exhibitor.exhibitor_id,
                 product_id=None,
                 available_capacity=available_capacity,
+                verification_status=verification_status or "SELF_DECLARED",
             )
         )
 
@@ -1000,3 +1002,47 @@ async def test_generate_buyer_recommendations_scores_higher_with_sufficient_capa
     ).scalar_one()
 
     assert float(sufficient_result.raw_score) > float(insufficient_result.raw_score)
+
+
+async def test_generate_buyer_recommendations_scores_higher_for_verified_exhibitor(
+    db_session: AsyncSession,
+) -> None:
+    """exhibition.supply_capability.verification_status를 EXHIBITOR_SCORE_V1의
+    verification 구성요소로 채우는 연결(feature_builder._verification_score)을 검증한다:
+    검증 완료(VERIFIED) 업체가, 자기신고(SELF_DECLARED) 업체보다 raw_score가 높아야
+    한다."""
+
+    verified_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, verification_status="VERIFIED"
+    )
+    verified_session = await generate_buyer_recommendations(
+        db_session, verified_request
+    )
+    await db_session.commit()
+
+    self_declared_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, verification_status="SELF_DECLARED"
+    )
+    self_declared_session = await generate_buyer_recommendations(
+        db_session, self_declared_request
+    )
+    await db_session.commit()
+
+    verified_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == verified_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    self_declared_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == self_declared_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(verified_result.raw_score) > float(self_declared_result.raw_score)

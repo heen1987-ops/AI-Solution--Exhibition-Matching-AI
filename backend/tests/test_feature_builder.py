@@ -424,3 +424,62 @@ def test_exhibitor_buyer_type_is_none_when_exhibitor_has_no_preference() -> None
     components = build_exhibitor_components(candidate, profile)
 
     assert components["buyer_type"] is None
+
+
+def test_exhibitor_verification_scores_full_marks_for_verified_status() -> None:
+    candidate = ExhibitorCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        monthly_capacity=None,
+        verification_status="VERIFIED",
+    )
+    profile = ExhibitorProfileFacts(requested_monthly_units=None)
+
+    components = build_exhibitor_components(candidate, profile)
+
+    assert components["verification"] == Decimal(1)
+
+
+def test_exhibitor_verification_scores_zero_for_rejected_status() -> None:
+    candidate = ExhibitorCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        monthly_capacity=None,
+        verification_status="REJECTED",
+    )
+    profile = ExhibitorProfileFacts(requested_monthly_units=None)
+
+    components = build_exhibitor_components(candidate, profile)
+
+    assert components["verification"] == Decimal(0)
+
+
+def test_exhibitor_verification_ranks_self_declared_below_operator_reviewed() -> None:
+    profile = ExhibitorProfileFacts(requested_monthly_units=None)
+    self_declared = build_exhibitor_components(
+        ExhibitorCandidateFacts(
+            recommendable_id=uuid.uuid4(),
+            monthly_capacity=None,
+            verification_status="SELF_DECLARED",
+        ),
+        profile,
+    )
+    operator_reviewed = build_exhibitor_components(
+        ExhibitorCandidateFacts(
+            recommendable_id=uuid.uuid4(),
+            monthly_capacity=None,
+            verification_status="OPERATOR_REVIEWED",
+        ),
+        profile,
+    )
+
+    assert self_declared["verification"] < operator_reviewed["verification"]
+
+
+def test_exhibitor_verification_is_none_when_no_supply_capability() -> None:
+    candidate = ExhibitorCandidateFacts(
+        recommendable_id=uuid.uuid4(), monthly_capacity=None
+    )
+    profile = ExhibitorProfileFacts(requested_monthly_units=None)
+
+    components = build_exhibitor_components(candidate, profile)
+
+    assert components["verification"] is None

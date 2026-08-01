@@ -16,7 +16,9 @@
       capacity(exhibition.supply_capability.available_capacity 숫자 비교)
     - EXHIBITOR_SCORE_V1 (양면 적합도의 업체->바이어 방향): order_volume,
       buyer_type/channel/region(exhibition.buyer_preference와 바이어 자신의
-      profile_attribute concept 매칭 - 아래 "concept 기반 구성요소" 참고)
+      profile_attribute concept 매칭 - 아래 "concept 기반 구성요소" 참고),
+      verification(exhibition.supply_capability.verification_status를 [0,1]로 변환 -
+      매칭 대상이 아니라 후보 자체의 품질 신호라 profile 쪽 요구가 필요 없다)
 
 `component_confidence()`는 calculate_reciprocal_score가 요구하는 buyer_confidence/
 exhibitor_confidence(선택값이 아니라 필수 Number)를 만들기 위한 임시 대리지표다 - 실제
@@ -39,10 +41,9 @@ candidate_facts 참고) - 이 모듈 자체는 이미 묶인 dict만 받아 순�
     - cooperation(BUYER), trade_type(EXHIBITOR): exhibition.trade_condition.oem_status/
       private_label_status/export_status(YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN) 상태값
       비교가 필요하다 - concept 매칭 대상이 아니다.
-    - portfolio/decision_timing/verification/meeting_readiness(EXHIBITOR): 각각
-      제품 포트폴리오 다양성, profile.buyer_need.decision_timeline, 08단계 27.3절
-      verification_status, 상담 가능 시간대가 필요한데 이 커밋 시점에는 그 데이터를
-      읽어올 조회 계층이 아직 없다.
+    - portfolio/decision_timing/meeting_readiness(EXHIBITOR): 각각 제품 포트폴리오
+      다양성, profile.buyer_need.decision_timeline과의 비교, 상담 가능 시간대가
+      필요한데 이 커밋 시점에는 그 데이터를 읽어올 조회 계층이 아직 없다.
     - meeting(BUYER), behavior(CONSUMER), trust(모두): 상담 주제 프로파일, 행동 이벤트
       집계, 데이터 신뢰도 모델이 각각 필요한데 이 커밋 시점에는 그 데이터를 읽어올 조회
       계층이 아직 없다.
@@ -183,6 +184,10 @@ class ExhibitorCandidateFacts:
     preference_concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
         default_factory=dict
     )
+    #: exhibition.supply_capability.verification_status(SELF_DECLARED/DOCUMENT_SUBMITTED/
+    #: OPERATOR_REVIEWED/VERIFIED/EXPIRED/REJECTED). 프로파일 쪽 "요구"가 없는 순수
+    #: 후보 품질 신호라 매칭이 아니라 상태값 자체를 점수로 변환한다(_verification_score).
+    verification_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -350,6 +355,28 @@ def build_buyer_components(
     }
 
 
+#: exhibition.supply_capability.verification_status(08단계 27.3절) -> [0,1] 점수. 검증
+#: 단계가 깊을수록(자기신고 -> 서류제출 -> 운영자검토 -> 검증완료) 높은 점수를 준다.
+#: EXPIRED/REJECTED는 한때 검증됐어도 지금은 신뢰할 수 없으므로 0이다.
+_VERIFICATION_STATUS_SCORE: Mapping[str, Decimal] = {
+    "VERIFIED": Decimal(1),
+    "OPERATOR_REVIEWED": Decimal("0.75"),
+    "DOCUMENT_SUBMITTED": Decimal("0.5"),
+    "SELF_DECLARED": Decimal("0.25"),
+    "EXPIRED": Decimal(0),
+    "REJECTED": Decimal(0),
+}
+
+
+def _verification_score(verification_status: str | None) -> Decimal | None:
+    """프로파일 쪽 "요구"가 없는 순수 후보 품질 신호라 매칭이 아니라 상태값 자체를
+    점수로 바꾼다 - _category_match/_component_match와 달리 profile 인자를 받지 않는다."""
+
+    if verification_status is None:
+        return None
+    return _VERIFICATION_STATUS_SCORE.get(verification_status)
+
+
 def build_exhibitor_components(
     candidate: ExhibitorCandidateFacts, profile: ExhibitorProfileFacts
 ) -> Mapping[str, Decimal | None]:
@@ -383,7 +410,7 @@ def build_exhibitor_components(
         "trade_type": None,
         "portfolio": None,
         "decision_timing": None,
-        "verification": None,
+        "verification": _verification_score(candidate.verification_status),
         "meeting_readiness": None,
     }
 

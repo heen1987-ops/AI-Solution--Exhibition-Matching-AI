@@ -727,7 +727,7 @@ async def _load_buyer_candidate_facts(
     term_components_by_id = await _exhibitor_concept_ids_by_component(
         session, recommendable_ids
     )
-    available_capacity_by_id = await _exhibitor_available_capacity_by_id(
+    supply_capability_by_id = await _exhibitor_supply_capability_facts_by_id(
         session, recommendable_ids
     )
     preference_components_by_id = await _exhibitor_preference_concept_ids_by_component(
@@ -742,6 +742,9 @@ async def _load_buyer_candidate_facts(
         min_order_quantity,
         monthly_capacity,
     ) in rows:
+        available_capacity, verification_status = supply_capability_by_id.get(
+            recommendable_id, (None, None)
+        )
         buyer_facts[recommendable_id] = BuyerCandidateFacts(
             recommendable_id=recommendable_id,
             category_concept_ids=concept_ids_by_recommendable.get(
@@ -750,7 +753,7 @@ async def _load_buyer_candidate_facts(
             wholesale_price_amount=wholesale_price_max_amount,
             min_order_quantity=min_order_quantity,
             concept_ids_by_component=term_components_by_id.get(recommendable_id, {}),
-            available_capacity=available_capacity_by_id.get(recommendable_id),
+            available_capacity=available_capacity,
         )
         exhibitor_facts[recommendable_id] = ExhibitorCandidateFacts(
             recommendable_id=recommendable_id,
@@ -758,23 +761,29 @@ async def _load_buyer_candidate_facts(
             preference_concept_ids_by_component=preference_components_by_id.get(
                 recommendable_id, {}
             ),
+            verification_status=verification_status,
         )
     return buyer_facts, exhibitor_facts
 
 
-async def _exhibitor_available_capacity_by_id(
+async def _exhibitor_supply_capability_facts_by_id(
     session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, int]:
-    """recommendable_id -> exhibition.supply_capability.available_capacity(업체 공통,
-    product_id IS NULL) - BUYER_SCORE_V1의 capacity 구성요소가 쓰는 "잔여 생산능력"이다
-    (feature_builder.py의 BuyerCandidateFacts.available_capacity 모듈 docstring 참고).
+) -> dict[uuid.UUID, tuple[int | None, str | None]]:
+    """recommendable_id -> (available_capacity, verification_status) - 둘 다
+    exhibition.supply_capability(업체 공통, product_id IS NULL)에서 나온다.
+    available_capacity는 BUYER_SCORE_V1의 capacity가, verification_status는
+    EXHIBITOR_SCORE_V1의 verification이 쓴다(feature_builder.py 모듈 docstring 참고).
     """
 
     if not recommendable_ids:
         return {}
 
     stmt = (
-        select(Recommendable.recommendable_id, SupplyCapability.available_capacity)
+        select(
+            Recommendable.recommendable_id,
+            SupplyCapability.available_capacity,
+            SupplyCapability.verification_status,
+        )
         .join(
             ExhibitorParticipation,
             ExhibitorParticipation.participation_id == Recommendable.participation_id,
@@ -786,11 +795,13 @@ async def _exhibitor_available_capacity_by_id(
         .where(
             Recommendable.recommendable_id.in_(recommendable_ids),
             SupplyCapability.product_id.is_(None),
-            SupplyCapability.available_capacity.is_not(None),
         )
     )
     rows = (await session.execute(stmt)).all()
-    return dict(rows)
+    return {
+        recommendable_id: (available_capacity, verification_status)
+        for recommendable_id, available_capacity, verification_status in rows
+    }
 
 
 async def _exhibitor_preference_concept_ids_by_component(
