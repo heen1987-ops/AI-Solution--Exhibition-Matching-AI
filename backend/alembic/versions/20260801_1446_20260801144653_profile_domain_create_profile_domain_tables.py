@@ -27,14 +27,9 @@ ForeignKey/ForeignKeyConstraint다 (전부 0003_foundation 또는 그 조상 리
       복합 FK로 강제한다; ontology.concept은 UNIQUE(concept_id, concept_code)를 갖는다)
 
 근거 문서: docs/07-user-profile-model.md 22절, docs/db-erd-table-spec.md 8.4·10절.
-대응하는 SQLAlchemy 모델: backend/app/models/profile.py. 테이블·컬럼·제약조건 이름을 그
-모델 정의와 1:1로 맞춘다(특히 CheckConstraint/UniqueConstraint/ForeignKeyConstraint는
-모델에서 이미 명시적 name=을 부여했으므로 여기서도 동일한 리터럴 이름을 그대로 쓴다 -
-app/db/base.py의 NAMING_CONVENTION은 이름이 없는 제약에만 적용되고, 명시적으로 이름을 준
-제약에는 적용되지 않기 때문이다). 단독 컬럼 FK처럼 모델에서 이름을 명시하지 않은 제약은
-app/db/base.py NAMING_CONVENTION 규칙(fk_%(table_name)s_%(column_0_name)s_
-%(referred_table_name)s)을 그대로 손으로 재현해 이후 alembic autogenerate가 불필요한
-rename diff를 만들지 않게 한다.
+대응하는 SQLAlchemy 모델: backend/app/models/profile.py. CheckConstraint에는 모델이 선언한
+기본 이름을 전달하고 Alembic 컨텍스트의 NAMING_CONVENTION이 최종 ck_<table>_<name> 이름을
+만들게 한다. FK와 유일성 제약은 모델의 최종 이름과 맞춘다.
 
 Revision ID: 0004_profile_domain
 Revises: 0003_foundation

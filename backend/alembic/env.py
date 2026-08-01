@@ -16,7 +16,14 @@ from alembic import context
 # 전제 하에) app 패키지를 임포트할 수 있다.
 from app.core.config import get_settings
 from app.db.base import SCHEMA_ONTOLOGY, Base
-from app.models import consent, core, identity, ontology_refs, profile  # noqa: F401
+from app.models import (  # noqa: F401
+    consent,
+    core,
+    exhibitor,
+    identity,
+    ontology_refs,
+    profile,
+)
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config

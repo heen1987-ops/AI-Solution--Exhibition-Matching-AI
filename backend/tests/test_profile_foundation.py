@@ -86,16 +86,31 @@ def test_requirement_level_distinguishes_unknown_from_excluded() -> None:
     assert "NEUTRAL" not in expression
 
 
-def test_alembic_history_is_single_linear_chain() -> None:
+def test_alembic_history_is_single_linear_chain_through_profile_domain() -> None:
+    """profile 도메인 마이그레이션(0004_profile_domain)까지는 단일 선형 체인이어야 한다.
+
+    다른 도메인 에이전트가 그 뒤에 자신의 리비전을 계속 이어붙이는 것은 정상 동작이므로
+    (여러 에이전트가 동시에 각자 마이그레이션을 추가하는 구조 - 예: interaction 도메인의
+    0005_interaction_domain), 이 테스트는 전체 히스토리의 head를 하드코딩하지 않고
+    "base부터 0004_profile_domain까지"만 검증한다. 대신 0004_profile_domain이 현재 모든
+    head의 조상인지 확인해 브랜치가 갈라지지 않았음을 보장한다.
+    """
+
     config = Config(str(ROOT / "backend" / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0004_profile_domain"]
-    revisions = list(script.walk_revisions(base="base", head="heads"))
+    revisions = list(script.walk_revisions(base="base", head="0004_profile_domain"))
     assert [revision.revision for revision in revisions] == [
         "0004_profile_domain",
         "0003_foundation",
         "0002_ontology",
         "0001_create_schemas",
     ]
+
+    for head in script.get_heads():
+        ancestors = {
+            revision.revision
+            for revision in script.walk_revisions(base="base", head=head)
+        }
+        assert "0004_profile_domain" in ancestors, head

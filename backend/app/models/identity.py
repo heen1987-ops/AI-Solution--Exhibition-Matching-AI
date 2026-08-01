@@ -291,6 +291,14 @@ class UserRole(Base):
             ],
             name="fk_user_role_event_boundary",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "exhibitor_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.exhibitor.tenant_id",
+                f"{SCHEMA_EXHIBITION}.exhibitor.exhibitor_id",
+            ],
+            name="fk_user_role_exhibitor_boundary",
+        ),
         Index(
             "uq_user_role_active_assignment",
             "tenant_id",
