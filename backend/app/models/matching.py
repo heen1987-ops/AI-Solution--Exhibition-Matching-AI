@@ -596,9 +596,7 @@ class MatchResult(Base):
     raw_score: Mapped[float] = mapped_column(Numeric(8, 5), nullable=False)
     normalized_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
-    preference_score: Mapped[float | None] = mapped_column(
-        Numeric(8, 5), nullable=True
-    )
+    preference_score: Mapped[float | None] = mapped_column(Numeric(8, 5), nullable=True)
     goal_score: Mapped[float | None] = mapped_column(Numeric(8, 5), nullable=True)
     trade_score: Mapped[float | None] = mapped_column(Numeric(8, 5), nullable=True)
     context_score: Mapped[float | None] = mapped_column(Numeric(8, 5), nullable=True)
@@ -613,9 +611,7 @@ class MatchResult(Base):
     )
 
     session: Mapped[RecommendationSession] = relationship(back_populates="results")
-    recommendable: Mapped[Recommendable] = relationship(
-        back_populates="match_results"
-    )
+    recommendable: Mapped[Recommendable] = relationship(back_populates="match_results")
     reasons: Mapped[list[MatchReason]] = relationship(
         back_populates="match_result", cascade="all, delete-orphan"
     )
@@ -730,6 +726,4 @@ class FilterResult(Base):
     session: Mapped[RecommendationSession] = relationship(
         back_populates="filter_results"
     )
-    recommendable: Mapped[Recommendable] = relationship(
-        back_populates="filter_results"
-    )
+    recommendable: Mapped[Recommendable] = relationship(back_populates="filter_results")

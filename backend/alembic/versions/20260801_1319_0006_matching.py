@@ -29,8 +29,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0006_matching"
@@ -203,9 +204,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["participation_id"],
             ["exhibition.exhibitor_participation.participation_id"],
-            name=op.f(
-                "fk_recommendable_participation_id_exhibitor_participation"
-            ),
+            name=op.f("fk_recommendable_participation_id_exhibitor_participation"),
         ),
         sa.ForeignKeyConstraint(
             ["program_id"],
@@ -323,16 +322,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["profile_version_id"],
             ["profile.profile_version.profile_version_id"],
-            name=op.f(
-                "fk_recommendation_session_profile_version_id_profile_version"
-            ),
+            name=op.f("fk_recommendation_session_profile_version_id_profile_version"),
         ),
         sa.ForeignKeyConstraint(
             ["taxonomy_version_id"],
             ["ontology.taxonomy_version.taxonomy_version_id"],
-            name=op.f(
-                "fk_recommendation_session_taxonomy_version_id_taxonomy_version"
-            ),
+            name=op.f("fk_recommendation_session_taxonomy_version_id_taxonomy_version"),
         ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "event_id"],
@@ -342,9 +337,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["visit_session_id"],
             ["profile.visit_session.visit_session_id"],
-            name=op.f(
-                "fk_recommendation_session_visit_session_id_visit_session"
-            ),
+            name=op.f("fk_recommendation_session_visit_session_id_visit_session"),
         ),
         sa.PrimaryKeyConstraint(
             "recommendation_session_id", name=op.f("pk_recommendation_session")
