@@ -6,6 +6,7 @@
 
 설계 스펙은 [`docs/design/`](docs/design/)에 있다.
 
+- [프론트엔드-백엔드-AI 인터페이스 명세서](docs/design/05-frontend-backend-ai-interface-spec.md)
 - [DB ERD 상세설계 및 테이블 정의서](docs/design/06-db-erd-schema-design.md)
 - [사용자 프로파일 모델 설계](docs/design/07-user-profile-model.md)
 - [참가업체·제품 프로파일 모델 설계](docs/design/08-exhibitor-product-profile-model.md)
