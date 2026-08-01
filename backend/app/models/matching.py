@@ -567,6 +567,7 @@ class MatchResult(Base):
     goal_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
     trade_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
     context_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
+    context_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     behavior_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
     # db-erd: "다양성" 보정값 - 가·감산 조정치라 0~1 범위를 강제하지 않는다.
     diversity_adjustment: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
@@ -875,5 +876,45 @@ class InteractionEvent(Base):
         DateTime(timezone=True), nullable=False
     )
     received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class InteractionClientEventDedupe(Base):
+    """Non-partitioned global claim for offline client-event idempotency."""
+
+    __tablename__ = "client_event_dedupe"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.event.tenant_id",
+                f"{SCHEMA_EXHIBITION}.event.event_id",
+            ],
+            name="fk_client_event_dedupe_event_boundary",
+        ),
+        ForeignKeyConstraint(
+            ["event_date", "interaction_event_id"],
+            [
+                f"{SCHEMA_INTERACTION}.interaction_event.event_date",
+                f"{SCHEMA_INTERACTION}.interaction_event.interaction_event_id",
+            ],
+            name="fk_client_event_dedupe_interaction_event",
+        ),
+        Index("ix_client_event_dedupe_event", "tenant_id", "event_id"),
+        {"schema": SCHEMA_INTERACTION},
+    )
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    client_event_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    interaction_event_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False
+    )
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

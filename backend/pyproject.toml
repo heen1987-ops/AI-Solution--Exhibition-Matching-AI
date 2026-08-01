@@ -36,3 +36,6 @@ include = ["app*"]
 [tool.pytest.ini_options]
 pythonpath = [".", "../src"]
 asyncio_mode = "auto"
+markers = [
+    "postgres_integration: requires a migrated PostgreSQL database",
+]

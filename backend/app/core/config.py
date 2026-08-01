@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://backju:backju@localhost:5432/backju",
     )
-    DATABASE_ECHO: bool = Field(default=False, description="SQLAlchemy SQL 로그 출력 여부")
+    DATABASE_ECHO: bool = Field(
+        default=False, description="SQLAlchemy SQL 로그 출력 여부"
+    )
     DATABASE_POOL_SIZE: int = Field(default=5)
     DATABASE_MAX_OVERFLOW: int = Field(default=10)
 
@@ -54,7 +56,9 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     # 개발 환경에서는 전체 허용(main.py 참고). 운영 환경은 콤마로 구분된 origin 목록을 지정한다.
-    CORS_ORIGINS: str = Field(default="*", description="콤마(,)로 구분된 허용 origin 목록, 기본값 전체 허용")
+    CORS_ORIGINS: str = Field(
+        default="*", description="콤마(,)로 구분된 허용 origin 목록, 기본값 전체 허용"
+    )
 
     @field_validator("CORS_ORIGINS")
     @classmethod
@@ -65,13 +69,34 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         if self.CORS_ORIGINS.strip() == "*":
             return ["*"]
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        return [
+            origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()
+        ]
 
     # --- 보안 (다음 단계 에이전트가 인증 구현 시 사용) ---
     SECRET_KEY: str = Field(
         default="CHANGE_ME_INSECURE_DEFAULT_FOR_LOCAL_DEV_ONLY",
         description="세션 서명, HMAC 등에 사용하는 비밀키. 운영 환경에서는 반드시 .env로 재정의한다.",
     )
+    SITE_CONTEXT_SECRET: str | None = Field(
+        default=None,
+        description="사이트 BFF 사용자 컨텍스트 서명 전용 비밀키",
+    )
+
+    @property
+    def site_context_secret(self) -> str:
+        return self.SITE_CONTEXT_SECRET or self.SECRET_KEY
+
+    @model_validator(mode="after")
+    def _production_security_must_fail_closed(self) -> Settings:
+        if self.ENV.lower() in {"staging", "production"}:
+            if self.SECRET_KEY == "CHANGE_ME_INSECURE_DEFAULT_FOR_LOCAL_DEV_ONLY":
+                raise ValueError(
+                    "SECRET_KEY must be configured outside local development"
+                )
+            if not self.SITE_CONTEXT_SECRET:
+                raise ValueError("SITE_CONTEXT_SECRET must be configured in deployment")
+        return self
 
 
 @lru_cache

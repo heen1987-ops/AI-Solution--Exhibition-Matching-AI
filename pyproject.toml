@@ -27,4 +27,6 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
-
+markers = [
+    "postgres_integration: requires a migrated PostgreSQL database",
+]

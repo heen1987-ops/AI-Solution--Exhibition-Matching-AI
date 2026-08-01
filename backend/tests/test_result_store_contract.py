@@ -189,6 +189,8 @@ async def test_store_uses_real_registry_ids_and_commits_once() -> None:
     assert result.directional_score_fingerprint == "a" * 64
     assert result.normalized_score == 0.90
     assert result.final_score == 0.86
+    assert result.context_details["distance_meters"] is None
+    assert result.context_details["availability"] == {}
     assert candidate.match_result_id == result.match_result_id
     assert outcome.policy_version == "consumer-score-v1.0"
 

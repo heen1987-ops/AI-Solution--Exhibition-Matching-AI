@@ -306,6 +306,18 @@ async def _persist(
             goal_score=candidate.score_components.get("goal_score"),
             trade_score=candidate.score_components.get("trade_score"),
             context_score=candidate.score_components.get("context_score"),
+            context_details={
+                "context_adjustment": candidate.context_adjustment,
+                "distance_meters": candidate.distance_meters,
+                "estimated_walk_minutes": candidate.estimated_walk_minutes,
+                "estimated_wait_minutes": candidate.estimated_wait_minutes,
+                "status_observed_at": (
+                    candidate.status_observed_at.isoformat()
+                    if candidate.status_observed_at
+                    else None
+                ),
+                "availability": candidate.availability,
+            },
             behavior_score=candidate.score_components.get("behavior_score"),
             diversity_adjustment=candidate.diversity_adjustment,
             trust_score=candidate.score_components.get("trust_score"),

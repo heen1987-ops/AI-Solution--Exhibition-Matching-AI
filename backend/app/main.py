@@ -9,8 +9,14 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.api import api_router
+from app.api.v1.routers.recommendations import (
+    RecommendationApiException,
+    database_exception_handler,
+    recommendation_exception_handler,
+)
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -19,6 +25,11 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     debug=settings.DEBUG,
 )
+app.add_exception_handler(
+    RecommendationApiException,
+    recommendation_exception_handler,
+)
+app.add_exception_handler(SQLAlchemyError, database_exception_handler)
 
 # 개발용 CORS 설정: 기본값(CORS_ORIGINS=*)은 전체 허용이다.
 # 운영 환경에서는 .env의 CORS_ORIGINS를 콤마로 구분된 실제 origin 목록으로 반드시 재정의한다.

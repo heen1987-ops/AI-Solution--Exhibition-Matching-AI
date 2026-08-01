@@ -33,12 +33,14 @@ def test_metadata_contains_published_supply_and_filter_tables() -> None:
         "matching.match_policy_version",
         "matching.recommendation_session",
         "matching.match_result",
+        "interaction.client_event_dedupe",
         "ai.model_version",
         "ai.ai_run",
     }
 
     assert expected <= set(Base.metadata.tables)
-    assert len(Base.metadata.sorted_tables) == 61
+    assert len(Base.metadata.sorted_tables) == 62
+    assert "context_details" in Base.metadata.tables["matching.match_result"].c
 
 
 def test_event_product_and_booth_are_bound_to_participation_event() -> None:
@@ -116,4 +118,4 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0008_matching_runtime"]
+    assert script.get_heads() == ["0009_recommendation_api"]
