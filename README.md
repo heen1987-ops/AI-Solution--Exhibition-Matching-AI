@@ -10,6 +10,7 @@
 - [사용자 프로파일 모델 설계](docs/design/07-user-profile-model.md)
 - [참가업체·제품 프로파일 모델 설계](docs/design/08-exhibitor-product-profile-model.md)
 - [후보검색·검색 인덱스 설계](docs/design/09-candidate-search-design.md)
+- [필수조건 필터·제외규칙 설계](docs/design/10-hard-filter-exclusion-rules.md)
 
 ## 기술 스택 (MVP)
 
