@@ -67,4 +67,4 @@ PHP 호스트용 서버 측 서명 예제는 `adapters/php/BackjuAiSiteContext.p
 - Alembic PostgreSQL 오프라인 SQL 생성
 - `POSTGRES_TEST_DATABASE_URL` 기반 실제 PostgreSQL 카탈로그 통합 테스트(선택 실행)
 
-다음 구현 단위는 14단계 상황인지 실시간 재정렬을 정책 버전으로 승격하고, 위치·시간·혼잡·재고·상담 스냅샷을 결과 계보에 고정하는 것이다.
+14단계 상황인지 실시간 재정렬과 위치·시간·혼잡·재고·상담 계보는 [14단계 구현 문서](./14-context-aware-reranking.md)에 반영했다. 다음 구현 단위는 15단계 다양성·공정성 정책 버전이다.

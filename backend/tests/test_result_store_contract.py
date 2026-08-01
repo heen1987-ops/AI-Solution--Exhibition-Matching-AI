@@ -143,6 +143,14 @@ def _request_data() -> tuple[
         directional_confidence=0.88,
         directional_grade="R5",
         directional_score_fingerprint="a" * 64,
+        context_policy_version="context-rerank-v1.0",
+        context_components={"operational_availability": 1.0},
+        context_effective_weights={"operational_availability": 1.0},
+        context_contributions={"operational_availability": 1.0},
+        context_missing_components=("proximity",),
+        context_input_fingerprint="b" * 64,
+        context_score_fingerprint="c" * 64,
+        context_blended_score=0.86,
         score_components={
             "preference_score": 0.8,
             "goal_score": 1.0,
@@ -187,10 +195,15 @@ async def test_store_uses_real_registry_ids_and_commits_once() -> None:
     assert result.tenant_id == validated.subject.tenant_id
     assert result.event_id == validated.subject.event_id
     assert result.directional_score_fingerprint == "a" * 64
+    assert result.context_policy_version_id == session.policy_version_id
+    assert result.context_input_fingerprint == "b" * 64
+    assert result.context_score_fingerprint == "c" * 64
     assert result.normalized_score == 0.90
     assert result.final_score == 0.86
     assert result.context_details["distance_meters"] is None
     assert result.context_details["availability"] == {}
+    assert result.context_details["policy_version"] == "context-rerank-v1.0"
+    assert result.context_details["context_blended_score"] == 0.86
     assert candidate.match_result_id == result.match_result_id
     assert outcome.policy_version == "consumer-score-v1.0"
 

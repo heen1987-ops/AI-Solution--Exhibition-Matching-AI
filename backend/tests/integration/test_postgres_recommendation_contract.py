@@ -69,11 +69,33 @@ async def test_live_postgres_recommendation_guarantees() -> None:
                     )
                 )
             ).scalar_one()
+            context_policy = (
+                await connection.execute(
+                    text(
+                        "SELECT policy_type, status FROM matching.match_policy_version "
+                        "WHERE version = 'context-rerank-v1.0'"
+                    )
+                )
+            ).one()
+            context_provenance_columns = (
+                await connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_schema = 'matching' AND table_name = 'match_result' "
+                        "AND column_name IN ('context_policy_version_id', "
+                        "'context_components', 'context_effective_weights', "
+                        "'context_contributions', 'context_input_fingerprint', "
+                        "'context_score_fingerprint')"
+                    )
+                )
+            ).scalar_one()
     finally:
         await engine.dispose()
 
-    assert head == "0009_recommendation_api"
+    assert head == "0010_context_rerank"
     assert dedupe_table == "interaction.client_event_dedupe"
     assert "event_date, interaction_event_id" in foreign_key
     assert append_only_trigger is True
     assert context_details_column is True
+    assert tuple(context_policy) == ("CONTEXT_RERANK", "PUBLISHED")
+    assert context_provenance_columns == 6

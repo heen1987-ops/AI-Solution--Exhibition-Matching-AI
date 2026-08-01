@@ -185,6 +185,7 @@ class ResolvedContext:
     include_meetings: bool
     avoid_congestion: bool
     server_time: datetime
+    recently_viewed_recommendable_ids: set[uuid.UUID] = field(default_factory=set)
 
 
 @dataclass
@@ -282,6 +283,14 @@ class MatchCandidate:
     reciprocal_applied_cap_codes: tuple[str, ...] = ()
 
     context_adjustment: float = 0.0
+    context_policy_version: str | None = None
+    context_components: dict[str, float | None] = field(default_factory=dict)
+    context_effective_weights: dict[str, float] = field(default_factory=dict)
+    context_contributions: dict[str, float] = field(default_factory=dict)
+    context_missing_components: tuple[str, ...] = ()
+    context_input_fingerprint: str | None = None
+    context_score_fingerprint: str | None = None
+    context_blended_score: float | None = None
     distance_meters: float | None = None
     estimated_walk_minutes: int | None = None
     estimated_wait_minutes: int | None = None

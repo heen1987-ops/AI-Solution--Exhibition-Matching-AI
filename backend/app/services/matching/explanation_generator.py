@@ -80,7 +80,7 @@ def _context_reasons(candidate: MatchCandidate) -> list[MatchReasonDraft]:
                 "MEETING_AVAILABLE",
                 "현재 상담 가능한 시간이 있습니다.",
                 [f"availability_slot:participation:{candidate.participation_id}"],
-                contribution=candidate.context_adjustment,
+                contribution=candidate.score_components.get("context_score"),
             )
         )
     if (
@@ -92,7 +92,7 @@ def _context_reasons(candidate: MatchCandidate) -> list[MatchReasonDraft]:
                 "NEARBY",
                 f"현재 위치에서 도보 {candidate.estimated_walk_minutes}분 거리입니다.",
                 [f"booth:{candidate.object_id}:location"],
-                contribution=candidate.context_adjustment,
+                contribution=candidate.score_components.get("context_score"),
             )
         )
     return reasons

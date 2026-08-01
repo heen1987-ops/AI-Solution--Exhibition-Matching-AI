@@ -485,6 +485,15 @@ class MatchResult(Base):
             "(reciprocal_score_fingerprint IS NULL)",
             name="reciprocal_provenance_consistency",
         ),
+        CheckConstraint(
+            "(context_policy_version_id IS NULL AND context_components IS NULL "
+            "AND context_effective_weights IS NULL AND context_contributions IS NULL "
+            "AND context_input_fingerprint IS NULL AND context_score_fingerprint IS NULL) "
+            "OR (context_policy_version_id IS NOT NULL AND context_components IS NOT NULL "
+            "AND context_effective_weights IS NOT NULL AND context_contributions IS NOT NULL "
+            "AND context_input_fingerprint IS NOT NULL AND context_score_fingerprint IS NOT NULL)",
+            name="context_provenance_consistency",
+        ),
         # db-erd 21절 idx_match_session_rank는 위 uq_match_result_session_rank 유니크 제약이
         # 만드는 인덱스로 이미 충족된다 (동일 컬럼 조합).
         Index("ix_match_result_target_created", "recommendable_id", "created_at"),
@@ -515,6 +524,11 @@ class MatchResult(Base):
         nullable=True,
     )
     reciprocal_policy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_MATCHING}.match_policy_version.match_policy_version_id"),
+        nullable=True,
+    )
+    context_policy_version_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey(f"{SCHEMA_MATCHING}.match_policy_version.match_policy_version_id"),
         nullable=True,
@@ -567,6 +581,15 @@ class MatchResult(Base):
     goal_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
     trade_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
     context_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
+    context_components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    context_effective_weights: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    context_contributions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    context_input_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    context_score_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     context_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     behavior_score: Mapped[float | None] = mapped_column(Numeric(), nullable=True)
     # db-erd: "다양성" 보정값 - 가·감산 조정치라 0~1 범위를 강제하지 않는다.

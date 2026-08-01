@@ -127,6 +127,14 @@ def _validate_candidates(candidates: list[MatchCandidate]) -> None:
             candidate.reciprocal_score_fingerprint
         ):
             raise _contract_error("양면 점수 계산 지문이 없습니다.")
+        if not candidate.context_policy_version:
+            raise _contract_error("상황 재정렬 정책 버전이 없습니다.")
+        if not candidate.context_input_fingerprint:
+            raise _contract_error("상황 재정렬 입력 지문이 없습니다.")
+        if not candidate.context_score_fingerprint:
+            raise _contract_error("상황 재정렬 점수 지문이 없습니다.")
+        if candidate.context_blended_score is None:
+            raise _contract_error("상황 재정렬 혼합 점수가 없습니다.")
         for reason in candidate.reasons:
             if reason.generated_by == "LLM" and reason.ai_run_id is None:
                 raise _contract_error(
@@ -189,6 +197,7 @@ async def _persist(
             candidate.directional_policy_version,
             candidate.exhibitor_directional_policy_version,
             candidate.reciprocal_policy_version,
+            candidate.context_policy_version,
         )
         if version is not None
     }
@@ -255,6 +264,7 @@ async def _persist(
             if candidate.reciprocal_policy_version
             else None
         )
+        context_policy = policies[candidate.context_policy_version]
         match_result = MatchResult(
             tenant_id=validated.subject.tenant_id,
             event_id=validated.subject.event_id,
@@ -267,6 +277,7 @@ async def _persist(
             reciprocal_policy_version_id=(
                 reciprocal_policy.match_policy_version_id if reciprocal_policy else None
             ),
+            context_policy_version_id=context_policy.match_policy_version_id,
             raw_score=candidate.raw_score,
             normalized_score=candidate.normalized_score,
             final_score=candidate.final_score,
@@ -306,8 +317,16 @@ async def _persist(
             goal_score=candidate.score_components.get("goal_score"),
             trade_score=candidate.score_components.get("trade_score"),
             context_score=candidate.score_components.get("context_score"),
+            context_components=candidate.context_components,
+            context_effective_weights=candidate.context_effective_weights,
+            context_contributions=candidate.context_contributions,
+            context_input_fingerprint=candidate.context_input_fingerprint,
+            context_score_fingerprint=candidate.context_score_fingerprint,
             context_details={
+                "policy_version": candidate.context_policy_version,
                 "context_adjustment": candidate.context_adjustment,
+                "context_blended_score": candidate.context_blended_score,
+                "missing_components": list(candidate.context_missing_components),
                 "distance_meters": candidate.distance_meters,
                 "estimated_walk_minutes": candidate.estimated_walk_minutes,
                 "estimated_wait_minutes": candidate.estimated_wait_minutes,
@@ -317,6 +336,7 @@ async def _persist(
                     else None
                 ),
                 "availability": candidate.availability,
+                "operational_snapshot_version": (context.operational_snapshot_version),
             },
             behavior_score=candidate.score_components.get("behavior_score"),
             diversity_adjustment=candidate.diversity_adjustment,

@@ -575,7 +575,7 @@ async def build_features(
             current_zone_xy = (float(row[0]), float(row[1]))
 
     for candidate in candidates:
-        if current_zone_xy is not None and candidate.object_type == "BOOTH":
+        if current_zone_xy is not None:
             map_x = candidate.payload.get("map_x")
             map_y = candidate.payload.get("map_y")
             if map_x is not None and map_y is not None:

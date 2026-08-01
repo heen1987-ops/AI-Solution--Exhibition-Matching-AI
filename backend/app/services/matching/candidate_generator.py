@@ -271,6 +271,7 @@ async def _fetch_booth_candidates(
             Booth.zone_id,
             Booth.map_x,
             Booth.map_y,
+            Booth.status_observed_at,
             ExhibitorParticipation.exhibitor_id,
             ExhibitorParticipation.participation_status,
             ExhibitorParticipation.consultation_enabled,
@@ -310,6 +311,7 @@ async def _fetch_booth_candidates(
                     "zone_id": row.zone_id,
                     "map_x": row.map_x,
                     "map_y": row.map_y,
+                    "status_observed_at": row.status_observed_at,
                     "exhibitor_name": row.company_name,
                     "exhibitor_master_approval_status": row.master_approval_status,
                     "consultation_enabled": row.consultation_enabled,
@@ -350,6 +352,8 @@ async def _fetch_product_candidates(
             ExhibitorParticipation.participation_status,
             ExhibitorParticipation.consultation_enabled,
             Booth.booth_id,
+            Booth.map_x,
+            Booth.map_y,
         )
         .join(
             Recommendable,
@@ -411,6 +415,8 @@ async def _fetch_product_candidates(
                     "approval_status": row.approval_status,
                     "status_observed_at": row.status_observed_at,
                     "booth_id": row.booth_id,
+                    "map_x": row.map_x,
+                    "map_y": row.map_y,
                     "created_at": row.created_at,
                 },
             )

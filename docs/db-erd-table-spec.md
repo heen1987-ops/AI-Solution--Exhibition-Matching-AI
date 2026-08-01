@@ -807,6 +807,13 @@ filter_rule은 code, order, HARD/SOFT, config, active를 저장한다.
 | goal_score | NUMERIC | 목적 |
 | trade_score | NUMERIC | 거래 |
 | context_score | NUMERIC | 상황 |
+| context_policy_version_id | UUID FK | 게시된 상황 재정렬 정책 |
+| context_components | JSONB | 관측 구성요소와 명시적 NULL |
+| context_effective_weights | JSONB | 누락 제거 후 유효 가중치 |
+| context_contributions | JSONB | 구성요소별 가중 기여도 |
+| context_input_fingerprint | CHAR(64) | 입력 스냅샷 SHA-256 |
+| context_score_fingerprint | CHAR(64) | 계산 결과 SHA-256 |
+| context_details | JSONB | 거리·시간·가용성·관측시각 상세 |
 | behavior_score | NUMERIC | 행동 |
 | diversity_adjustment | NUMERIC | 다양성 |
 | trust_score | NUMERIC | 신뢰 |
@@ -816,6 +823,8 @@ filter_rule은 code, order, HARD/SOFT, config, active를 저장한다.
 UNIQUE(recommendation_session_id, rank), UNIQUE(recommendation_session_id, recommendable_id).
 
 hard_filter를 통과하지 못한 후보는 match_result에 넣지 않는다. 제외 근거는 filter_result에 저장한다.
+
+상황 재정렬 계보 컬럼은 모두 NULL인 과거 결과 또는 모두 채워진 신규 결과만 허용한다. 신규 추천은 게시된 `CONTEXT_RERANK` 정책과 구성요소·유효 가중치·두 계산 지문을 함께 저장한다.
 
 상담과 경로는 직접 추천 대상이 아니다. `recommended_action`이 REQUEST_MEETING 또는 ADD_TO_ROUTE일 때 후속 요청으로 생성하며 각각 interaction.meeting, interaction.route에 저장한다.
 

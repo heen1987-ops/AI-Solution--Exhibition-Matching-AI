@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import ColumnElement, select, text
@@ -31,6 +32,8 @@ from app.services.matching.types import (
 #: 05번 문서 5.3절 "이미 방문한 부스" 판단에 쓰는 표준 이벤트명
 #: (인터페이스 명세 16.2절 표준 이름 목록에 포함된 실제 이벤트 코드).
 _VISITED_EVENT_TYPE = "BOOTH_CHECKED_IN"
+_VIEWED_EVENT_TYPES = ("RECOMMENDATION_OPENED", "DETAIL_VIEWED")
+_RECENT_VIEW_WINDOW_MINUTES = 30
 _EXCLUDED_EVENT_TYPE = "RECOMMENDATION_DISMISSED"
 _CONFIRMED_MEETING_STATUS = "accepted"
 
@@ -173,17 +176,38 @@ async def resolve_context(
         )
         visited_booth_ids = {row.booth_id for row in booth_rows}
 
+    recent_view_rows = await db.execute(
+        select(InteractionEvent.recommendable_id).where(
+            InteractionEvent.tenant_id == subject.tenant_id,
+            InteractionEvent.event_id == subject.event_id,
+            InteractionEvent.event_type.in_(_VIEWED_EVENT_TYPES),
+            InteractionEvent.occurred_at
+            >= server_time - timedelta(minutes=_RECENT_VIEW_WINDOW_MINUTES),
+            InteractionEvent.recommendable_id.is_not(None),
+            _owner_clause(
+                InteractionEvent.user_id,
+                InteractionEvent.guest_session_id,
+                InteractionEvent.visit_session_id,
+                subject,
+            ),
+        )
+    )
+    recently_viewed_recommendable_ids = {
+        row.recommendable_id for row in recent_view_rows
+    }
+
     upcoming_meetings: list[dict[str, Any]] = []
     upcoming_meeting_booth_ids: set[uuid.UUID] = set()
     if include_meetings and await _meeting_overlay_available(db):
         meeting_rows = await db.execute(
             text(
-                "SELECT booth_id, confirmed_start "
-                "FROM interaction.meeting "
-                "WHERE tenant_id = :tenant_id AND event_id = :event_id "
-                "AND buyer_profile_id = :profile_id AND status = :status "
-                "AND confirmed_start IS NOT NULL AND confirmed_start >= :server_time "
-                "ORDER BY confirmed_start ASC"
+                "SELECT m.booth_id, m.confirmed_start, b.map_x, b.map_y "
+                "FROM interaction.meeting m "
+                "LEFT JOIN exhibition.booth b ON b.booth_id = m.booth_id "
+                "WHERE m.tenant_id = :tenant_id AND m.event_id = :event_id "
+                "AND m.buyer_profile_id = :profile_id AND m.status = :status "
+                "AND m.confirmed_start IS NOT NULL AND m.confirmed_start >= :server_time "
+                "ORDER BY m.confirmed_start ASC"
             ).bindparams(
                 tenant_id=subject.tenant_id,
                 event_id=subject.event_id,
@@ -192,8 +216,15 @@ async def resolve_context(
                 server_time=server_time,
             )
         )
-        for booth_id, start_at in meeting_rows:
-            upcoming_meetings.append({"start_at": start_at, "booth_id": booth_id})
+        for booth_id, start_at, map_x, map_y in meeting_rows:
+            upcoming_meetings.append(
+                {
+                    "start_at": start_at,
+                    "booth_id": booth_id,
+                    "map_x": map_x,
+                    "map_y": map_y,
+                }
+            )
             if booth_id is not None:
                 upcoming_meeting_booth_ids.add(booth_id)
 
@@ -215,4 +246,5 @@ async def resolve_context(
         include_meetings=include_meetings,
         avoid_congestion=avoid_congestion,
         server_time=server_time,
+        recently_viewed_recommendable_ids=recently_viewed_recommendable_ids,
     )

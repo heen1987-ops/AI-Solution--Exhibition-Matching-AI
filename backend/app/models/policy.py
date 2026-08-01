@@ -40,7 +40,7 @@ class MatchPolicyVersion(Base):
         ),
         CheckConstraint(
             "policy_type IN ('HARD_FILTER', 'CONSUMER_SCORE', 'BUYER_SCORE', "
-            "'EXHIBITOR_SCORE', 'RECIPROCAL_SCORE')",
+            "'EXHIBITOR_SCORE', 'RECIPROCAL_SCORE', 'CONTEXT_RERANK')",
             name="policy_type_allowed",
         ),
         CheckConstraint(
