@@ -21,6 +21,7 @@ from app.models import (  # noqa: F401
     core,
     exhibitor,
     identity,
+    matching,
     ontology_refs,
     profile,
 )

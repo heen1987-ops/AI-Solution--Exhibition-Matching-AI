@@ -1,5 +1,21 @@
 """Published SQLAlchemy domain models loaded by Alembic."""
 
-from app.models import consent, core, exhibitor, identity, ontology_refs, profile
+from app.models import (
+    consent,
+    core,
+    exhibitor,
+    identity,
+    matching,
+    ontology_refs,
+    profile,
+)
 
-__all__ = ["consent", "core", "exhibitor", "identity", "ontology_refs", "profile"]
+__all__ = [
+    "consent",
+    "core",
+    "exhibitor",
+    "identity",
+    "matching",
+    "ontology_refs",
+    "profile",
+]
