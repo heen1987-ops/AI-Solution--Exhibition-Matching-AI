@@ -5,6 +5,7 @@ from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+
 from app.db.base import Base
 from app.models import exhibitor  # noqa: F401
 
@@ -31,11 +32,11 @@ def test_exhibition_metadata_contains_stage_8_supply_tables() -> None:
     }
 
     assert expected <= set(Base.metadata.tables)
-    # 55 = 47(8단계까지) + 8(app/models/matching.py: exhibition.recommendable +
-    # matching.match_policy_version/match_weight/filter_rule/recommendation_session/
-    # match_result/match_reason/filter_result). 다음 도메인이 테이블을 추가하면 이 값도
-    # 함께 갱신해야 한다.
-    assert len(Base.metadata.sorted_tables) == 55
+    # 62 = 55(matching 도메인까지) + 7(app/models/meeting.py: interaction.availability_slot/
+    # meeting/meeting_slot_request/meeting_contact_share/meeting_status_history/
+    # meeting_outcome/follow_up_action). 다음 도메인이 테이블을 추가하면 이 값도 함께
+    # 갱신해야 한다.
+    assert len(Base.metadata.sorted_tables) == 62
 
 
 def test_event_product_and_booth_are_bound_to_participation_event() -> None:
@@ -85,6 +86,6 @@ def test_alembic_chain_has_one_exhibition_head() -> None:
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    # 0006_matching(app/models/matching.py)이 0005_exhibition 위에 쌓였다. 다음 도메인이
+    # 0007_meeting(app/models/meeting.py)이 0006_matching 위에 쌓였다. 다음 도메인이
     # 이어붙이면 이 값도 함께 갱신해야 한다.
-    assert script.get_heads() == ["0006_matching"]
+    assert script.get_heads() == ["0007_meeting"]

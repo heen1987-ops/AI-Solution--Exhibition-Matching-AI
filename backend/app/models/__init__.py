@@ -6,6 +6,7 @@ from app.models import (
     exhibitor,
     identity,
     matching,
+    meeting,
     ontology_refs,
     profile,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "exhibitor",
     "identity",
     "matching",
+    "meeting",
     "ontology_refs",
     "profile",
 ]
