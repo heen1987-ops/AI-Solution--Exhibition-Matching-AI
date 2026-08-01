@@ -80,14 +80,24 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
   PRODUCTION 단락회로 vs EXPLAIN 전체평가, UNKNOWN 정책, 가격/카테고리/MOQ 구성요소
   계산, "정보 없음은 None이지 0이 아니다", 생산·공급역량/유통채널/공급지역/OEM·PB·수출
   가용상태 규칙의 PASS/FAIL/CONDITIONAL_PASS 분기를 모두 확인한다. DB 없이 실행 가능하다.
-- 수동 종단 검증: throwaway Postgres에 tenant/event/exhibitor/product/event_product/
-  recommendable/profile/profile_version/policy_version을 직접 심고
-  `generate_general_visitor_recommendations`를 실제로 호출해 RecommendationSession
-  1건과 MatchResult 1건(점수 100.00, `VISIT_NOW`)이 정확히 생성되는 것까지 확인했다.
-  다만 이 스크립트는 정식 pytest 스위트에 올리지 않았다 - 비동기 DB 통합테스트를 위한
-  conftest/fixture 관례가 이 저장소에 아직 없고(기존 테스트는 전부 메타데이터 검사 또는
-  DB 없이 동작), 그 관례를 이 커밋에서 임의로 정하기보다 다음 구현에서 다른 도메인과
-  합의하는 편이 낫다고 판단했다. 이 갭은 다음 구현 순서 목록에 남겨둔다.
+- DB 통합테스트(`backend/tests/conftest.py`, `test_orchestrator_integration.py`):
+  이전에는 수동 스크립트로만 GENERAL_VISITOR/BUYER 경로를 검증했고 정식 pytest에는
+  올리지 않았다 - 비동기 DB 통합테스트 conftest/fixture 관례가 이 저장소에 없었기
+  때문이다. 이번에 그 관례를 도입해 두 스크립트를 정식 테스트로 옮겼다:
+  - `TEST_DATABASE_URL`(기본값 `postgresql+asyncpg://postgres@127.0.0.1:5432/backju_test`)에
+    연결할 수 없으면 관련 테스트를 자동으로 건너뛴다 - throwaway Postgres가 없는 환경(CI
+    포함)에서도 나머지 스위트는 그대로 통과한다.
+  - 연결 가능하면 세션당 한 번 `alembic upgrade head`를 실행한다.
+  - `db_session` fixture는 SAVEPOINT 기반 자동 롤백(SQLAlchemy 공식 레시피)을 먼저
+    시도했지만 이 스택(SQLAlchemy 2.0 async + asyncpg + greenlet)에서 ORM의 내부
+    bind-connection 관리가 greenlet_spawn 밖에서 `conn.begin_nested()`를 호출하는
+    경로가 있어 `MissingGreenlet`으로 계속 깨졌다 - 그래서 단순히 커밋하는 세션을
+    쓰고, 테스트가 UNIQUE 컬럼에 유니크 접미사를 붙여 충돌을 피하는 방식을 택했다
+    (conftest.py/test_orchestrator_integration.py 모듈 docstring에 이유를 남겼다).
+  - GENERAL_VISITOR 경로(RecommendationSession 1건, MatchResult 1건, `VISIT_NOW`,
+    100.00점), BUYER 경로(`REQUEST_MEETING`), 그리고 카테고리 일치 시나리오가 카테고리
+    불일치 시나리오보다 raw_score가 높다는 것(구조화 검색의 category_concept_ids
+    보정, 위 "제품 카테고리 연결" 참고)까지 세 시나리오를 검증한다.
 
 ## 발견된 별도 갭: interaction.meeting 도메인 (app/models/meeting.py)
 
@@ -151,8 +161,9 @@ FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundar
    business_goal/channel/capacity/region/cooperation/meeting)를 채운다.
 4. ~~BUYER/EXHIBITOR 경로와 `calculate_reciprocal_score`(양면 적합도)를 오케스트레이터에
    연결한다.~~ 완료 (위 "BUYER/EXHIBITOR 경로 구현 메모" 참고).
-5. 비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트들(일반
-   관람객·바이어 양쪽)을 정식 테스트로 옮긴다.
+5. ~~비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트들(일반
+   관람객·바이어 양쪽)을 정식 테스트로 옮긴다.~~ 완료 (`backend/tests/conftest.py`,
+   `test_orchestrator_integration.py`, 위 "검증" 절 참고).
 6. 14단계(상황 재정렬)와 18단계(추천 이유 생성)를 오케스트레이터의 해당 자리에 연결한다.
 7. ~~`matching.match_result.recommended_action` CHECK 제약을 5단계 7.2절 어휘와
    `calculate_reciprocal_score`의 상담 어휘(REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION)의
