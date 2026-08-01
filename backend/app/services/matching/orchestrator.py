@@ -12,8 +12,15 @@ docs/11-13-scoring-implementation.md "다음 구현 순서". 이 모듈이 그 �
 - BUYER/EXHIBITOR 경로: 같은 파이프라인에 calculate_reciprocal_score(양면 적합도)를
   더해 구현했다. recommended_action 어휘 불일치가 있다 - 아래 "recommended_action
   어휘 불일치" 절 참고.
-- 14단계 상황 재정렬, 18단계 추천 이유 생성(지금은 reason_text를 템플릿 문자열로만
-  채운다)은 아직 연결하지 않았다.
+- 14단계 상황 재정렬(`context_reranker.py`)과 18단계 추천 이유 생성(`reason_generator.py`)을
+  GENERAL_VISITOR 경로에 연결했다. BUYER/EXHIBITOR 경로는 아직이다: 재정렬은 두 경로가
+  같은 context_snapshot을 쓰므로 확장이 쉽지만, 이유 생성은 `ReciprocalScoreResult`에
+  `contributions`가 없어(reason_generator.py 모듈 docstring 참고) 그대로 재사용할 수
+  없다 - 기존 `_template_reciprocal_reason_text`를 유지한다.
+- 상황 재정렬은 `context_resolver.py`가 실제로 제공하는 신호(remaining_minutes,
+  next_schedule_at)만 쓴다 - 05단계 5.9절이 언급하는 부스 대기시간·품절 임박·프로그램
+  시작시간은 혼잡도 스트림·재고 이벤트 파이프라인이 아직 없어 훅만 남겼다
+  (context_reranker.py의 `ContextSignals` 참고).
 - MatchResult.raw_score/normalized_score는 두 경로에서 의미가 다르다: GENERAL_VISITOR는
   DirectionalScoreResult.uncapped_score(0~1)/final_score(0~100), BUYER는
   ReciprocalScoreResult.uncapped_final_score/final_reciprocal_score(둘 다 0~100 스케일이라
@@ -75,7 +82,9 @@ from app.services.matching.candidate_generator import (
     structured_search_exhibitors,
     structured_search_products,
 )
-from app.services.matching.context_resolver import resolve_context
+from app.services.matching.context_reranker import ContextSignals
+from app.services.matching.context_reranker import rerank as rerank_by_context
+from app.services.matching.context_resolver import ContextResolution, resolve_context
 from app.services.matching.feature_builder import (
     BuyerCandidateFacts,
     BuyerProfileFacts,
@@ -97,6 +106,7 @@ from app.services.matching.hard_filter_engine import (
     to_filter_result_rows,
 )
 from app.services.matching.profile_resolver import resolve_profile
+from app.services.matching.reason_generator import generate_directional_reasons
 from app.services.matching.request_validator import validate_request
 
 #: 스코어링 코어가 "밀지 말라"고 판단한 후보는 값 자체는 저장 가능해도(모듈 docstring
@@ -192,7 +202,7 @@ async def generate_general_visitor_recommendations(
         ),
     )
 
-    scored: list[tuple[uuid.UUID, DirectionalScoreResult, EligibilityResult]] = []
+    scored: dict[uuid.UUID, tuple[DirectionalScoreResult, EligibilityResult]] = {}
     for recommendable_id, candidate_facts in facts_by_id.items():
         eligibility_result = eligible_by_id[recommendable_id]
         components = build_consumer_components(candidate_facts, profile_facts)
@@ -203,16 +213,27 @@ async def generate_general_visitor_recommendations(
                 passed=True, evaluation_id=eligibility_result.evaluation_id
             ),
         )
-        scored.append((recommendable_id, score_result, eligibility_result))
+        scored[recommendable_id] = (score_result, eligibility_result)
 
-    scored.sort(key=lambda item: item[1].final_score, reverse=True)
-    top = scored[: request.limit]
+    # 14단계 상황 재정렬: 기본 적합도(final_score)는 그대로 두고 상황 신호로 최종 순위만
+    # 다시 매긴다(context_reranker.py 모듈 docstring "기본 적합도와 분리해 저장한다").
+    context_signals = _context_signals(context)
+    reranked = rerank_by_context(
+        [
+            (recommendable_id, score_result.final_score)
+            for recommendable_id, (score_result, _eligibility) in scored.items()
+        ],
+        signals_of=lambda _recommendable_id: context_signals,
+    )
+    top = reranked[: request.limit]
 
-    for rank, (recommendable_id, score_result, _eligibility) in enumerate(top, start=1):
+    for rank, reranked_candidate in enumerate(top, start=1):
+        recommendable_id = reranked_candidate.recommendable_id
+        score_result, _eligibility = scored[recommendable_id]
         # goal_score/trust_score만 CONSUMER_SCORE_V1 구성요소와 이름이 정확히 대응한다.
-        # 나머지 match_result 점수 분해 컬럼(preference/trade/context/behavior_score)은
-        # scoring 코어의 구성요소 이름과 1:1로 맞지 않아 지금은 채우지 않는다 - 억지로
-        # category 등을 끼워 넣으면 나중에 진짜 preference_score를 정의할 때 혼동만 남는다.
+        # 나머지 match_result 점수 분해 컬럼(preference/trade/behavior_score)은 scoring
+        # 코어의 구성요소 이름과 1:1로 맞지 않아 지금은 채우지 않는다 - 억지로 category
+        # 등을 끼워 넣으면 나중에 진짜 preference_score를 정의할 때 혼동만 남는다.
         match_result = MatchResult(
             recommendation_session_id=recommendation_session.recommendation_session_id,
             recommendable_id=recommendable_id,
@@ -221,21 +242,23 @@ async def generate_general_visitor_recommendations(
             rank=rank,
             goal_score=components_score(score_result, "goal"),
             trust_score=components_score(score_result, "trust"),
+            context_score=reranked_candidate.context_score,
             recommended_action="VISIT_NOW",
         )
         session.add(match_result)
         await session.flush()
-        session.add(
-            MatchReason(
-                match_result_id=match_result.match_result_id,
-                reason_code="STRUCTURED_MATCH",
-                reason_text=_template_reason_text(score_result),
-                contribution_score=score_result.uncapped_score,
-                display_order=0,
-                generated_by="TEMPLATE",
-                validation_status="VALID",
+        for reason in generate_directional_reasons(score_result):
+            session.add(
+                MatchReason(
+                    match_result_id=match_result.match_result_id,
+                    reason_code=reason.reason_code,
+                    reason_text=reason.reason_text,
+                    contribution_score=reason.contribution_score,
+                    display_order=reason.display_order,
+                    generated_by="TEMPLATE",
+                    validation_status="VALID",
+                )
             )
-        )
 
     for row in to_filter_result_rows(
         eligibility_results,
@@ -255,16 +278,22 @@ def components_score(result: DirectionalScoreResult, component: str) -> float | 
     return float(value) if value is not None else None
 
 
-def _template_reason_text(result: DirectionalScoreResult) -> str:
-    """18단계(추천 이유 생성)가 아직 연결되지 않아 임시 템플릿만 채운다. contributions에서
-    가장 기여도가 큰 구성요소 이름을 그대로 노출한다 - 05단계 5.11절 "금지 근거"(내부 점수
-    노출 금지)를 지키려면 이 템플릿은 운영에 쓰기 전에 반드시 18단계 산출물로 교체해야
-    한다."""
+def _context_signals(context: ContextResolution) -> ContextSignals:
+    """context_resolver.py의 ContextResolution -> context_reranker.py의 ContextSignals.
 
-    if not result.contributions:
-        return "조건에 부합하는 후보입니다."
-    top_component = max(result.contributions.items(), key=lambda item: item[1])[0]
-    return f"'{top_component}' 조건이 높은 비중으로 일치합니다."
+    지금은 방문세션 전체에 공통인 신호(남은 체류시간, 다음 확정 일정)만 있고 후보(부스)별
+    신호가 없어, 모든 후보에 같은 ContextSignals를 재사용한다(orchestrator의
+    rerank_by_context 호출부 참고) - 부스별 혼잡도·대기시간이 연결되면 recommendable_id로
+    분기하는 signals_of로 바꿔야 한다.
+    """
+
+    if context.latest_context is None:
+        return ContextSignals()
+    return ContextSignals(
+        remaining_minutes=context.latest_context.remaining_minutes,
+        next_schedule_at=context.latest_context.next_schedule_at,
+        now=context.latest_context.captured_at,
+    )
 
 
 async def _load_consumer_candidate_facts(
@@ -564,8 +593,11 @@ async def generate_buyer_recommendations(
 
 
 def _template_reciprocal_reason_text(result: ReciprocalScoreResult) -> str:
-    """18단계가 아직 연결되지 않아 match_status를 그대로 노출하는 임시 템플릿이다.
-    _template_reason_text와 같은 이유로 운영 전 교체가 필요하다."""
+    """ReciprocalScoreResult에는 contributions가 없어(reason_generator.py 모듈 docstring
+    참고) generate_directional_reasons를 재사용할 수 없다. match_status(내부 점수가
+    아닌 카테고리 값)만 문구로 바꾸므로 05단계 5.11절 "금지 근거"는 위반하지 않지만,
+    구성요소별 다중 이유(최대 2~3개)는 아직 만들지 못한다 - GENERAL_VISITOR 경로와
+    달리 이 경로는 여전히 이유 1개짜리 임시 템플릿이다."""
 
     labels = {
         "MUTUAL_MATCH": "양측 모두 높은 적합도를 보입니다.",

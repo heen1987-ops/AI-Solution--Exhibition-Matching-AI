@@ -33,7 +33,12 @@ from app.models.exhibitor import (
     TradeConditionTerm,
 )
 from app.models.identity import GuestSession, UserAccount
-from app.models.matching import MatchPolicyVersion, MatchResult, Recommendable
+from app.models.matching import (
+    MatchPolicyVersion,
+    MatchReason,
+    MatchResult,
+    Recommendable,
+)
 from app.models.profile import BuyerNeed, ProfileAttribute, ProfileVersion, UserProfile
 from app.services.matching.orchestrator import (
     BuyerRecommendationRequest,
@@ -271,6 +276,50 @@ async def test_generate_general_visitor_recommendations_end_to_end(
     assert len(results) == 1
     assert results[0].recommended_action == "VISIT_NOW"
     assert float(results[0].normalized_score) == pytest.approx(100.0)
+    # 14단계 상황 재정렬이 연결되어 있으면 context_score가 채워진다(방문 세션이 없어도
+    # "정보 없음"은 만점으로 처리한다, context_reranker.compute_context_score 참고).
+    assert float(results[0].context_score) == pytest.approx(1.0)
+
+
+async def test_generate_general_visitor_recommendations_generates_reason_per_matched_component(
+    db_session: AsyncSession,
+) -> None:
+    """18단계 추천 이유 생성(reason_generator.generate_directional_reasons)이 기여도
+    상위 구성요소 각각에 대해 별도 MatchReason 행을 만드는지 검증한다."""
+
+    request = await _seed_general_visitor_scenario(
+        db_session, require_sensory=True, tag_product_sensory=True
+    )
+    recommendation_session = await generate_general_visitor_recommendations(
+        db_session, request
+    )
+    await db_session.commit()
+
+    match_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == recommendation_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    reasons = (
+        (
+            await db_session.execute(
+                select(MatchReason)
+                .where(MatchReason.match_result_id == match_result.match_result_id)
+                .order_by(MatchReason.display_order)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    reason_codes = [reason.reason_code for reason in reasons]
+    assert reason_codes == ["SENSORY_MATCH", "PRICE_MATCH"]
+    for reason in reasons:
+        assert "sensory" not in reason.reason_text
+        assert "price" not in reason.reason_text
 
 
 async def test_generate_general_visitor_recommendations_scores_lower_on_sensory_mismatch(

@@ -71,18 +71,22 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
 | `profile_resolver.py` | Profile Resolver | UserProfile + 최신 ProfileVersion + BuyerNeed + 활성 ProfileAttribute 조회. concept_type 해석은 feature_builder.py가 담당한다(이 모듈은 원본 행만 돌려준다) |
 | `context_resolver.py` | Context Resolver | VisitSession + 최신 ContextProfile 조회, recommendation_session.context_snapshot 스냅샷 생성 |
 | `request_validator.py` | Request Validator | 사용자 유형·추천 유형 정합성, limit 범위만 검증한다. 연령확인·개인화 동의 검증(profile.user_consent 조회)은 TODO로 남겨두었다 |
-| `orchestrator.py` | 파이프라인 오케스트레이션 | GENERAL_VISITOR/PRODUCT 경로(`generate_general_visitor_recommendations`)와 BUYER/EXHIBITOR 경로(`generate_buyer_recommendations`, `calculate_reciprocal_score` 연결 포함) 모두 구조화 검색부터 RecommendationSession/MatchResult/MatchReason/FilterResult 영속화까지 연결했다. 14단계 상황 재정렬, 18단계 추천 이유 생성(지금은 템플릿)은 다음 구현 순서로 남긴다 |
+| `orchestrator.py` | 파이프라인 오케스트레이션 | GENERAL_VISITOR/PRODUCT 경로(`generate_general_visitor_recommendations`)와 BUYER/EXHIBITOR 경로(`generate_buyer_recommendations`, `calculate_reciprocal_score` 연결 포함) 모두 구조화 검색부터 RecommendationSession/MatchResult/MatchReason/FilterResult 영속화까지 연결했다. GENERAL_VISITOR 경로에는 14단계 상황 재정렬(`context_reranker.py`)과 18단계 추천 이유 생성(`reason_generator.py`)도 연결했다. BUYER 경로는 이유 생성만 아직 템플릿이다(아래 "서비스 계층" 표의 reason_generator.py 행 참고) |
+| `context_reranker.py` | 14단계 상황 인지 재정렬 | 기본 적합도(normalized_score)는 그대로 두고 상황 신호로 최종 순위만 다시 매긴다(05단계 5.9절 "기본 적합도와 '지금 방문할 가치'는 분리해 저장한다"). `context_resolver.py`가 실제로 제공하는 신호(남은 체류시간, 다음 확정 일정)만 구현했다 - 부스 대기시간·품절 임박·프로그램 시작시간은 혼잡도 스트림·재고 이벤트가 아직 없어 `ContextSignals`에 훅만 남겼다. 재정렬은 배제가 아니므로 상황이 아무리 나빠도 기본점수의 최소 절반은 남는다(`_CONTEXT_FLOOR`) |
+| `reason_generator.py` | 18단계 추천 이유 생성 | `DirectionalScoreResult.contributions`(GENERAL_VISITOR 경로만) 기여도 상위 구성요소를, 내부 점수·구성요소 코드명을 노출하지 않는 정적 템플릿 문구로 바꿔 최대 3개까지 생성한다(05단계 5.11절 "금지 근거"). `ReciprocalScoreResult`(BUYER 경로)는 contributions 필드 자체가 없어 아직 연결하지 못했다 - orchestrator.py의 기존 match_status 기반 템플릿을 유지한다 |
 
 ## 검증
 
 - 단위 테스트(`backend/tests/test_candidate_generator.py`, `test_hard_filter_engine.py`,
-  `test_feature_builder.py`): RRF 병합의 다중채널 가점, 업체별 상한, 후보 풀 절단,
-  PRODUCTION 단락회로 vs EXPLAIN 전체평가, UNKNOWN 정책, 가격/카테고리/MOQ 구성요소
-  계산, "정보 없음은 None이지 0이 아니다", 생산·공급역량/유통채널/공급지역/OEM·PB·수출
-  가용상태 규칙의 PASS/FAIL/CONDITIONAL_PASS 분기, attribute_code 접두어 -> 구성요소
-  매핑(`component_of_attribute_code`/`group_concept_ids_by_component`)과 그 결과로
+  `test_feature_builder.py`, `test_context_reranker.py`, `test_reason_generator.py`):
+  RRF 병합의 다중채널 가점, 업체별 상한, 후보 풀 절단, PRODUCTION 단락회로 vs EXPLAIN
+  전체평가, UNKNOWN 정책, 가격/카테고리/MOQ 구성요소 계산, "정보 없음은 None이지 0이
+  아니다", 생산·공급역량/유통채널/공급지역/OEM·PB·수출 가용상태 규칙의 PASS/FAIL/
+  CONDITIONAL_PASS 분기, attribute_code 접두어 -> 구성요소 매핑과 그 결과로
   goal/sensory/alcohol/usage/business_goal/channel/region 구성요소가 실제로 교집합
-  매칭되는지를 모두 확인한다. DB 없이 실행 가능하다.
+  매칭되는지, 상황 재정렬이 기본점수 높은 후보를 상황이 나쁘면 밀어내면서도 절대
+  0점으로 만들지 않는지, 추천 이유가 기여도 순으로 생성되고 내부 구성요소 이름을
+  문장에 노출하지 않는지를 모두 확인한다. DB 없이 실행 가능하다.
 - DB 통합테스트(`backend/tests/conftest.py`, `test_orchestrator_integration.py`):
   이전에는 수동 스크립트로만 GENERAL_VISITOR/BUYER 경로를 검증했고 정식 pytest에는
   올리지 않았다 - 비동기 DB 통합테스트 conftest/fixture 관례가 이 저장소에 없었기
@@ -98,11 +102,13 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
     쓰고, 테스트가 UNIQUE 컬럼에 유니크 접미사를 붙여 충돌을 피하는 방식을 택했다
     (conftest.py/test_orchestrator_integration.py 모듈 docstring에 이유를 남겼다).
   - GENERAL_VISITOR 경로(RecommendationSession 1건, MatchResult 1건, `VISIT_NOW`,
-    100.00점), BUYER 경로(`REQUEST_MEETING`), 카테고리 일치 시나리오가 카테고리 불일치
-    시나리오보다 raw_score가 높다는 것(구조화 검색의 category_concept_ids 보정, 위
-    "제품 카테고리 연결" 참고), 그리고 sensory(TASTE.*)·channel(CHANNEL.*) concept 매칭
-    시나리오가 불일치 시나리오보다 raw_score가 높다는 것(feature_builder의 concept 기반
-    구성요소 연결, 아래 "다음 구현 순서" 3번 참고)까지 다섯 시나리오를 검증한다.
+    100.00점, context_score 채워짐), BUYER 경로(`REQUEST_MEETING`), 카테고리 일치
+    시나리오가 카테고리 불일치 시나리오보다 raw_score가 높다는 것(구조화 검색의
+    category_concept_ids 보정, 위 "제품 카테고리 연결" 참고), sensory(TASTE.*)·
+    channel(CHANNEL.*) concept 매칭 시나리오가 불일치 시나리오보다 raw_score가 높다는
+    것(feature_builder의 concept 기반 구성요소 연결), 그리고 기여 구성요소마다
+    MatchReason이 기여도 순으로 따로 생성되고 내부 이름을 노출하지 않는다는 것(18단계
+    reason_generator.py 연결)까지 여섯 시나리오를 검증한다.
 
 ## 발견된 별도 갭: interaction.meeting 도메인 (app/models/meeting.py)
 
@@ -173,7 +179,13 @@ FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundar
 5. ~~비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트들(일반
    관람객·바이어 양쪽)을 정식 테스트로 옮긴다.~~ 완료 (`backend/tests/conftest.py`,
    `test_orchestrator_integration.py`, 위 "검증" 절 참고).
-6. 14단계(상황 재정렬)와 18단계(추천 이유 생성)를 오케스트레이터의 해당 자리에 연결한다.
+6. ~~14단계(상황 재정렬)와 18단계(추천 이유 생성)를 오케스트레이터의 해당 자리에
+   연결한다.~~ 부분 완료: GENERAL_VISITOR 경로에 `context_reranker.py`(14단계)와
+   `reason_generator.py`(18단계)를 연결했다(위 "서비스 계층" 표 참고). 14단계는
+   05단계 5.9절이 언급하는 부스 대기시간·품절 임박·프로그램 시작시간 신호가 아직
+   context_resolver.py/스키마에 없어 남은 체류시간·다음 일정만 반영한다. 18단계는
+   BUYER 경로(`ReciprocalScoreResult`에 contributions가 없다)에는 아직 연결하지
+   못했다.
 7. ~~`matching.match_result.recommended_action` CHECK 제약을 5단계 7.2절 어휘와
    `calculate_reciprocal_score`의 상담 어휘(REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION)의
    합집합으로 넓히는 마이그레이션을 추가하고, `_RECIPROCAL_ACTION_MAP`의 손실 있는 매핑을
