@@ -9,8 +9,9 @@
 구현 범위와 남은 작업
 ----------------------
 현재 채워지는 구성요소:
-    - CONSUMER_SCORE_V1: category, price
-    - BUYER_SCORE_V1: product, price, moq
+    - CONSUMER_SCORE_V1: category, price, goal/sensory/alcohol/usage(온톨로지 concept
+      매칭, 아래 "concept 기반 구성요소" 참고)
+    - BUYER_SCORE_V1: product, price, moq, business_goal/channel/region(concept 매칭)
     - EXHIBITOR_SCORE_V1 (양면 적합도의 업체->바이어 방향): order_volume
 
 `component_confidence()`는 calculate_reciprocal_score가 요구하는 buyer_confidence/
@@ -18,20 +19,77 @@ exhibitor_confidence(선택값이 아니라 필수 Number)를 만들기 위한 �
 데이터 신뢰도 모델(08단계 16절)이 아직 연결되지 않아, 채워진 구성요소 비율로 대신한다.
 근거 데이터가 늘어나면 이 함수를 실제 신뢰도 계산으로 교체해야 한다.
 
-None으로 남기는 구성요소(goal/sensory/alcohol/service/usage/behavior/trust, business_goal/
-channel/capacity/region/cooperation/meeting)는 각각 프로파일 목적·관능 프로파일·행동
-이벤트 집계·거래조건 정규화·데이터 신뢰도 산정이 필요한데, 이 커밋 시점에는 그 데이터를
-읽어올 조회 계층이 아직 없다. meet_ai.scoring.calculate_directional_score는 None을
-"정보 없음"으로 처리해 가중치 분모에서 제외하므로(11~13단계 구현 기록 "구현 범위" 2번),
-이 모듈이 값을 지어내는 것보다 정직하게 None을 반환하는 편이 계산 계약에 맞다.
+concept 기반 구성요소 (profile_resolver 연결)
+------------------------------------------------
+docs/06-matching-ontology.md 5.1/8~14절은 attribute_code 접두어(GOAL.*, TASTE.*,
+AROMA.*, ALCOHOL_LEVEL.*, USE.*, BIZ_GOAL.*, CHANNEL.*, REGION.* 등)로 concept_type을
+구분한다. `_COMPONENT_BY_CODE_PREFIX`가 그 접두어를 meet_ai.scoring 구성요소 이름에
+매핑하고, `group_concept_ids_by_component()`가 (attribute_code, concept_id) 쌍들을
+구성요소별 집합으로 묶는다. profile.profile_attribute.attribute_code는 이미 비정규화된
+문자열이라 접두어를 바로 쓸 수 있지만(orchestrator._required_concept_ids_by_component),
+후보 쪽(exhibition.product_attribute)은 concept_id만 있고 attribute_code가 없어
+ontology.concept과 조인해 concept_code를 얻어야 한다(orchestrator._load_consumer_
+candidate_facts 참고) - 이 모듈 자체는 이미 묶인 dict만 받아 순수하게 교집합만 비교한다.
+
+여전히 None으로 남기는 구성요소와 이유:
+    - service(CONSUMER): concept 매칭이 아니라 exhibition.event_product의
+      tasting_status/purchase_status 상태값 비교가 필요하다(hard_filter_engine의
+      rule_required_service와 같은 데이터, 아직 이 함수에 연결하지 않았다).
+    - capacity(BUYER): SUPPLY_CAPACITY는 concept 교집합이 아니라 숫자 비교
+      (exhibition.supply_capability)가 필요하다.
+    - cooperation(BUYER): exhibition.trade_condition.oem_status/private_label_status/
+      export_status(YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN) 상태값 비교가 필요하다 -
+      concept 매칭 대상이 아니다.
+    - meeting(BUYER), behavior(CONSUMER), trust(둘 다): 상담 주제 프로파일, 행동 이벤트
+      집계, 데이터 신뢰도 모델이 각각 필요한데 이 커밋 시점에는 그 데이터를 읽어올 조회
+      계층이 아직 없다.
+meet_ai.scoring.calculate_directional_score는 None을 "정보 없음"으로 처리해 가중치
+분모에서 제외하므로(11~13단계 구현 기록 "구현 범위" 2번), 이 모듈이 값을 지어내는 것보다
+정직하게 None을 반환하는 편이 계산 계약에 맞다.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from decimal import Decimal
+
+#: attribute_code의 "." 이전 접두어 -> meet_ai.scoring 구성요소 이름. docs/06-matching-
+#: ontology.md 5.1/8~14절의 concept_type별 코드 접두어 규약을 그대로 따른다. sensory는
+#: TASTE·AROMA 두 접두어를 묶는다(05단계 5.6절 "맛(sensory)"이 미각+후각을 합친 개념이라).
+#: 매핑에 없는 접두어(예: PRICE_BAND, ACTION)는 이 모듈이 다루는 구성요소가 아니다.
+_COMPONENT_BY_CODE_PREFIX: Mapping[str, str] = {
+    "GOAL": "goal",
+    "BIZ_GOAL": "business_goal",
+    "TASTE": "sensory",
+    "AROMA": "sensory",
+    "ALCOHOL_LEVEL": "alcohol",
+    "USE": "usage",
+    "CHANNEL": "channel",
+    "REGION": "region",
+}
+
+
+def component_of_attribute_code(attribute_code: str) -> str | None:
+    """예: "TASTE.DRY" -> "sensory". 이 모듈이 다루지 않는 접두어는 None을 반환한다."""
+
+    prefix = attribute_code.split(".", 1)[0]
+    return _COMPONENT_BY_CODE_PREFIX.get(prefix)
+
+
+def group_concept_ids_by_component(
+    codes_and_concepts: Iterable[tuple[str, uuid.UUID]],
+) -> dict[str, frozenset[uuid.UUID]]:
+    """(attribute_code, concept_id) 쌍들을 구성요소별 concept_id 집합으로 묶는다."""
+
+    grouped: dict[str, set[uuid.UUID]] = {}
+    for attribute_code, concept_id in codes_and_concepts:
+        component = component_of_attribute_code(attribute_code)
+        if component is None:
+            continue
+        grouped.setdefault(component, set()).add(concept_id)
+    return {component: frozenset(ids) for component, ids in grouped.items()}
 
 
 @dataclass(frozen=True)
@@ -41,6 +99,12 @@ class ConsumerCandidateFacts:
     recommendable_id: uuid.UUID
     category_concept_ids: frozenset[uuid.UUID]
     event_price_amount: int | None
+    #: exhibition.product_attribute를 concept_type별로 묶은 결과(group_concept_ids_
+    #: by_component 출력). 데이터가 없으면 빈 dict - 모든 concept 기반 구성요소가 None이
+    #: 된다.
+    concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -50,6 +114,10 @@ class ConsumerProfileFacts:
     required_category_concept_ids: frozenset[uuid.UUID]
     price_min: int | None
     price_max: int | None
+    #: profile.profile_attribute(active)를 concept_type별로 묶은 결과.
+    required_concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -60,6 +128,12 @@ class BuyerCandidateFacts:
     category_concept_ids: frozenset[uuid.UUID]
     wholesale_price_amount: int | None
     min_order_quantity: int | None
+    #: exhibition.trade_condition_term(term_type='CHANNEL'/'REGION')을 구성요소별로
+    #: 묶은 결과 - term_type이 이미 소문자화하면 구성요소 이름과 같다("CHANNEL" ->
+    #: "channel").
+    concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -69,6 +143,9 @@ class BuyerProfileFacts:
     required_category_concept_ids: frozenset[uuid.UUID]
     target_price_max: int | None
     max_order_quantity: int | None
+    required_concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -118,24 +195,46 @@ def _category_match(
     return Decimal(1) if candidate_concepts & required_concepts else Decimal(0)
 
 
+def _component_match(
+    component: str,
+    candidate_concepts_by_component: Mapping[str, frozenset[uuid.UUID]],
+    required_concepts_by_component: Mapping[str, frozenset[uuid.UUID]],
+) -> Decimal | None:
+    """_category_match와 같은 교집합 규칙(요구 없음=None, 후보에 없음=0, 교집합
+    있음=1)을 구성요소별 concept_id 집합 dict에 재사용한다."""
+
+    required = required_concepts_by_component.get(component, frozenset())
+    if not required:
+        return None
+    candidate_concepts = candidate_concepts_by_component.get(component, frozenset())
+    return Decimal(1) if candidate_concepts & required else Decimal(0)
+
+
 def build_consumer_components(
     candidate: ConsumerCandidateFacts, profile: ConsumerProfileFacts
 ) -> Mapping[str, Decimal | None]:
     """CONSUMER_SCORE_V1 구성요소(goal/category/sensory/price/alcohol/service/usage/
     behavior/trust) 중 계산 가능한 것만 채운다."""
 
+    def component(name: str) -> Decimal | None:
+        return _component_match(
+            name,
+            candidate.concept_ids_by_component,
+            profile.required_concept_ids_by_component,
+        )
+
     return {
-        "goal": None,
+        "goal": component("goal"),
         "category": _category_match(
             candidate.category_concept_ids, profile.required_category_concept_ids
         ),
-        "sensory": None,
+        "sensory": component("sensory"),
         "price": _price_match(
             candidate.event_price_amount, profile.price_min, profile.price_max
         ),
-        "alcohol": None,
+        "alcohol": component("alcohol"),
         "service": None,
-        "usage": None,
+        "usage": component("usage"),
         "behavior": None,
         "trust": None,
     }
@@ -147,6 +246,13 @@ def build_buyer_components(
     """BUYER_SCORE_V1 구성요소(business_goal/product/channel/price/moq/capacity/region/
     cooperation/meeting/trust) 중 계산 가능한 것만 채운다."""
 
+    def component(name: str) -> Decimal | None:
+        return _component_match(
+            name,
+            candidate.concept_ids_by_component,
+            profile.required_concept_ids_by_component,
+        )
+
     moq_score: Decimal | None
     if candidate.min_order_quantity is None or profile.max_order_quantity is None:
         moq_score = None
@@ -156,17 +262,17 @@ def build_buyer_components(
         moq_score = Decimal(0)
 
     return {
-        "business_goal": None,
+        "business_goal": component("business_goal"),
         "product": _category_match(
             candidate.category_concept_ids, profile.required_category_concept_ids
         ),
-        "channel": None,
+        "channel": component("channel"),
         "price": _price_match(
             candidate.wholesale_price_amount, None, profile.target_price_max
         ),
         "moq": moq_score,
         "capacity": None,
-        "region": None,
+        "region": component("region"),
         "cooperation": None,
         "meeting": None,
         "trust": None,

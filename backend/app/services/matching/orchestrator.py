@@ -36,7 +36,7 @@ DO_NOT_PUSH는 "이 후보를 밀지 말라"는 스코어링 코어의 판단이
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -57,7 +57,9 @@ from app.models.exhibitor import (
     EventProduct,
     ExhibitorParticipation,
     Product,
+    ProductAttribute,
     TradeCondition,
+    TradeConditionTerm,
 )
 from app.models.matching import (
     FilterResult,
@@ -66,6 +68,7 @@ from app.models.matching import (
     Recommendable,
     RecommendationSession,
 )
+from app.models.ontology_refs import concept as ontology_concept
 from app.services.matching.candidate_generator import (
     build_candidate_pool,
     reciprocal_rank_fusion,
@@ -84,6 +87,7 @@ from app.services.matching.feature_builder import (
     build_consumer_components,
     build_exhibitor_components,
     component_confidence,
+    group_concept_ids_by_component,
 )
 from app.services.matching.hard_filter_engine import (
     EligibilityResult,
@@ -182,6 +186,10 @@ async def generate_general_visitor_recommendations(
         required_category_concept_ids=request.required_category_concept_ids,
         price_min=request.price_min,
         price_max=request.price_max,
+        required_concept_ids_by_component=group_concept_ids_by_component(
+            (attribute.attribute_code, attribute.concept_id)
+            for attribute in profile_resolution.active_attributes
+        ),
     )
 
     scored: list[tuple[uuid.UUID, DirectionalScoreResult, EligibilityResult]] = []
@@ -287,6 +295,10 @@ async def _load_consumer_candidate_facts(
     )
     rows = (await session.execute(stmt)).all()
 
+    attribute_components_by_id = await _consumer_concept_ids_by_component(
+        session, recommendable_ids
+    )
+
     facts: dict[uuid.UUID, ConsumerCandidateFacts] = {}
     for recommendable_id, event_price_amount, category_concept_id in rows:
         concept_ids = set(concept_ids_by_recommendable.get(recommendable_id, ()))
@@ -296,8 +308,59 @@ async def _load_consumer_candidate_facts(
             recommendable_id=recommendable_id,
             category_concept_ids=frozenset(concept_ids),
             event_price_amount=event_price_amount,
+            concept_ids_by_component=attribute_components_by_id.get(
+                recommendable_id, {}
+            ),
         )
     return facts
+
+
+async def _consumer_concept_ids_by_component(
+    session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, frozenset[uuid.UUID]]]:
+    """recommendable_id -> feature_builder 구성요소별 concept_id 집합.
+
+    exhibition.product_attribute는 concept_id만 갖고 attribute_code(비정규화 코드)가
+    없어(app/models/exhibitor.py ProductAttribute 참고) ontology.concept과 조인해
+    concept_code를 얻은 뒤 group_concept_ids_by_component로 묶는다. 검수를 통과한
+    (review_status='APPROVED') 속성만 쓴다 - 그 모델 docstring의 "AI 추출 금지·제한사항"
+    원칙에 따라 미검수 속성은 매칭 근거로 쓰지 않는다.
+    """
+
+    if not recommendable_ids:
+        return {}
+
+    stmt = (
+        select(
+            Recommendable.recommendable_id,
+            ontology_concept.c.concept_code,
+            ProductAttribute.concept_id,
+        )
+        .join(
+            EventProduct,
+            EventProduct.event_product_id == Recommendable.event_product_id,
+        )
+        .join(ProductAttribute, ProductAttribute.product_id == EventProduct.product_id)
+        .join(
+            ontology_concept,
+            ontology_concept.c.concept_id == ProductAttribute.concept_id,
+        )
+        .where(
+            Recommendable.recommendable_id.in_(recommendable_ids),
+            ProductAttribute.review_status == "APPROVED",
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+
+    codes_by_recommendable: dict[uuid.UUID, list[tuple[str, uuid.UUID]]] = {}
+    for recommendable_id, concept_code, concept_id in rows:
+        codes_by_recommendable.setdefault(recommendable_id, []).append(
+            (concept_code, concept_id)
+        )
+    return {
+        recommendable_id: group_concept_ids_by_component(codes)
+        for recommendable_id, codes in codes_by_recommendable.items()
+    }
 
 
 # ============================================================================
@@ -387,6 +450,10 @@ async def generate_buyer_recommendations(
         required_category_concept_ids=request.required_category_concept_ids,
         target_price_max=request.target_price_max,
         max_order_quantity=request.max_order_quantity,
+        required_concept_ids_by_component=group_concept_ids_by_component(
+            (attribute.attribute_code, attribute.concept_id)
+            for attribute in profile_resolution.active_attributes
+        ),
     )
     exhibitor_profile_facts = ExhibitorProfileFacts(
         requested_monthly_units=request.requested_monthly_units
@@ -552,6 +619,10 @@ async def _load_buyer_candidate_facts(
     )
     rows = (await session.execute(stmt)).all()
 
+    term_components_by_id = await _exhibitor_concept_ids_by_component(
+        session, recommendable_ids
+    )
+
     buyer_facts: dict[uuid.UUID, BuyerCandidateFacts] = {}
     exhibitor_facts: dict[uuid.UUID, ExhibitorCandidateFacts] = {}
     for (
@@ -567,8 +638,72 @@ async def _load_buyer_candidate_facts(
             ),
             wholesale_price_amount=wholesale_price_max_amount,
             min_order_quantity=min_order_quantity,
+            concept_ids_by_component=term_components_by_id.get(recommendable_id, {}),
         )
         exhibitor_facts[recommendable_id] = ExhibitorCandidateFacts(
             recommendable_id=recommendable_id, monthly_capacity=monthly_capacity
         )
     return buyer_facts, exhibitor_facts
+
+
+#: exhibition.trade_condition_term.term_type -> feature_builder 구성요소 이름. term_type
+#: 자체가 이미 concept_type이라(TRADE_CONDITION_TERM_TYPES = REGION/CHANNEL/COUNTRY)
+#: attribute_code 접두어 해석이 필요 없다 - 소문자로 바꾸면 바로 구성요소 이름과 같다.
+#: COUNTRY는 BUYER_SCORE_V1에 대응 구성요소가 없어 제외한다.
+_BUYER_TERM_TYPE_TO_COMPONENT: Mapping[str, str] = {
+    "REGION": "region",
+    "CHANNEL": "channel",
+}
+
+
+async def _exhibitor_concept_ids_by_component(
+    session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, frozenset[uuid.UUID]]]:
+    """recommendable_id -> feature_builder 구성요소별 concept_id 집합(channel/region).
+
+    업체 공통 거래조건(trade_condition, event_product_id IS NULL)에 걸린 term만 쓴다 -
+    _load_buyer_candidate_facts의 메인 쿼리와 같은 범위(제품별 조건은 제외)다.
+    """
+
+    if not recommendable_ids:
+        return {}
+
+    stmt = (
+        select(
+            Recommendable.recommendable_id,
+            TradeConditionTerm.term_type,
+            TradeConditionTerm.concept_id,
+        )
+        .join(
+            ExhibitorParticipation,
+            ExhibitorParticipation.participation_id == Recommendable.participation_id,
+        )
+        .join(
+            TradeCondition,
+            TradeCondition.participation_id == ExhibitorParticipation.participation_id,
+        )
+        .join(
+            TradeConditionTerm,
+            TradeConditionTerm.trade_condition_id == TradeCondition.trade_condition_id,
+        )
+        .where(
+            Recommendable.recommendable_id.in_(recommendable_ids),
+            TradeCondition.event_product_id.is_(None),
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+
+    grouped: dict[uuid.UUID, dict[str, set[uuid.UUID]]] = {}
+    for recommendable_id, term_type, concept_id in rows:
+        component = _BUYER_TERM_TYPE_TO_COMPONENT.get(term_type)
+        if component is None:
+            continue
+        grouped.setdefault(recommendable_id, {}).setdefault(component, set()).add(
+            concept_id
+        )
+    return {
+        recommendable_id: {
+            component: frozenset(ids) for component, ids in components.items()
+        }
+        for recommendable_id, components in grouped.items()
+    }

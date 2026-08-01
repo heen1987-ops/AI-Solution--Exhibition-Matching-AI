@@ -10,6 +10,8 @@ from app.services.matching.feature_builder import (
     ConsumerProfileFacts,
     build_buyer_components,
     build_consumer_components,
+    component_of_attribute_code,
+    group_concept_ids_by_component,
 )
 
 
@@ -98,6 +100,10 @@ def test_consumer_category_mismatch_scores_zero_not_none() -> None:
 
 
 def test_unimplemented_consumer_components_are_none_not_fabricated() -> None:
+    """service/behavior/trust는 concept 교집합이 아니라 각각 다른 데이터(EventProduct
+    상태값, 행동 이벤트 집계, 데이터 신뢰도 모델)가 필요해 아직 미구현이다(모듈
+    docstring 참고) - 후보 사실관계에 아무것도 없어도 항상 None이어야 한다."""
+
     candidate = ConsumerCandidateFacts(
         recommendable_id=uuid.uuid4(),
         category_concept_ids=frozenset(),
@@ -109,16 +115,112 @@ def test_unimplemented_consumer_components_are_none_not_fabricated() -> None:
 
     components = build_consumer_components(candidate, profile)
 
-    for component in (
-        "goal",
-        "sensory",
-        "alcohol",
-        "service",
-        "usage",
-        "behavior",
-        "trust",
-    ):
+    for component in ("service", "behavior", "trust"):
         assert components[component] is None
+
+
+def test_component_of_attribute_code_maps_known_prefixes() -> None:
+    assert component_of_attribute_code("TASTE.DRY") == "sensory"
+    assert component_of_attribute_code("AROMA.FRUIT") == "sensory"
+    assert component_of_attribute_code("ALCOHOL_LEVEL.HIGH") == "alcohol"
+    assert component_of_attribute_code("USE.GIFT") == "usage"
+    assert component_of_attribute_code("GOAL.TASTING") == "goal"
+    assert component_of_attribute_code("BIZ_GOAL.EXPORT") == "business_goal"
+    assert component_of_attribute_code("CHANNEL.HORECA") == "channel"
+    assert component_of_attribute_code("REGION.KR.SEOUL") == "region"
+
+
+def test_component_of_attribute_code_returns_none_for_unmapped_prefix() -> None:
+    assert component_of_attribute_code("PRICE_BAND.K20_TO_K50") is None
+
+
+def test_group_concept_ids_by_component_buckets_and_drops_unmapped() -> None:
+    dry, fruit, gift, unmapped = (
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+    )
+
+    grouped = group_concept_ids_by_component(
+        [
+            ("TASTE.DRY", dry),
+            ("AROMA.FRUIT", fruit),
+            ("USE.GIFT", gift),
+            ("PRICE_BAND.K20_TO_K50", unmapped),
+        ]
+    )
+
+    assert grouped["sensory"] == frozenset({dry, fruit})
+    assert grouped["usage"] == frozenset({gift})
+    assert "price_band" not in grouped
+
+
+def test_consumer_sensory_component_matches_via_concept_overlap() -> None:
+    dry = uuid.uuid4()
+    candidate = ConsumerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        event_price_amount=None,
+        concept_ids_by_component={"sensory": frozenset({dry})},
+    )
+    profile = ConsumerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        price_min=None,
+        price_max=None,
+        required_concept_ids_by_component={"sensory": frozenset({dry})},
+    )
+
+    components = build_consumer_components(candidate, profile)
+
+    assert components["sensory"] == Decimal(1)
+
+
+def test_consumer_sensory_component_scores_zero_on_mismatch() -> None:
+    candidate = ConsumerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        event_price_amount=None,
+        concept_ids_by_component={"sensory": frozenset({uuid.uuid4()})},
+    )
+    profile = ConsumerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        price_min=None,
+        price_max=None,
+        required_concept_ids_by_component={"sensory": frozenset({uuid.uuid4()})},
+    )
+
+    components = build_consumer_components(candidate, profile)
+
+    assert components["sensory"] == Decimal(0)
+
+
+def test_buyer_channel_and_region_components_match_via_concept_overlap() -> None:
+    horeca, seoul = uuid.uuid4(), uuid.uuid4()
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        concept_ids_by_component={
+            "channel": frozenset({horeca}),
+            "region": frozenset({seoul}),
+        },
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+        required_concept_ids_by_component={
+            "channel": frozenset({horeca}),
+            "region": frozenset({seoul}),
+        },
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["channel"] == Decimal(1)
+    assert components["region"] == Decimal(1)
 
 
 def test_buyer_moq_within_capacity_passes() -> None:

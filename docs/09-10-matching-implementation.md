@@ -67,8 +67,8 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
 |---|---|---|
 | `candidate_generator.py` | 9단계 후보검색 | 순위 기반 정규화·가중 RRF 병합·업체별 상한·후보 풀 크기 제어는 순수 함수로 완전히 구현. 구조화 검색(SQL) 채널 하나만 실제로 동작한다. 키워드·벡터·행동·인기·신규 채널은 미구현(각 모듈 docstring 참고 - 벡터 인덱스·행동 이벤트 파이프라인이 아직 없다) |
 | `hard_filter_engine.py` | 10단계 Hard Filter | 평가 엔진(실행순서, PRODUCTION 단락회로/EXPLAIN 전체평가, UNKNOWN 정책, filter_result 행 변환)은 완전히 구현. 규칙은 가격 상한·필수 서비스 가능여부·MOQ 상한에 더해 생산·공급역량(15절)·유통채널(16절)·공급지역(17절)·OEM/PB/수출 가용상태(18~19절, `rule_availability_status` 하나로 세 규칙을 만든다)까지 9종을 제공한다. 상담 가능성(20절)·일정충돌(21절)·위치·거리(22절)는 프로파일·일정 데이터가 아직 없어 남겨뒀다 |
-| `feature_builder.py` | Feature Builder | `CONSUMER_SCORE_V1`/`BUYER_SCORE_V1` 구성요소 중 계산 가능한 것(category, price, moq)만 채우고 나머지는 `None`을 반환한다. `meet_ai.scoring.calculate_directional_score`는 `None`을 "정보 없음"으로 처리해 가중치 분모에서 제외하므로, 데이터가 없는 구성요소를 지어내지 않는 것이 계산 계약에 맞다 |
-| `profile_resolver.py` | Profile Resolver | UserProfile + 최신 ProfileVersion + BuyerNeed + 활성 ProfileAttribute 조회. 어떤 속성이 "제품군 요구조건"인지 같은 의미 해석(concept_type 조회)은 온톨로지 조회 계층과 함께 다음 커밋에서 연결한다 |
+| `feature_builder.py` | Feature Builder | `CONSUMER_SCORE_V1`(category/price/goal/sensory/alcohol/usage)·`BUYER_SCORE_V1`(product/price/moq/business_goal/channel/region) 구성요소를 채운다. goal/sensory/alcohol/usage/business_goal/channel/region은 `profile_attribute.attribute_code` 접두어(GOAL/TASTE·AROMA/ALCOHOL_LEVEL/USE/BIZ_GOAL/CHANNEL/REGION, docs/06-matching-ontology.md 5.1/8~14절)를 `_COMPONENT_BY_CODE_PREFIX`로 해석해 후보 쪽 concept_id 집합(product_attribute, trade_condition_term)과 교집합 비교한다. service/capacity/cooperation/meeting/behavior/trust는 concept 교집합이 아니라 각각 다른 데이터(상태값 비교, 숫자 비교, 행동 이벤트, 신뢰도 모델)가 필요해 여전히 `None`이다(모듈 docstring 참고) |
+| `profile_resolver.py` | Profile Resolver | UserProfile + 최신 ProfileVersion + BuyerNeed + 활성 ProfileAttribute 조회. concept_type 해석은 feature_builder.py가 담당한다(이 모듈은 원본 행만 돌려준다) |
 | `context_resolver.py` | Context Resolver | VisitSession + 최신 ContextProfile 조회, recommendation_session.context_snapshot 스냅샷 생성 |
 | `request_validator.py` | Request Validator | 사용자 유형·추천 유형 정합성, limit 범위만 검증한다. 연령확인·개인화 동의 검증(profile.user_consent 조회)은 TODO로 남겨두었다 |
 | `orchestrator.py` | 파이프라인 오케스트레이션 | GENERAL_VISITOR/PRODUCT 경로(`generate_general_visitor_recommendations`)와 BUYER/EXHIBITOR 경로(`generate_buyer_recommendations`, `calculate_reciprocal_score` 연결 포함) 모두 구조화 검색부터 RecommendationSession/MatchResult/MatchReason/FilterResult 영속화까지 연결했다. 14단계 상황 재정렬, 18단계 추천 이유 생성(지금은 템플릿)은 다음 구현 순서로 남긴다 |
@@ -79,7 +79,10 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
   `test_feature_builder.py`): RRF 병합의 다중채널 가점, 업체별 상한, 후보 풀 절단,
   PRODUCTION 단락회로 vs EXPLAIN 전체평가, UNKNOWN 정책, 가격/카테고리/MOQ 구성요소
   계산, "정보 없음은 None이지 0이 아니다", 생산·공급역량/유통채널/공급지역/OEM·PB·수출
-  가용상태 규칙의 PASS/FAIL/CONDITIONAL_PASS 분기를 모두 확인한다. DB 없이 실행 가능하다.
+  가용상태 규칙의 PASS/FAIL/CONDITIONAL_PASS 분기, attribute_code 접두어 -> 구성요소
+  매핑(`component_of_attribute_code`/`group_concept_ids_by_component`)과 그 결과로
+  goal/sensory/alcohol/usage/business_goal/channel/region 구성요소가 실제로 교집합
+  매칭되는지를 모두 확인한다. DB 없이 실행 가능하다.
 - DB 통합테스트(`backend/tests/conftest.py`, `test_orchestrator_integration.py`):
   이전에는 수동 스크립트로만 GENERAL_VISITOR/BUYER 경로를 검증했고 정식 pytest에는
   올리지 않았다 - 비동기 DB 통합테스트 conftest/fixture 관례가 이 저장소에 없었기
@@ -95,9 +98,11 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
     쓰고, 테스트가 UNIQUE 컬럼에 유니크 접미사를 붙여 충돌을 피하는 방식을 택했다
     (conftest.py/test_orchestrator_integration.py 모듈 docstring에 이유를 남겼다).
   - GENERAL_VISITOR 경로(RecommendationSession 1건, MatchResult 1건, `VISIT_NOW`,
-    100.00점), BUYER 경로(`REQUEST_MEETING`), 그리고 카테고리 일치 시나리오가 카테고리
-    불일치 시나리오보다 raw_score가 높다는 것(구조화 검색의 category_concept_ids
-    보정, 위 "제품 카테고리 연결" 참고)까지 세 시나리오를 검증한다.
+    100.00점), BUYER 경로(`REQUEST_MEETING`), 카테고리 일치 시나리오가 카테고리 불일치
+    시나리오보다 raw_score가 높다는 것(구조화 검색의 category_concept_ids 보정, 위
+    "제품 카테고리 연결" 참고), 그리고 sensory(TASTE.*)·channel(CHANNEL.*) concept 매칭
+    시나리오가 불일치 시나리오보다 raw_score가 높다는 것(feature_builder의 concept 기반
+    구성요소 연결, 아래 "다음 구현 순서" 3번 참고)까지 다섯 시나리오를 검증한다.
 
 ## 발견된 별도 갭: interaction.meeting 도메인 (app/models/meeting.py)
 
@@ -156,9 +161,13 @@ FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundar
    있는 생산·공급역량(15절)·유통채널(16절)·공급지역(17절, 지역계층 조회는 온톨로지
    카탈로그 선행 필요)·OEM/PB/수출 가용상태(18~19절)를 추가했다. 상담 가능성(20절)·
    일정충돌(21절)·위치·거리(22절)는 프로파일·일정 데이터 조회 계층이 아직 없어 남아있다.
-3. `profile_resolver`가 돌려주는 ProfileAttribute를 온톨로지 concept_type과 함께 해석해
+3. ~~`profile_resolver`가 돌려주는 ProfileAttribute를 온톨로지 concept_type과 함께 해석해
    `feature_builder`의 나머지 구성요소(goal/sensory/alcohol/service/usage/behavior/trust,
-   business_goal/channel/capacity/region/cooperation/meeting)를 채운다.
+   business_goal/channel/capacity/region/cooperation/meeting)를 채운다.~~ 부분 완료:
+   attribute_code 접두어 해석으로 goal/sensory/alcohol/usage(CONSUMER)와 business_goal/
+   channel/region(BUYER)을 연결했다(위 "서비스 계층" 표 feature_builder.py 행 참고).
+   service/capacity/cooperation/meeting/behavior/trust는 concept 교집합이 아닌 다른
+   데이터(상태값·숫자 비교, 행동 이벤트, 신뢰도 모델)가 필요해 여전히 미구현이다.
 4. ~~BUYER/EXHIBITOR 경로와 `calculate_reciprocal_score`(양면 적합도)를 오케스트레이터에
    연결한다.~~ 완료 (위 "BUYER/EXHIBITOR 경로 구현 메모" 참고).
 5. ~~비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트들(일반
