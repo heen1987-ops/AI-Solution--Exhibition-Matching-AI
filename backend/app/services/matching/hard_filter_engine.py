@@ -12,12 +12,13 @@
 - 평가 엔진 자체(실행순서, 단락회로, UNKNOWN 정책, 평가모드 3종, 결과 저장 행 변환)는
   완전히 구현했다.
 - 구체 규칙(rule_code별 evaluate 함수)은 가격 상한·필수 서비스 가능 여부·MOQ 상한에 더해
-  생산·공급역량(15절)·유통채널(16절)·공급지역(17절)·OEM/PB/수출 가용상태(18~19절)까지
-  추가했다 - exhibition.trade_condition이 이미 oem_status/private_label_status/
-  export_status를 YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN 5단계로 저장하므로(같은 값
-  체계라 rule_availability_status 하나로 셋 다 만든다), 실제 컬럼이 있는 규칙부터
-  구현했다. 여전히 남은 것: 상담 가능성(20절)·일정충돌(21절)·위치·거리(22절) 등 프로파일·
-  일정 데이터가 아직 이 서비스 계층에 없는 규칙, 그리고 지역 계층 조회(서울↔수도권 같은
+  생산·공급역량(15절)·유통채널(16절)·공급지역(17절)·OEM/PB/수출 가용상태(18~19절)·부스
+  운영상태(rule_booth_open, exhibition.booth.operating_status)까지 추가했다 -
+  exhibition.trade_condition이 이미 oem_status/private_label_status/export_status를
+  YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN 5단계로 저장하므로(같은 값 체계라
+  rule_availability_status 하나로 셋 다 만든다), 실제 컬럼이 있는 규칙부터 구현했다.
+  여전히 남은 것: 상담 가능성(20절)·일정충돌(21절)·위치·거리(22절) 등 프로파일·일정
+  데이터가 아직 이 서비스 계층에 없는 규칙, 그리고 지역 계층 조회(서울↔수도권 같은
   상위 권역 판정)처럼 온톨로지 카탈로그가 선행되어야 하는 부분(rule_region_supported의
   match_type_of 콜백 docstring 참고).
 """
@@ -43,8 +44,12 @@ FilterResultType = Literal[
 ]
 
 #: 결과 우선순위 - 어느 결과가 "후보 제거"로 이어지는지. 10단계 2.1/28절.
+#: TEMPORARY_BLOCK도 포함한다 - "일시적으로 막혔다"도 지금 이 순간에는 FAIL/POLICY_BLOCK/
+#: USER_EXCLUDED와 같은 결과(이 실행에서는 후보에서 빠진다)이기 때문이다. rule_booth_open
+#: (부스 운영상태 OPEN이 아니면 TEMPORARY_BLOCK)을 추가하면서 이 목록에 없으면 그 결과가
+#: 아무것도 배제하지 못하는 무동작 버그가 된다는 걸 발견해 여기서 바로잡았다.
 _EXCLUDING_RESULTS: frozenset[str] = frozenset(
-    {"FAIL", "POLICY_BLOCK", "USER_EXCLUDED"}
+    {"FAIL", "POLICY_BLOCK", "USER_EXCLUDED", "TEMPORARY_BLOCK"}
 )
 
 
@@ -624,4 +629,47 @@ def rule_export_required(
         rule_code="EXPORT_NOT_AVAILABLE",
         not_available_reason_code="EXPORT_NOT_AVAILABLE",
         status_of=status_of,
+    )
+
+
+def rule_booth_open(
+    *, rule_order: int, status_of: Callable[[uuid.UUID], str | None]
+) -> HardFilterRule:
+    """08단계 12.3절/db-erd 13.1절: exhibition.booth.operating_status(OPEN/PAUSED/CLOSED)
+    가 OPEN이 아니면 "지금 방문" 추천에서 제외한다.
+
+    PAUSED/CLOSED는 영구 배제가 아니라 일시적 운영 상태라 result을 FAIL이 아니라
+    TEMPORARY_BLOCK으로 남긴다(10단계 4절 필터 결과 유형 8종 중 이 상황에 맞는 값 -
+    운영 상태가 다시 바뀌면 같은 후보가 통과할 수 있다는 뜻을 결과 자체에 담는다).
+    unknown_policy는 TREAT_AS_PASS다 - 부스가 아직 연결되지 않은 후보(예: 부스 없이
+    참가하는 업체)까지 이 규칙만으로 배제하지 않는다(10단계 2.3절 "정보 없음과 조건
+    불충족 분리").
+    """
+
+    def evaluate(
+        recommendable_id: uuid.UUID, context: FilterContext
+    ) -> FilterOutcome | None:
+        status = status_of(recommendable_id)
+        if status is None:
+            return FilterOutcome(
+                rule_code="BOOTH_NOT_OPEN", rule_type="HARD", result="UNKNOWN"
+            )
+        if status != "OPEN":
+            return FilterOutcome(
+                rule_code="BOOTH_NOT_OPEN",
+                rule_type="HARD",
+                result="TEMPORARY_BLOCK",
+                candidate_value={"operating_status": status},
+                reason_code="BOOTH_NOT_OPEN",
+            )
+        return FilterOutcome(
+            rule_code="BOOTH_NOT_OPEN", rule_type="HARD", result="PASS"
+        )
+
+    return HardFilterRule(
+        rule_code="BOOTH_NOT_OPEN",
+        rule_type="HARD",
+        rule_order=rule_order,
+        evaluate=evaluate,
+        unknown_policy="TREAT_AS_PASS",
     )

@@ -7,6 +7,7 @@ from app.services.matching.hard_filter_engine import (
     FilterOutcome,
     HardFilterRule,
     evaluate_candidate,
+    rule_booth_open,
     rule_capacity_min,
     rule_channel_supported,
     rule_export_required,
@@ -278,6 +279,44 @@ def test_availability_status_rules_share_no_conditional_yes_semantics() -> None:
         )
         assert pass_result.passed is True
         assert pass_result.outcomes[0].result == "PASS"
+
+
+def test_booth_open_rule_passes_when_open() -> None:
+    recommendable_id = uuid.uuid4()
+    rule = rule_booth_open(rule_order=1, status_of=lambda _rid: "OPEN")
+
+    result = evaluate_candidate(
+        recommendable_id, rules=[rule], context=_context(), evaluation_id="eval-15"
+    )
+
+    assert result.passed is True
+
+
+def test_booth_open_rule_temporary_blocks_when_closed_and_excludes_candidate() -> None:
+    """TEMPORARY_BLOCK도 _EXCLUDING_RESULTS에 있어야 이 규칙이 실제로 후보를 제외한다 -
+    포함되지 않으면 결과가 아무것도 배제하지 못하는 무동작 버그가 된다."""
+
+    recommendable_id = uuid.uuid4()
+    rule = rule_booth_open(rule_order=1, status_of=lambda _rid: "CLOSED")
+
+    result = evaluate_candidate(
+        recommendable_id, rules=[rule], context=_context(), evaluation_id="eval-16"
+    )
+
+    assert result.passed is False
+    assert result.outcomes[0].result == "TEMPORARY_BLOCK"
+    assert result.reason_codes == ("BOOTH_NOT_OPEN",)
+
+
+def test_booth_open_rule_treats_unknown_as_pass() -> None:
+    recommendable_id = uuid.uuid4()
+    rule = rule_booth_open(rule_order=1, status_of=lambda _rid: None)
+
+    result = evaluate_candidate(
+        recommendable_id, rules=[rule], context=_context(), evaluation_id="eval-17"
+    )
+
+    assert result.passed is True
 
 
 def test_to_filter_result_rows_only_includes_excluding_outcomes() -> None:

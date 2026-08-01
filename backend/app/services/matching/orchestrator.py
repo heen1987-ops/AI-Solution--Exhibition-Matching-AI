@@ -61,6 +61,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.exhibitor import (
+    Booth,
     EventProduct,
     ExhibitorParticipation,
     Product,
@@ -217,13 +218,31 @@ async def generate_general_visitor_recommendations(
 
     # 14단계 상황 재정렬: 기본 적합도(final_score)는 그대로 두고 상황 신호로 최종 순위만
     # 다시 매긴다(context_reranker.py 모듈 docstring "기본 적합도와 분리해 저장한다").
-    context_signals = _context_signals(context)
+    # 세션 공통 신호(남은 체류시간, 다음 일정)에 후보별 부스 대기시간을 더한다 -
+    # exhibition.booth.estimated_wait_minutes가 실제로 있는 신호라 더 이상 훅으로만
+    # 남겨두지 않는다(context_reranker.py의 ContextSignals.expected_wait_minutes 참고).
+    shared_context_signals = _context_signals(context)
+    wait_minutes_by_id = await _booth_wait_minutes_by_recommendable(
+        session, list(facts_by_id)
+    )
+
+    def signals_of(recommendable_id: uuid.UUID) -> ContextSignals:
+        wait_minutes = wait_minutes_by_id.get(recommendable_id)
+        if wait_minutes is None:
+            return shared_context_signals
+        return ContextSignals(
+            remaining_minutes=shared_context_signals.remaining_minutes,
+            next_schedule_at=shared_context_signals.next_schedule_at,
+            now=shared_context_signals.now,
+            expected_wait_minutes=wait_minutes,
+        )
+
     reranked = rerank_by_context(
         [
             (recommendable_id, score_result.final_score)
             for recommendable_id, (score_result, _eligibility) in scored.items()
         ],
-        signals_of=lambda _recommendable_id: context_signals,
+        signals_of=signals_of,
     )
     top = reranked[: request.limit]
 
@@ -390,6 +409,37 @@ async def _consumer_concept_ids_by_component(
         recommendable_id: group_concept_ids_by_component(codes)
         for recommendable_id, codes in codes_by_recommendable.items()
     }
+
+
+async def _booth_wait_minutes_by_recommendable(
+    session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """recommendable_id -> exhibition.booth.estimated_wait_minutes.
+
+    Recommendable(EVENT_PRODUCT) -> EventProduct.participation_id -> Booth.
+    participation_id로 잇는다(둘 다 exhibition.exhibitor_participation을 가리킨다) - 08단계
+    12.3절 실시간 운영상태 중 대기시간만 14단계 재정렬(context_reranker.py)에 넘긴다.
+    부스가 없거나 대기시간이 기록되지 않은 후보는 dict에 아예 없다 - context_reranker의
+    "신호 없음 = 페널티 없음" 계약과 맞춘다.
+    """
+
+    if not recommendable_ids:
+        return {}
+
+    stmt = (
+        select(Recommendable.recommendable_id, Booth.estimated_wait_minutes)
+        .join(
+            EventProduct,
+            EventProduct.event_product_id == Recommendable.event_product_id,
+        )
+        .join(Booth, Booth.participation_id == EventProduct.participation_id)
+        .where(
+            Recommendable.recommendable_id.in_(recommendable_ids),
+            Booth.estimated_wait_minutes.is_not(None),
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+    return dict(rows)
 
 
 # ============================================================================

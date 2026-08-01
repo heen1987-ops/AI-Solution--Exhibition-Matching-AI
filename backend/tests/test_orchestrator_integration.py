@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.core import Event, Tenant
 from app.models.exhibitor import (
+    Booth,
     EventProduct,
     Exhibitor,
     ExhibitorParticipation,
@@ -39,7 +40,14 @@ from app.models.matching import (
     MatchResult,
     Recommendable,
 )
-from app.models.profile import BuyerNeed, ProfileAttribute, ProfileVersion, UserProfile
+from app.models.profile import (
+    BuyerNeed,
+    ContextProfile,
+    ProfileAttribute,
+    ProfileVersion,
+    UserProfile,
+    VisitSession,
+)
 from app.services.matching.orchestrator import (
     BuyerRecommendationRequest,
     GeneralVisitorRecommendationRequest,
@@ -364,6 +372,183 @@ async def test_generate_general_visitor_recommendations_scores_lower_on_sensory_
     ).scalar_one()
 
     assert float(matching_result.raw_score) > float(mismatched_result.raw_score)
+
+
+async def test_generate_general_visitor_recommendations_reranks_by_booth_wait_time(
+    db_session: AsyncSession,
+) -> None:
+    """14단계 상황 재정렬(orchestrator._booth_wait_minutes_by_recommendable ->
+    context_reranker.rerank)을 검증한다: 기본 적합도(raw_score)는 같은 두 후보 중,
+    부스 대기시간이 남은 체류시간보다 긴 후보가 순위에서 밀려야 한다."""
+
+    suffix = _unique_suffix()
+    tenant = Tenant(tenant_code=f"it-booth-wait-{suffix}", tenant_name="IT Booth Wait")
+    db_session.add(tenant)
+    await db_session.flush()
+
+    event = Event(
+        tenant_id=tenant.tenant_id,
+        event_code=f"it-event-booth-wait-{suffix}",
+        event_name="IT Booth Wait Event",
+        start_date=date(2026, 10, 9),
+        end_date=date(2026, 10, 11),
+    )
+    db_session.add(event)
+    await db_session.flush()
+
+    recommendable_ids: dict[str, uuid.UUID] = {}
+    for label, wait_minutes in (("fast", 5), ("slow", 60)):
+        exhibitor = Exhibitor(
+            tenant_id=tenant.tenant_id,
+            company_name=f"IT Brewery {label}",
+            master_approval_status="APPROVED",
+        )
+        db_session.add(exhibitor)
+        await db_session.flush()
+
+        product = Product(
+            exhibitor_id=exhibitor.exhibitor_id,
+            product_name=f"IT Soju {label}",
+            master_approval_status="APPROVED",
+        )
+        db_session.add(product)
+        await db_session.flush()
+
+        participation = ExhibitorParticipation(
+            tenant_id=tenant.tenant_id,
+            event_id=event.event_id,
+            exhibitor_id=exhibitor.exhibitor_id,
+            participation_status="APPROVED",
+        )
+        db_session.add(participation)
+        await db_session.flush()
+
+        event_product = EventProduct(
+            tenant_id=tenant.tenant_id,
+            event_id=event.event_id,
+            participation_id=participation.participation_id,
+            product_id=product.product_id,
+            event_price_amount=20_000,
+            approval_status="APPROVED",
+        )
+        db_session.add(event_product)
+        await db_session.flush()
+
+        db_session.add(
+            Booth(
+                tenant_id=tenant.tenant_id,
+                event_id=event.event_id,
+                participation_id=participation.participation_id,
+                booth_number=f"{label}-{suffix}",
+                operating_status="OPEN",
+                estimated_wait_minutes=wait_minutes,
+            )
+        )
+
+        recommendable = Recommendable(
+            tenant_id=tenant.tenant_id,
+            event_id=event.event_id,
+            object_type="EVENT_PRODUCT",
+            event_product_id=event_product.event_product_id,
+        )
+        db_session.add(recommendable)
+        await db_session.flush()
+        recommendable_ids[label] = recommendable.recommendable_id
+
+    policy = MatchPolicyVersion(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_type="GENERAL_VISITOR",
+        version="v1",
+        status="ACTIVE",
+    )
+    db_session.add(policy)
+
+    guest_session = GuestSession(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        session_token_hmac=uuid.uuid4().bytes,
+        entry_channel="WEB",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    db_session.add(guest_session)
+    await db_session.flush()
+
+    profile = UserProfile(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_id=None,
+        guest_session_id=guest_session.guest_session_id,
+        user_type="GENERAL_VISITOR",
+    )
+    db_session.add(profile)
+    await db_session.flush()
+
+    db_session.add(
+        ProfileVersion(
+            profile_id=profile.profile_id,
+            version_number=1,
+            snapshot_json={},
+            change_reason="USER_UPDATE",
+        )
+    )
+
+    visit_session = VisitSession(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        guest_session_id=guest_session.guest_session_id,
+        profile_id=profile.profile_id,
+        visit_date=date(2026, 10, 9),
+    )
+    db_session.add(visit_session)
+    await db_session.flush()
+
+    # 남은 시간(20분)은 fast 부스(대기 5분)에는 충분하지만 slow 부스(대기 60분)에는
+    # 부족하다 - context_reranker.compute_context_score의 핵심 분기.
+    db_session.add(
+        ContextProfile(
+            visit_session_id=visit_session.visit_session_id, remaining_minutes=20
+        )
+    )
+    await db_session.commit()
+
+    request = GeneralVisitorRecommendationRequest(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        profile_id=profile.profile_id,
+        visit_session_id=visit_session.visit_session_id,
+        policy_version_id=policy.policy_version_id,
+        required_category_concept_ids=frozenset(),
+        price_min=None,
+        price_max=50_000,
+        limit=10,
+    )
+    recommendation_session = await generate_general_visitor_recommendations(
+        db_session, request
+    )
+    await db_session.commit()
+
+    assert recommendation_session.result_count == 2
+
+    results = (
+        (
+            await db_session.execute(
+                select(MatchResult)
+                .where(
+                    MatchResult.recommendation_session_id
+                    == recommendation_session.recommendation_session_id
+                )
+                .order_by(MatchResult.rank)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert results[0].recommendable_id == recommendable_ids["fast"]
+    assert results[1].recommendable_id == recommendable_ids["slow"]
+    assert float(results[0].raw_score) == pytest.approx(float(results[1].raw_score))
+    assert float(results[0].context_score) > float(results[1].context_score)
 
 
 async def _seed_buyer_scenario(
