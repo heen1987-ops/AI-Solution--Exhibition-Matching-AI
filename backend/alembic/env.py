@@ -9,22 +9,17 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from alembic import context
 
 # --- 프로젝트 모듈 임포트 ---
 # alembic.ini의 prepend_sys_path = . 설정 덕분에(backend/ 디렉터리에서 alembic 명령을 실행한다는
 # 전제 하에) app 패키지를 임포트할 수 있다.
 from app.core.config import get_settings
-from app.db.base import Base
-
-# TODO(다음 단계 에이전트): 도메인 모델을 추가하면 여기서 임포트해야 Base.metadata에 등록되고
-# `alembic revision --autogenerate`가 그 테이블을 감지한다. 예:
-#   from app.models import user_account, event, ...  # noqa: F401
-# 아직 도메인 모델이 없으므로 지금은 임포트할 것이 없다.
+from app.db.base import SCHEMA_ONTOLOGY, Base
+from app.models import consent, core, identity, ontology_refs, profile  # noqa: F401
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Alembic Config 객체: alembic.ini의 값에 접근하는 통로
 config = context.config
@@ -41,6 +36,13 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def include_object(object_, name, type_, reflected, compare_to) -> bool:
+    """Keep ontology changes in its immutable SQL contract, not autogenerate."""
+
+    del name, type_, reflected, compare_to
+    return getattr(object_, "schema", None) != SCHEMA_ONTOLOGY
+
+
 def run_migrations_offline() -> None:
     """--sql 옵션 등으로 실제 DB 연결 없이 마이그레이션 스크립트만 생성할 때 사용한다."""
 
@@ -51,6 +53,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -62,6 +65,7 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         include_schemas=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
