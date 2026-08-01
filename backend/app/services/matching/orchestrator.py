@@ -63,9 +63,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.exhibitor import (
     Booth,
     EventProduct,
+    ExhibitorBuyerPreference,
     ExhibitorParticipation,
     Product,
     ProductAttribute,
+    SupplyCapability,
     TradeCondition,
     TradeConditionTerm,
 )
@@ -525,17 +527,23 @@ async def generate_buyer_recommendations(
     buyer_facts_by_id, exhibitor_facts_by_id = await _load_buyer_candidate_facts(
         session, list(eligible_by_id), fused
     )
+    buyer_concept_ids_by_component = group_concept_ids_by_component(
+        (attribute.attribute_code, attribute.concept_id)
+        for attribute in profile_resolution.active_attributes
+    )
     buyer_profile_facts = BuyerProfileFacts(
         required_category_concept_ids=request.required_category_concept_ids,
         target_price_max=request.target_price_max,
         max_order_quantity=request.max_order_quantity,
-        required_concept_ids_by_component=group_concept_ids_by_component(
-            (attribute.attribute_code, attribute.concept_id)
-            for attribute in profile_resolution.active_attributes
-        ),
+        required_concept_ids_by_component=buyer_concept_ids_by_component,
+        requested_monthly_units=request.requested_monthly_units,
     )
     exhibitor_profile_facts = ExhibitorProfileFacts(
-        requested_monthly_units=request.requested_monthly_units
+        requested_monthly_units=request.requested_monthly_units,
+        # BUYER_SCORE_V1의 channel/region과 같은 원본(profile.profile_attribute)이라
+        # 다시 조회하지 않고 그대로 재사용한다(feature_builder.py의 ExhibitorProfileFacts
+        # 모듈 docstring 참고). buyer_type(BUYER.* 접두어)도 여기 포함되어 있다.
+        buyer_concept_ids_by_component=buyer_concept_ids_by_component,
     )
 
     scored: list[tuple[uuid.UUID, ReciprocalScoreResult, EligibilityResult]] = []
@@ -704,6 +712,12 @@ async def _load_buyer_candidate_facts(
     term_components_by_id = await _exhibitor_concept_ids_by_component(
         session, recommendable_ids
     )
+    available_capacity_by_id = await _exhibitor_available_capacity_by_id(
+        session, recommendable_ids
+    )
+    preference_components_by_id = await _exhibitor_preference_concept_ids_by_component(
+        session, recommendable_ids
+    )
 
     buyer_facts: dict[uuid.UUID, BuyerCandidateFacts] = {}
     exhibitor_facts: dict[uuid.UUID, ExhibitorCandidateFacts] = {}
@@ -721,11 +735,99 @@ async def _load_buyer_candidate_facts(
             wholesale_price_amount=wholesale_price_max_amount,
             min_order_quantity=min_order_quantity,
             concept_ids_by_component=term_components_by_id.get(recommendable_id, {}),
+            available_capacity=available_capacity_by_id.get(recommendable_id),
         )
         exhibitor_facts[recommendable_id] = ExhibitorCandidateFacts(
-            recommendable_id=recommendable_id, monthly_capacity=monthly_capacity
+            recommendable_id=recommendable_id,
+            monthly_capacity=monthly_capacity,
+            preference_concept_ids_by_component=preference_components_by_id.get(
+                recommendable_id, {}
+            ),
         )
     return buyer_facts, exhibitor_facts
+
+
+async def _exhibitor_available_capacity_by_id(
+    session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """recommendable_id -> exhibition.supply_capability.available_capacity(업체 공통,
+    product_id IS NULL) - BUYER_SCORE_V1의 capacity 구성요소가 쓰는 "잔여 생산능력"이다
+    (feature_builder.py의 BuyerCandidateFacts.available_capacity 모듈 docstring 참고).
+    """
+
+    if not recommendable_ids:
+        return {}
+
+    stmt = (
+        select(Recommendable.recommendable_id, SupplyCapability.available_capacity)
+        .join(
+            ExhibitorParticipation,
+            ExhibitorParticipation.participation_id == Recommendable.participation_id,
+        )
+        .join(
+            SupplyCapability,
+            SupplyCapability.exhibitor_id == ExhibitorParticipation.exhibitor_id,
+        )
+        .where(
+            Recommendable.recommendable_id.in_(recommendable_ids),
+            SupplyCapability.product_id.is_(None),
+            SupplyCapability.available_capacity.is_not(None),
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+    return dict(rows)
+
+
+async def _exhibitor_preference_concept_ids_by_component(
+    session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, frozenset[uuid.UUID]]]:
+    """recommendable_id -> feature_builder 구성요소별 concept_id 집합(buyer_type/channel/
+    region) - exhibition.buyer_preference("업체가 원하는 바이어 프로파일", 08단계 8.3절)
+    에서 뽑는다. 세 차원 중 채워진 것만 쓴다 - 모델 CHECK(at_least_one_dimension)가
+    "최소 하나"만 강제하므로 나머지는 NULL일 수 있다.
+    """
+
+    if not recommendable_ids:
+        return {}
+
+    stmt = (
+        select(
+            Recommendable.recommendable_id,
+            ExhibitorBuyerPreference.buyer_type_concept_id,
+            ExhibitorBuyerPreference.channel_concept_id,
+            ExhibitorBuyerPreference.region_concept_id,
+        )
+        .join(
+            ExhibitorParticipation,
+            ExhibitorParticipation.participation_id == Recommendable.participation_id,
+        )
+        .join(
+            ExhibitorBuyerPreference,
+            ExhibitorBuyerPreference.exhibitor_id
+            == ExhibitorParticipation.exhibitor_id,
+        )
+        .where(
+            Recommendable.recommendable_id.in_(recommendable_ids),
+            ExhibitorBuyerPreference.active.is_(True),
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+
+    grouped: dict[uuid.UUID, dict[str, set[uuid.UUID]]] = {}
+    for recommendable_id, buyer_type_id, channel_id, region_id in rows:
+        bucket = grouped.setdefault(recommendable_id, {})
+        if buyer_type_id is not None:
+            bucket.setdefault("buyer_type", set()).add(buyer_type_id)
+        if channel_id is not None:
+            bucket.setdefault("channel", set()).add(channel_id)
+        if region_id is not None:
+            bucket.setdefault("region", set()).add(region_id)
+    return {
+        recommendable_id: {
+            component: frozenset(ids) for component, ids in components.items()
+        }
+        for recommendable_id, components in grouped.items()
+    }
 
 
 #: exhibition.trade_condition_term.term_type -> feature_builder 구성요소 이름. term_type

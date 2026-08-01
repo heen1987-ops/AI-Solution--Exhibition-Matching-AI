@@ -8,8 +8,11 @@ from app.services.matching.feature_builder import (
     BuyerProfileFacts,
     ConsumerCandidateFacts,
     ConsumerProfileFacts,
+    ExhibitorCandidateFacts,
+    ExhibitorProfileFacts,
     build_buyer_components,
     build_consumer_components,
+    build_exhibitor_components,
     component_of_attribute_code,
     group_concept_ids_by_component,
 )
@@ -257,3 +260,111 @@ def test_buyer_moq_exceeding_capacity_scores_zero() -> None:
     components = build_buyer_components(candidate, profile)
 
     assert components["moq"] == Decimal(0)
+
+
+def test_buyer_capacity_sufficient_when_available_meets_request() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        available_capacity=1_000,
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+        requested_monthly_units=500,
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["capacity"] == Decimal(1)
+
+
+def test_buyer_capacity_insufficient_scores_zero_not_none() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        available_capacity=100,
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+        requested_monthly_units=500,
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["capacity"] == Decimal(0)
+
+
+def test_buyer_capacity_is_none_when_data_missing() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["capacity"] is None
+
+
+def test_exhibitor_buyer_type_matches_when_buyer_fits_preference() -> None:
+    bottle_shop = uuid.uuid4()
+    candidate = ExhibitorCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        monthly_capacity=None,
+        preference_concept_ids_by_component={"buyer_type": frozenset({bottle_shop})},
+    )
+    profile = ExhibitorProfileFacts(
+        requested_monthly_units=None,
+        buyer_concept_ids_by_component={"buyer_type": frozenset({bottle_shop})},
+    )
+
+    components = build_exhibitor_components(candidate, profile)
+
+    assert components["buyer_type"] == Decimal(1)
+
+
+def test_exhibitor_buyer_type_scores_zero_on_mismatch() -> None:
+    candidate = ExhibitorCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        monthly_capacity=None,
+        preference_concept_ids_by_component={"buyer_type": frozenset({uuid.uuid4()})},
+    )
+    profile = ExhibitorProfileFacts(
+        requested_monthly_units=None,
+        buyer_concept_ids_by_component={"buyer_type": frozenset({uuid.uuid4()})},
+    )
+
+    components = build_exhibitor_components(candidate, profile)
+
+    assert components["buyer_type"] == Decimal(0)
+
+
+def test_exhibitor_buyer_type_is_none_when_exhibitor_has_no_preference() -> None:
+    """업체가 이 차원에 선호가 없으면(exhibition.buyer_preference에 행이 없으면)
+    "정보 없음"이지 불일치(0)가 아니다."""
+
+    candidate = ExhibitorCandidateFacts(
+        recommendable_id=uuid.uuid4(), monthly_capacity=None
+    )
+    profile = ExhibitorProfileFacts(
+        requested_monthly_units=None,
+        buyer_concept_ids_by_component={"buyer_type": frozenset({uuid.uuid4()})},
+    )
+
+    components = build_exhibitor_components(candidate, profile)
+
+    assert components["buyer_type"] is None

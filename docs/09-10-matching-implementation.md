@@ -67,7 +67,7 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
 |---|---|---|
 | `candidate_generator.py` | 9단계 후보검색 | 순위 기반 정규화·가중 RRF 병합·업체별 상한·후보 풀 크기 제어는 순수 함수로 완전히 구현. 구조화 검색(SQL) 채널 하나만 실제로 동작한다. 키워드·벡터·행동·인기·신규 채널은 미구현(각 모듈 docstring 참고 - 벡터 인덱스·행동 이벤트 파이프라인이 아직 없다) |
 | `hard_filter_engine.py` | 10단계 Hard Filter | 평가 엔진(실행순서, PRODUCTION 단락회로/EXPLAIN 전체평가, UNKNOWN 정책, filter_result 행 변환)은 완전히 구현. 규칙은 가격 상한·필수 서비스 가능여부·MOQ 상한에 더해 생산·공급역량(15절)·유통채널(16절)·공급지역(17절)·OEM/PB/수출 가용상태(18~19절, `rule_availability_status` 하나로 세 규칙을 만든다)·부스 운영상태(`rule_booth_open`, exhibition.booth.operating_status)까지 10종을 제공한다. 상담 가능성(20절)·일정충돌(21절)·위치·거리(22절)는 프로파일·일정 데이터가 아직 없어 남겨뒀다. `rule_booth_open`을 추가하며 `_EXCLUDING_RESULTS`에 `TEMPORARY_BLOCK`이 빠져 있어 그 결과가 아무것도 배제하지 못하는 버그를 발견해 바로잡았다 |
-| `feature_builder.py` | Feature Builder | `CONSUMER_SCORE_V1`(category/price/goal/sensory/alcohol/usage)·`BUYER_SCORE_V1`(product/price/moq/business_goal/channel/region) 구성요소를 채운다. goal/sensory/alcohol/usage/business_goal/channel/region은 `profile_attribute.attribute_code` 접두어(GOAL/TASTE·AROMA/ALCOHOL_LEVEL/USE/BIZ_GOAL/CHANNEL/REGION, docs/06-matching-ontology.md 5.1/8~14절)를 `_COMPONENT_BY_CODE_PREFIX`로 해석해 후보 쪽 concept_id 집합(product_attribute, trade_condition_term)과 교집합 비교한다. service/capacity/cooperation/meeting/behavior/trust는 concept 교집합이 아니라 각각 다른 데이터(상태값 비교, 숫자 비교, 행동 이벤트, 신뢰도 모델)가 필요해 여전히 `None`이다(모듈 docstring 참고) |
+| `feature_builder.py` | Feature Builder | `CONSUMER_SCORE_V1`(category/price/goal/sensory/alcohol/usage)·`BUYER_SCORE_V1`(product/price/moq/business_goal/channel/region/capacity)·`EXHIBITOR_SCORE_V1`(order_volume/buyer_type/channel/region) 구성요소를 채운다. goal/sensory/alcohol/usage/business_goal/channel/region/buyer_type은 `profile_attribute.attribute_code` 접두어(GOAL/TASTE·AROMA/ALCOHOL_LEVEL/USE/BIZ_GOAL/CHANNEL/REGION/BUYER, docs/06-matching-ontology.md 5.1/8~14절)를 `_COMPONENT_BY_CODE_PREFIX`로 해석해 후보 쪽 concept_id 집합(product_attribute/trade_condition_term/buyer_preference)과 교집합 비교한다. capacity는 `exhibition.supply_capability.available_capacity`(잔여 생산능력, trade_condition.monthly_capacity와는 다른 숫자)와 바이어의 월 요구물량을 직접 비교한다(숫자 비교라 concept 매칭이 아니다). service/cooperation/trade_type/portfolio/decision_timing/verification/meeting_readiness/meeting/behavior/trust는 여전히 다른 데이터(상태값 비교, 포트폴리오, 상담 일정, 신뢰도 모델)가 필요해 `None`이다(모듈 docstring 참고) |
 | `profile_resolver.py` | Profile Resolver | UserProfile + 최신 ProfileVersion + BuyerNeed + 활성 ProfileAttribute 조회. concept_type 해석은 feature_builder.py가 담당한다(이 모듈은 원본 행만 돌려준다) |
 | `context_resolver.py` | Context Resolver | VisitSession + 최신 ContextProfile 조회, recommendation_session.context_snapshot 스냅샷 생성 |
 | `request_validator.py` | Request Validator | 사용자 유형·추천 유형 정합성, limit 범위만 검증한다. 연령확인·개인화 동의 검증(profile.user_consent 조회)은 TODO로 남겨두었다 |
@@ -110,7 +110,10 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
     기여도 순으로 따로 생성되고 내부 이름을 노출하지 않는다는 것(18단계
     reason_generator.py 연결), 그리고 기본 적합도가 같은 두 후보 중 부스 대기시간이
     남은 체류시간보다 긴 후보가 순위에서 밀린다는 것(14단계 context_reranker.py의
-    부스 대기시간 연결)까지 일곱 시나리오를 검증한다.
+    부스 대기시간 연결), 그리고 요청 물량을 충당할 잔여 생산능력(exhibition.
+    supply_capability.available_capacity)이 있는 시나리오가 부족한 시나리오보다
+    raw_score가 높다는 것(BUYER_SCORE_V1의 capacity 구성요소 연결)까지 여덟 시나리오를
+    검증한다.
 
 ## 발견된 별도 갭: interaction.meeting 도메인 (app/models/meeting.py)
 
@@ -171,11 +174,14 @@ FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundar
    일정충돌(21절)·위치·거리(22절)는 프로파일·일정 데이터 조회 계층이 아직 없어 남아있다.
 3. ~~`profile_resolver`가 돌려주는 ProfileAttribute를 온톨로지 concept_type과 함께 해석해
    `feature_builder`의 나머지 구성요소(goal/sensory/alcohol/service/usage/behavior/trust,
-   business_goal/channel/capacity/region/cooperation/meeting)를 채운다.~~ 부분 완료:
-   attribute_code 접두어 해석으로 goal/sensory/alcohol/usage(CONSUMER)와 business_goal/
-   channel/region(BUYER)을 연결했다(위 "서비스 계층" 표 feature_builder.py 행 참고).
-   service/capacity/cooperation/meeting/behavior/trust는 concept 교집합이 아닌 다른
-   데이터(상태값·숫자 비교, 행동 이벤트, 신뢰도 모델)가 필요해 여전히 미구현이다.
+   business_goal/channel/capacity/region/cooperation/meeting)를 채운다.~~ 거의 완료:
+   attribute_code 접두어 해석으로 goal/sensory/alcohol/usage(CONSUMER), business_goal/
+   channel/region(BUYER), buyer_type/channel/region(EXHIBITOR, exhibition.
+   buyer_preference 연결)을 채웠고, capacity(BUYER)는 exhibition.supply_capability.
+   available_capacity 숫자 비교로 채웠다(위 "서비스 계층" 표 feature_builder.py 행
+   참고). service/cooperation/trade_type/portfolio/decision_timing/verification/
+   meeting_readiness/meeting/behavior/trust는 concept·숫자 비교가 아닌 다른 데이터
+   (상태값 비교, 포트폴리오, 상담 일정, 신뢰도 모델)가 필요해 여전히 미구현이다.
 4. ~~BUYER/EXHIBITOR 경로와 `calculate_reciprocal_score`(양면 적합도)를 오케스트레이터에
    연결한다.~~ 완료 (위 "BUYER/EXHIBITOR 경로 구현 메모" 참고).
 5. ~~비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트들(일반

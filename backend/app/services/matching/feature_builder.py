@@ -11,8 +11,11 @@
 현재 채워지는 구성요소:
     - CONSUMER_SCORE_V1: category, price, goal/sensory/alcohol/usage(온톨로지 concept
       매칭, 아래 "concept 기반 구성요소" 참고)
-    - BUYER_SCORE_V1: product, price, moq, business_goal/channel/region(concept 매칭)
-    - EXHIBITOR_SCORE_V1 (양면 적합도의 업체->바이어 방향): order_volume
+    - BUYER_SCORE_V1: product, price, moq, business_goal/channel/region(concept 매칭),
+      capacity(exhibition.supply_capability.available_capacity 숫자 비교)
+    - EXHIBITOR_SCORE_V1 (양면 적합도의 업체->바이어 방향): order_volume,
+      buyer_type/channel/region(exhibition.buyer_preference와 바이어 자신의
+      profile_attribute concept 매칭 - 아래 "concept 기반 구성요소" 참고)
 
 `component_confidence()`는 calculate_reciprocal_score가 요구하는 buyer_confidence/
 exhibitor_confidence(선택값이 아니라 필수 Number)를 만들기 위한 임시 대리지표다 - 실제
@@ -35,12 +38,14 @@ candidate_facts 참고) - 이 모듈 자체는 이미 묶인 dict만 받아 순�
     - service(CONSUMER): concept 매칭이 아니라 exhibition.event_product의
       tasting_status/purchase_status 상태값 비교가 필요하다(hard_filter_engine의
       rule_required_service와 같은 데이터, 아직 이 함수에 연결하지 않았다).
-    - capacity(BUYER): SUPPLY_CAPACITY는 concept 교집합이 아니라 숫자 비교
-      (exhibition.supply_capability)가 필요하다.
-    - cooperation(BUYER): exhibition.trade_condition.oem_status/private_label_status/
-      export_status(YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN) 상태값 비교가 필요하다 -
-      concept 매칭 대상이 아니다.
-    - meeting(BUYER), behavior(CONSUMER), trust(둘 다): 상담 주제 프로파일, 행동 이벤트
+    - cooperation(BUYER), trade_type(EXHIBITOR): exhibition.trade_condition.oem_status/
+      private_label_status/export_status(YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN) 상태값
+      비교가 필요하다 - concept 매칭 대상이 아니다.
+    - portfolio/decision_timing/verification/meeting_readiness(EXHIBITOR): 각각
+      제품 포트폴리오 다양성, profile.buyer_need.decision_timeline, 08단계 27.3절
+      verification_status, 상담 가능 시간대가 필요한데 이 커밋 시점에는 그 데이터를
+      읽어올 조회 계층이 아직 없다.
+    - meeting(BUYER), behavior(CONSUMER), trust(모두): 상담 주제 프로파일, 행동 이벤트
       집계, 데이터 신뢰도 모델이 각각 필요한데 이 커밋 시점에는 그 데이터를 읽어올 조회
       계층이 아직 없다.
 meet_ai.scoring.calculate_directional_score는 None을 "정보 없음"으로 처리해 가중치
@@ -68,6 +73,7 @@ _COMPONENT_BY_CODE_PREFIX: Mapping[str, str] = {
     "USE": "usage",
     "CHANNEL": "channel",
     "REGION": "region",
+    "BUYER": "buyer_type",
 }
 
 
@@ -134,6 +140,11 @@ class BuyerCandidateFacts:
     concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
         default_factory=dict
     )
+    #: exhibition.supply_capability.available_capacity(업체 공통, product_id IS NULL) -
+    #: 10단계 15.2절 "전체 생산량이 아니라 신규계약에 쓸 수 있는 잔여 생산량"과 같은 값.
+    #: trade_condition.monthly_capacity(전체 생산량, EXHIBITOR_SCORE_V1의 order_volume이
+    #: 이미 쓴다)와는 다른 숫자다.
+    available_capacity: int | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +157,10 @@ class BuyerProfileFacts:
     required_concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
         default_factory=dict
     )
+    #: profile.buyer_need.monthly_units_min/max에서 뽑아낸, 바이어가 매달 구매하려는
+    #: 물량 - available_capacity와 비교할 대상이다(ExhibitorProfileFacts.
+    #: requested_monthly_units와 같은 값을 재사용해도 된다, orchestrator.py 참고).
+    requested_monthly_units: int | None = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +169,12 @@ class ExhibitorCandidateFacts:
 
     recommendable_id: uuid.UUID
     monthly_capacity: int | None
+    #: exhibition.buyer_preference(buyer_type_concept_id/channel_concept_id/
+    #: region_concept_id)를 구성요소별로 묶은 결과 - "업체가 원하는 바이어 프로파일"
+    #: (08단계 8.3절)이다.
+    preference_concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -161,6 +182,12 @@ class ExhibitorProfileFacts:
     """업체가 이 바이어를 어느 정도 원하는지 판단하는 데 필요한, 바이어 쪽 요구량."""
 
     requested_monthly_units: int | None
+    #: 바이어 자신의 buyer_type/channel/region concept_id 집합 - BuyerProfileFacts.
+    #: required_concept_ids_by_component와 같은 원본(profile.profile_attribute)에서
+    #: 나온다(orchestrator.py에서 그대로 재사용한다).
+    buyer_concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
+        default_factory=dict
+    )
 
 
 def _price_match(
@@ -261,6 +288,14 @@ def build_buyer_components(
     else:
         moq_score = Decimal(0)
 
+    capacity_score: Decimal | None
+    if candidate.available_capacity is None or profile.requested_monthly_units is None:
+        capacity_score = None
+    elif candidate.available_capacity >= profile.requested_monthly_units:
+        capacity_score = Decimal(1)
+    else:
+        capacity_score = Decimal(0)
+
     return {
         "business_goal": component("business_goal"),
         "product": _category_match(
@@ -271,7 +306,7 @@ def build_buyer_components(
             candidate.wholesale_price_amount, None, profile.target_price_max
         ),
         "moq": moq_score,
-        "capacity": None,
+        "capacity": capacity_score,
         "region": component("region"),
         "cooperation": None,
         "meeting": None,
@@ -294,11 +329,21 @@ def build_exhibitor_components(
     else:
         order_volume_score = Decimal(0)
 
+    def preference_component(name: str) -> Decimal | None:
+        # 여기서는 "요구"가 업체의 선호(candidate)고 "후보"가 바이어 자신의 속성
+        # (profile)이다 - build_consumer/buyer_components와 candidate/required 역할이
+        # 뒤바뀐다(이 방향은 "바이어가 업체의 희망 프로파일에 맞는지"를 묻기 때문).
+        return _component_match(
+            name,
+            profile.buyer_concept_ids_by_component,
+            candidate.preference_concept_ids_by_component,
+        )
+
     return {
-        "buyer_type": None,
-        "channel": None,
+        "buyer_type": preference_component("buyer_type"),
+        "channel": preference_component("channel"),
         "order_volume": order_volume_score,
-        "region": None,
+        "region": preference_component("region"),
         "trade_type": None,
         "portfolio": None,
         "decision_timing": None,

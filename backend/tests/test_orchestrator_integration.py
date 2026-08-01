@@ -30,6 +30,7 @@ from app.models.exhibitor import (
     ExhibitorParticipation,
     Product,
     ProductAttribute,
+    SupplyCapability,
     TradeCondition,
     TradeConditionTerm,
 )
@@ -557,6 +558,7 @@ async def _seed_buyer_scenario(
     with_matching_category: bool,
     require_channel: bool = False,
     tag_exhibitor_channel: bool = False,
+    available_capacity: int | None = None,
 ) -> BuyerRecommendationRequest:
     suffix = _unique_suffix()
     category_label = "category" if with_matching_category else "no-category"
@@ -654,6 +656,15 @@ async def _seed_buyer_scenario(
                 )
             )
             await session.flush()
+
+    if available_capacity is not None:
+        session.add(
+            SupplyCapability(
+                exhibitor_id=exhibitor.exhibitor_id,
+                product_id=None,
+                available_capacity=available_capacity,
+            )
+        )
 
     recommendable = Recommendable(
         tenant_id=tenant.tenant_id,
@@ -848,3 +859,47 @@ async def test_generate_buyer_recommendations_scores_lower_on_channel_mismatch(
     ).scalar_one()
 
     assert float(matching_result.raw_score) > float(mismatched_result.raw_score)
+
+
+async def test_generate_buyer_recommendations_scores_higher_with_sufficient_capacity(
+    db_session: AsyncSession,
+) -> None:
+    """exhibition.supply_capability.available_capacity(잔여 생산능력)를
+    BuyerCandidateFacts.available_capacity로 채우는 연결(feature_builder.py의 capacity
+    구성요소)을 검증한다: 요청한 월 물량(100)을 충당할 잔여 생산능력이 있는 시나리오가,
+    잔여 생산능력이 부족한 시나리오보다 raw_score가 높아야 한다."""
+
+    sufficient_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, available_capacity=1_000
+    )
+    sufficient_session = await generate_buyer_recommendations(
+        db_session, sufficient_request
+    )
+    await db_session.commit()
+
+    insufficient_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, available_capacity=10
+    )
+    insufficient_session = await generate_buyer_recommendations(
+        db_session, insufficient_request
+    )
+    await db_session.commit()
+
+    sufficient_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == sufficient_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    insufficient_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == insufficient_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(sufficient_result.raw_score) > float(insufficient_result.raw_score)
