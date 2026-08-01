@@ -11,6 +11,12 @@
 현재 채워지는 구성요소:
     - CONSUMER_SCORE_V1: category, price
     - BUYER_SCORE_V1: product, price, moq
+    - EXHIBITOR_SCORE_V1 (양면 적합도의 업체->바이어 방향): order_volume
+
+`component_confidence()`는 calculate_reciprocal_score가 요구하는 buyer_confidence/
+exhibitor_confidence(선택값이 아니라 필수 Number)를 만들기 위한 임시 대리지표다 - 실제
+데이터 신뢰도 모델(08단계 16절)이 아직 연결되지 않아, 채워진 구성요소 비율로 대신한다.
+근거 데이터가 늘어나면 이 함수를 실제 신뢰도 계산으로 교체해야 한다.
 
 None으로 남기는 구성요소(goal/sensory/alcohol/service/usage/behavior/trust, business_goal/
 channel/capacity/region/cooperation/meeting)는 각각 프로파일 목적·관능 프로파일·행동
@@ -63,6 +69,21 @@ class BuyerProfileFacts:
     required_category_concept_ids: frozenset[uuid.UUID]
     target_price_max: int | None
     max_order_quantity: int | None
+
+
+@dataclass(frozen=True)
+class ExhibitorCandidateFacts:
+    """양면 적합도의 업체->바이어 방향 계산에 쓰는, 이미 조회된 업체 사실관계."""
+
+    recommendable_id: uuid.UUID
+    monthly_capacity: int | None
+
+
+@dataclass(frozen=True)
+class ExhibitorProfileFacts:
+    """업체가 이 바이어를 어느 정도 원하는지 판단하는 데 필요한, 바이어 쪽 요구량."""
+
+    requested_monthly_units: int | None
 
 
 def _price_match(
@@ -150,3 +171,42 @@ def build_buyer_components(
         "meeting": None,
         "trust": None,
     }
+
+
+def build_exhibitor_components(
+    candidate: ExhibitorCandidateFacts, profile: ExhibitorProfileFacts
+) -> Mapping[str, Decimal | None]:
+    """EXHIBITOR_SCORE_V1 구성요소(buyer_type/channel/order_volume/region/trade_type/
+    portfolio/decision_timing/verification/meeting_readiness) 중 계산 가능한 것만
+    채운다 - 양면 적합도(calculate_reciprocal_score)의 업체->바이어 방향 입력이다."""
+
+    order_volume_score: Decimal | None
+    if candidate.monthly_capacity is None or profile.requested_monthly_units is None:
+        order_volume_score = None
+    elif candidate.monthly_capacity >= profile.requested_monthly_units:
+        order_volume_score = Decimal(1)
+    else:
+        order_volume_score = Decimal(0)
+
+    return {
+        "buyer_type": None,
+        "channel": None,
+        "order_volume": order_volume_score,
+        "region": None,
+        "trade_type": None,
+        "portfolio": None,
+        "decision_timing": None,
+        "verification": None,
+        "meeting_readiness": None,
+    }
+
+
+def component_confidence(components: Mapping[str, Decimal | None]) -> Decimal:
+    """채워진(None이 아닌) 구성요소 비율을 신뢰도 대리지표로 쓴다 (모듈 docstring
+    "구현 범위와 남은 작업" 참고). 구성요소가 하나도 없으면(전부 None) 0을 반환한다 -
+    아무 근거 없이 신뢰도를 지어내지 않는다."""
+
+    if not components:
+        return Decimal(0)
+    filled = sum(1 for value in components.values() if value is not None)
+    return Decimal(filled) / Decimal(len(components))

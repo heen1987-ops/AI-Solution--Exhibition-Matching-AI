@@ -71,7 +71,7 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
 | `profile_resolver.py` | Profile Resolver | UserProfile + 최신 ProfileVersion + BuyerNeed + 활성 ProfileAttribute 조회. 어떤 속성이 "제품군 요구조건"인지 같은 의미 해석(concept_type 조회)은 온톨로지 조회 계층과 함께 다음 커밋에서 연결한다 |
 | `context_resolver.py` | Context Resolver | VisitSession + 최신 ContextProfile 조회, recommendation_session.context_snapshot 스냅샷 생성 |
 | `request_validator.py` | Request Validator | 사용자 유형·추천 유형 정합성, limit 범위만 검증한다. 연령확인·개인화 동의 검증(profile.user_consent 조회)은 TODO로 남겨두었다 |
-| `orchestrator.py` | 파이프라인 오케스트레이션 | GENERAL_VISITOR/PRODUCT 경로를 구조화 검색부터 RecommendationSession/MatchResult/MatchReason/FilterResult 영속화까지 전부 연결했다. BUYER/EXHIBITOR 경로, 양면 적합도(`calculate_reciprocal_score`) 연결, 14단계 상황 재정렬, 18단계 추천 이유 생성(지금은 최고 기여 구성요소 이름만 넣는 템플릿)은 다음 구현 순서로 남긴다 |
+| `orchestrator.py` | 파이프라인 오케스트레이션 | GENERAL_VISITOR/PRODUCT 경로(`generate_general_visitor_recommendations`)와 BUYER/EXHIBITOR 경로(`generate_buyer_recommendations`, `calculate_reciprocal_score` 연결 포함) 모두 구조화 검색부터 RecommendationSession/MatchResult/MatchReason/FilterResult 영속화까지 연결했다. 14단계 상황 재정렬, 18단계 추천 이유 생성(지금은 템플릿)은 다음 구현 순서로 남긴다 |
 
 ## 검증
 
@@ -88,6 +88,46 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
   DB 없이 동작), 그 관례를 이 커밋에서 임의로 정하기보다 다음 구현에서 다른 도메인과
   합의하는 편이 낫다고 판단했다. 이 갭은 다음 구현 순서 목록에 남겨둔다.
 
+## 발견된 별도 갭: interaction.meeting 도메인 (app/models/meeting.py)
+
+9·10단계와 무관하지만 이 서비스 계층 작업 중 다른 단계 문서/모델을 감사하다가 발견해서
+같은 브랜치에 커밋했다: `app/models/exhibitor.py`가 "interaction.availability_slot은
+app/models/meeting.py가 이미 정의했다"고 가정하고 있었는데, 그 파일 자체가 존재하지
+않았다 - `exhibition.recommendable`과 같은 종류의 갭이다. db-erd-table-spec.md 14절
+전체(availability_slot/meeting/meeting_slot_request/meeting_contact_share/
+meeting_status_history/meeting_outcome/follow_up_action, 마이그레이션 0007_meeting)를
+구현해서 채웠다. 상세 근거는 `app/models/meeting.py`와
+`backend/alembic/versions/20260801_1500_0007_meeting.py` 모듈 docstring 참고.
+
+같은 감사 과정에서 `app/models/identity.py`의 오래된 주석(`user_role.exhibitor_id`에
+FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundary` 복합 FK가 이미
+존재)도 바로잡았다 - 기능 변경은 없다.
+
+## BUYER/EXHIBITOR 경로 구현 메모
+
+`generate_buyer_recommendations`(오케스트레이터)는 GENERAL_VISITOR 경로와 같은 구조로
+동작하되 마지막 점수 계산 단계에서 `calculate_directional_score`를 두 번(바이어->업체
+`BUYER_SCORE_V1`, 업체->바이어 `EXHIBITOR_SCORE_V1`) 호출한 뒤 `calculate_reciprocal_score`
+로 합친다.
+
+- **구조화 검색**: `candidate_generator.structured_search_exhibitors`가
+  exhibition.recommendable(EXHIBITOR) + exhibitor_participation + trade_condition(업체
+  공통조건, event_product_id IS NULL)을 조인한다. 거래조건이 아직 없는 업체는 이 채널에서
+  제외된다 - "미확인 업체 별도 후보"(9단계 23.2절)는 별도 채널에서 다뤄야 한다(미구현).
+- **신뢰도 대리지표**: `calculate_reciprocal_score`는 buyer_confidence/exhibitor_confidence를
+  필수 값으로 요구하는데 아직 실제 신뢰도 모델(08단계 16절)이 연결되지 않았다.
+  `feature_builder.component_confidence()`가 "채워진 구성요소 비율"을 임시 대리지표로
+  쓴다 - 지어낸 값이 아니라 명시적으로 낮은 근거를 반영하는 값이라는 점은 유지한다.
+- **recommended_action 어휘 불일치**: `calculate_reciprocal_score`의 recommended_action
+  (DO_NOT_PUSH/REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION/REQUEST_MEETING)은
+  matching.match_result의 CHECK 제약(5단계 7.2절 어휘)과 다른 값 체계다. 오케스트레이터가
+  손실 있는 매핑을 적용하고(DO_NOT_PUSH는 결과에서 제외), 정본 해법(CHECK 제약을 두
+  어휘의 합집합으로 넓히는 스키마 변경)은 아래 "다음 구현 순서"로 남겼다.
+- **검증**: throwaway Postgres에 tenant/event/exhibitor/participation/trade_condition/
+  recommendable(EXHIBITOR)/profile(BUYER)/buyer_need를 심고 종단 호출 - MOQ 100 <= 200
+  통과, 상호 적합도 91.43점, `REQUEST_MEETING` 정확히 생성 확인. GENERAL_VISITOR 경로와
+  같은 이유로 정식 pytest에는 아직 올리지 않았다.
+
 ## 다음 구현 순서
 
 1. 벡터 검색(9단계 8절)·행동 기반 검색(9절)·인기/신규 탐색 후보(10·11절) 채널을 후보검색에
@@ -97,8 +137,15 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
 3. `profile_resolver`가 돌려주는 ProfileAttribute를 온톨로지 concept_type과 함께 해석해
    `feature_builder`의 나머지 구성요소(goal/sensory/alcohol/service/usage/behavior/trust,
    business_goal/channel/capacity/region/cooperation/meeting)를 채운다.
-4. BUYER/EXHIBITOR 경로와 `calculate_reciprocal_score`(양면 적합도)를 오케스트레이터에
-   연결한다.
-5. 비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트를 정식
-   테스트로 옮긴다.
+4. ~~BUYER/EXHIBITOR 경로와 `calculate_reciprocal_score`(양면 적합도)를 오케스트레이터에
+   연결한다.~~ 완료 (위 "BUYER/EXHIBITOR 경로 구현 메모" 참고).
+5. 비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트들(일반
+   관람객·바이어 양쪽)을 정식 테스트로 옮긴다.
 6. 14단계(상황 재정렬)와 18단계(추천 이유 생성)를 오케스트레이터의 해당 자리에 연결한다.
+7. `matching.match_result.recommended_action` CHECK 제약을 5단계 7.2절 어휘와
+   `calculate_reciprocal_score`의 상담 어휘(REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION)의
+   합집합으로 넓히는 마이그레이션을 추가하고, `_RECIPROCAL_ACTION_MAP`의 손실 있는 매핑을
+   제거한다.
+8. `structured_search_exhibitors`가 제품 카테고리(category_concept_ids)를 채우도록
+   event_product/product 조인을 추가해, `build_buyer_components`의 `product` 구성요소가
+   항상 None이 되는 현재 한계를 없앤다.

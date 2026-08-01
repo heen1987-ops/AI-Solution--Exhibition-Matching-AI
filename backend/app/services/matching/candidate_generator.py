@@ -11,8 +11,12 @@
 - 순위 기반 정규화(18.2절)와 가중 RRF 병합(19절)은 순수 함수로 완전히 구현했다 - DB나
   검색엔진 없이 단위 테스트로 검증 가능하다.
 - 업체별 최대 후보 수 제한(20.3절)과 후보 풀 크기 조정(22절)도 순수 함수로 구현했다.
-- 구조화 검색 채널(6절)은 exhibition.event_product/product/recommendable에 대한 실제
-  쿼리로 구현했다. 이것이 지금 유일하게 동작하는 검색 채널이다.
+- 구조화 검색 채널(6절)은 두 방향 모두 실제 쿼리로 구현했다: 일반 관람객용
+  `structured_search_products`(exhibition.event_product/product/recommendable)와
+  바이어용 `structured_search_exhibitors`(exhibition.exhibitor_participation/
+  trade_condition/recommendable). 거래조건이 아직 없는 업체는 후자에서 제외되는데,
+  이는 함수 docstring에 남겨둔 별도 한계다. 이것이 지금 유일하게 동작하는 검색채널
+  종류다.
 - 키워드 검색(7절)·벡터 의미검색(8절)·행동 기반 검색(9절)·인기 후보(10절)·신규 탐색
   후보(11절)는 아직 구현하지 않았다. 벡터 인덱스(ai.object_embedding)와 행동 이벤트
   파이프라인이 이 커밋 시점에 존재하지 않기 때문이다. 이 모듈은 이 채널들의 자리를
@@ -31,7 +35,12 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.exhibitor import EventProduct, Product
+from app.models.exhibitor import (
+    EventProduct,
+    ExhibitorParticipation,
+    Product,
+    TradeCondition,
+)
 from app.models.matching import Recommendable
 
 #: 9단계 18.2절 예시(1위=1.00 ... 10위=0.60 ... 50위=0.20)에 맞춘 순위 기반 점수 함수.
@@ -252,5 +261,55 @@ async def structured_search_products(
             ),
         )
         for rank, (recommendable_id, category_concept_id) in enumerate(rows, start=1)
+    )
+    return ChannelResult(channel="STRUCTURED", hits=hits)
+
+
+async def structured_search_exhibitors(
+    session: AsyncSession,
+    *,
+    event_id: uuid.UUID,
+    moq_max: int | None = None,
+    limit: int = 120,
+) -> ChannelResult:
+    """9단계 6.2절의 바이어용 대응. exhibition.recommendable(EXHIBITOR)을
+    exhibitor_participation + trade_condition(업체 공통조건, event_product_id IS NULL)과
+    조인한다.
+
+    거래조건이 아직 등록되지 않은 업체(trade_condition 행 자체가 없는 경우)는 이 채널에서는
+    제외된다 - 9단계 23.2절 "미확인 업체 별도 후보"는 이 함수 하나로 표현하지 않고, 별도
+    채널(관리자 지정 후보 등)이나 미확인 후보 병합 단계에서 다뤄야 한다(아직 미구현).
+    """
+
+    stmt = (
+        select(Recommendable.recommendable_id, TradeCondition.min_order_quantity)
+        .join(
+            ExhibitorParticipation,
+            ExhibitorParticipation.participation_id == Recommendable.participation_id,
+        )
+        .join(
+            TradeCondition,
+            TradeCondition.participation_id == ExhibitorParticipation.participation_id,
+        )
+        .where(
+            Recommendable.event_id == event_id,
+            Recommendable.object_type == "EXHIBITOR",
+            Recommendable.active.is_(True),
+            ExhibitorParticipation.participation_status == "APPROVED",
+            TradeCondition.approval_status == "APPROVED",
+            TradeCondition.event_product_id.is_(None),
+        )
+    )
+    if moq_max is not None:
+        stmt = stmt.where(
+            TradeCondition.min_order_quantity.is_(None)
+            | (TradeCondition.min_order_quantity <= moq_max)
+        )
+    stmt = stmt.limit(limit)
+
+    rows = (await session.execute(stmt)).all()
+    hits = tuple(
+        ChannelHit(recommendable_id=recommendable_id, rank=rank)
+        for rank, (recommendable_id, _min_order_quantity) in enumerate(rows, start=1)
     )
     return ChannelResult(channel="STRUCTURED", hits=hits)
