@@ -13,7 +13,9 @@
       매칭, 아래 "concept 기반 구성요소" 참고), service(SERVICE.TASTING/SERVICE.PURCHASE
       요구를 exhibition.event_product.tasting_status/purchase_status와 비교)
     - BUYER_SCORE_V1: product, price, moq, business_goal/channel/region(concept 매칭),
-      capacity(exhibition.supply_capability.available_capacity 숫자 비교)
+      capacity(exhibition.supply_capability.available_capacity 숫자 비교),
+      cooperation(TRADE.OEM/TRADE.PB/TRADE.EXPORT 요구를 exhibition.trade_condition의
+      oem_status/private_label_status/export_status 상태값과 비교)
     - EXHIBITOR_SCORE_V1 (양면 적합도의 업체->바이어 방향): order_volume,
       buyer_type/channel/region(exhibition.buyer_preference와 바이어 자신의
       profile_attribute concept 매칭 - 아래 "concept 기반 구성요소" 참고),
@@ -38,9 +40,11 @@ ontology.concept과 조인해 concept_code를 얻어야 한다(orchestrator._loa
 candidate_facts 참고) - 이 모듈 자체는 이미 묶인 dict만 받아 순수하게 교집합만 비교한다.
 
 여전히 None으로 남기는 구성요소와 이유:
-    - cooperation(BUYER), trade_type(EXHIBITOR): exhibition.trade_condition.oem_status/
-      private_label_status/export_status(YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN) 상태값
-      비교가 필요하다 - concept 매칭 대상이 아니다.
+    - trade_type(EXHIBITOR): cooperation(BUYER)과 원본 데이터(trade_condition의
+      oem/pb/export status)는 같지만, exhibition.buyer_preference에 channel/region은
+      있어도 "업체가 원하는 거래유형" 차원이 없어(그 테이블 CHECK가 buyer_type/channel/
+      region 3개뿐) cooperation과 구분되는 반대 방향 신호가 없다 - 억지로 cooperation과
+      같은 값을 넣으면 두 번 세는 것과 같아 None으로 둔다.
     - portfolio/decision_timing/meeting_readiness(EXHIBITOR): 각각 제품 포트폴리오
       다양성, profile.buyer_need.decision_timeline과의 비교, 상담 가능 시간대가
       필요한데 이 커밋 시점에는 그 데이터를 읽어올 조회 계층이 아직 없다.
@@ -154,6 +158,12 @@ class BuyerCandidateFacts:
     #: trade_condition.monthly_capacity(전체 생산량, EXHIBITOR_SCORE_V1의 order_volume이
     #: 이미 쓴다)와는 다른 숫자다.
     available_capacity: int | None = None
+    #: exhibition.trade_condition.oem_status/private_label_status/export_status
+    #: (YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN, 업체 공통). cooperation 구성요소가
+    #: 바이어가 요구하는 거래유형(required_trade_codes)에 대응하는 상태만 골라 본다.
+    oem_status: str | None = None
+    private_label_status: str | None = None
+    export_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -170,6 +180,10 @@ class BuyerProfileFacts:
     #: 물량 - available_capacity와 비교할 대상이다(ExhibitorProfileFacts.
     #: requested_monthly_units와 같은 값을 재사용해도 된다, orchestrator.py 참고).
     requested_monthly_units: int | None = None
+    #: profile.profile_attribute(active)의 attribute_code 중 "TRADE."로 시작하는 것들
+    #: (예: "TRADE.OEM") - service와 같은 이유로 concept_id가 아니라 문자열 자체로
+    #: 비교한다(_TRADE_CODE_TO_STATUS_FIELD가 다루는 고정 코드 3개뿐이므로).
+    required_trade_codes: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
@@ -278,6 +292,49 @@ def _service_match(
     return Decimal(1)
 
 
+#: attribute_code(TRADE.*) -> exhibition.trade_condition 상태 필드 이름. 두 값 체계가
+#: 다르므로(TRADE.* concept vs YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN 상태) 여기서도
+#: service처럼 concept_id가 아니라 문자열 자체로 비교한다.
+_TRADE_CODE_TO_STATUS_FIELD: Mapping[str, str] = {
+    "TRADE.OEM": "oem_status",
+    "TRADE.PB": "private_label_status",
+    "TRADE.EXPORT": "export_status",
+}
+
+#: exhibition.trade_condition의 YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN 5단계(rule_
+#: availability_status와 같은 값 체계, hard_filter_engine.py 참고) -> [0,1] 점수.
+#: UNKNOWN은 매핑에 없다 - "정보 없음"으로 취급해 평균에서 제외한다.
+_TRADE_STATUS_SCORE: Mapping[str, Decimal] = {
+    "YES": Decimal(1),
+    "CONDITIONAL": Decimal("0.5"),
+    "NEGOTIABLE": Decimal("0.5"),
+    "NO": Decimal(0),
+}
+
+
+def _cooperation_match(
+    candidate: BuyerCandidateFacts, profile: BuyerProfileFacts
+) -> Decimal | None:
+    """바이어가 요구하는 거래유형(TRADE.OEM/TRADE.PB/TRADE.EXPORT)마다 업체의 실제
+    상태값을 점수로 바꿔 평균한다. 요구가 없거나, 요구한 항목의 상태를 하나도 알 수
+    없으면(전부 UNKNOWN이거나 매핑 밖 코드) None이다."""
+
+    if not profile.required_trade_codes:
+        return None
+    scores: list[Decimal] = []
+    for code in profile.required_trade_codes:
+        field_name = _TRADE_CODE_TO_STATUS_FIELD.get(code)
+        if field_name is None:
+            continue
+        status = getattr(candidate, field_name)
+        score = _TRADE_STATUS_SCORE.get(status) if status is not None else None
+        if score is not None:
+            scores.append(score)
+    if not scores:
+        return None
+    return sum(scores) / Decimal(len(scores))
+
+
 def build_consumer_components(
     candidate: ConsumerCandidateFacts, profile: ConsumerProfileFacts
 ) -> Mapping[str, Decimal | None]:
@@ -349,7 +406,7 @@ def build_buyer_components(
         "moq": moq_score,
         "capacity": capacity_score,
         "region": component("region"),
-        "cooperation": None,
+        "cooperation": _cooperation_match(candidate, profile),
         "meeting": None,
         "trust": None,
     }

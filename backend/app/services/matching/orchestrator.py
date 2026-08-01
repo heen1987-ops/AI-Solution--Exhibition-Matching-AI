@@ -552,6 +552,11 @@ async def generate_buyer_recommendations(
         max_order_quantity=request.max_order_quantity,
         required_concept_ids_by_component=buyer_concept_ids_by_component,
         requested_monthly_units=request.requested_monthly_units,
+        required_trade_codes=frozenset(
+            attribute.attribute_code
+            for attribute in profile_resolution.active_attributes
+            if attribute.attribute_code.startswith("TRADE.")
+        ),
     )
     exhibitor_profile_facts = ExhibitorProfileFacts(
         requested_monthly_units=request.requested_monthly_units,
@@ -708,6 +713,9 @@ async def _load_buyer_candidate_facts(
             TradeCondition.wholesale_price_max_amount,
             TradeCondition.min_order_quantity,
             TradeCondition.monthly_capacity,
+            TradeCondition.oem_status,
+            TradeCondition.private_label_status,
+            TradeCondition.export_status,
         )
         .join(
             ExhibitorParticipation,
@@ -741,6 +749,9 @@ async def _load_buyer_candidate_facts(
         wholesale_price_max_amount,
         min_order_quantity,
         monthly_capacity,
+        oem_status,
+        private_label_status,
+        export_status,
     ) in rows:
         available_capacity, verification_status = supply_capability_by_id.get(
             recommendable_id, (None, None)
@@ -754,6 +765,9 @@ async def _load_buyer_candidate_facts(
             min_order_quantity=min_order_quantity,
             concept_ids_by_component=term_components_by_id.get(recommendable_id, {}),
             available_capacity=available_capacity,
+            oem_status=oem_status,
+            private_label_status=private_label_status,
+            export_status=export_status,
         )
         exhibitor_facts[recommendable_id] = ExhibitorCandidateFacts(
             recommendable_id=recommendable_id,

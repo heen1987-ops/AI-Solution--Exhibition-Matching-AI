@@ -376,6 +376,107 @@ def test_buyer_capacity_is_none_when_data_missing() -> None:
     assert components["capacity"] is None
 
 
+def test_cooperation_is_none_when_buyer_has_no_trade_requirement() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        oem_status="NO",
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["cooperation"] is None
+
+
+def test_cooperation_scores_full_marks_when_oem_available() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        oem_status="YES",
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+        required_trade_codes=frozenset({"TRADE.OEM"}),
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["cooperation"] == Decimal(1)
+
+
+def test_cooperation_scores_zero_when_oem_not_available() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        oem_status="NO",
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+        required_trade_codes=frozenset({"TRADE.OEM"}),
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["cooperation"] == Decimal(0)
+
+
+def test_cooperation_averages_across_multiple_required_trade_types() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        oem_status="YES",
+        export_status="NO",
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+        required_trade_codes=frozenset({"TRADE.OEM", "TRADE.EXPORT"}),
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    assert components["cooperation"] == Decimal("0.5")
+
+
+def test_cooperation_ignores_unknown_status_rather_than_scoring_zero() -> None:
+    candidate = BuyerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        wholesale_price_amount=None,
+        min_order_quantity=None,
+        oem_status="UNKNOWN",
+    )
+    profile = BuyerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        target_price_max=None,
+        max_order_quantity=None,
+        required_trade_codes=frozenset({"TRADE.OEM"}),
+    )
+
+    components = build_buyer_components(candidate, profile)
+
+    # 요구한 항목의 상태를 하나도 알 수 없으면 0점이 아니라 "정보 없음"(None)이어야 한다.
+    assert components["cooperation"] is None
+
+
 def test_exhibitor_buyer_type_matches_when_buyer_fits_preference() -> None:
     bottle_shop = uuid.uuid4()
     candidate = ExhibitorCandidateFacts(

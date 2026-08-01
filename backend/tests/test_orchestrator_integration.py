@@ -657,6 +657,8 @@ async def _seed_buyer_scenario(
     tag_exhibitor_channel: bool = False,
     available_capacity: int | None = None,
     verification_status: str | None = None,
+    require_oem: bool = False,
+    oem_status: str = "YES",
 ) -> BuyerRecommendationRequest:
     suffix = _unique_suffix()
     category_label = "category" if with_matching_category else "no-category"
@@ -698,6 +700,7 @@ async def _seed_buyer_scenario(
         min_order_quantity=100,
         monthly_capacity=3_000,
         wholesale_price_max_amount=40_000,
+        oem_status=oem_status,
         approval_status="APPROVED",
     )
     session.add(trade_condition)
@@ -815,6 +818,25 @@ async def _seed_buyer_scenario(
                 taxonomy_version_id=channel_taxonomy_version_id,
                 concept_id=channel_concept_id,
                 attribute_code=f"CHANNEL.HORECA.X{suffix.upper()}",
+                value_json={"selected": True},
+                requirement_level="PREFERRED",
+                source_type="USER_SELECTED",
+            )
+        )
+
+    if require_oem:
+        # feature_builder._TRADE_CODE_TO_STATUS_FIELD는 정확히 "TRADE.OEM" 문자열을
+        # 찾으므로 _ensure_ontology_concept으로 재사용한다(_service_match의 "SERVICE.
+        # TASTING"과 같은 이유).
+        oem_taxonomy_version_id, oem_concept_id = await _ensure_ontology_concept(
+            session, concept_code="TRADE.OEM", concept_type="TRADE_TYPE"
+        )
+        session.add(
+            ProfileAttribute(
+                profile_id=profile.profile_id,
+                taxonomy_version_id=oem_taxonomy_version_id,
+                concept_id=oem_concept_id,
+                attribute_code="TRADE.OEM",
                 value_json={"selected": True},
                 requirement_level="PREFERRED",
                 source_type="USER_SELECTED",
@@ -1046,3 +1068,48 @@ async def test_generate_buyer_recommendations_scores_higher_for_verified_exhibit
     ).scalar_one()
 
     assert float(verified_result.raw_score) > float(self_declared_result.raw_score)
+
+
+async def test_generate_buyer_recommendations_scores_higher_when_oem_available(
+    db_session: AsyncSession,
+) -> None:
+    """exhibition.trade_condition.oem_status를 BUYER_SCORE_V1의 cooperation 구성요소로
+    채우는 연결(feature_builder._cooperation_match)을 검증한다: OEM을 요구하는 바이어에
+    대해 OEM 가능(YES) 업체가, OEM 불가(NO) 업체보다 raw_score가 높아야 한다."""
+
+    oem_available_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, require_oem=True, oem_status="YES"
+    )
+    oem_available_session = await generate_buyer_recommendations(
+        db_session, oem_available_request
+    )
+    await db_session.commit()
+
+    oem_unavailable_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, require_oem=True, oem_status="NO"
+    )
+    oem_unavailable_session = await generate_buyer_recommendations(
+        db_session, oem_unavailable_request
+    )
+    await db_session.commit()
+
+    oem_available_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == oem_available_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    oem_unavailable_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == oem_unavailable_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(oem_available_result.raw_score) > float(
+        oem_unavailable_result.raw_score
+    )
