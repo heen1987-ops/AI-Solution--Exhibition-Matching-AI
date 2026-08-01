@@ -233,6 +233,25 @@ class ReciprocalScoringTests(unittest.TestCase):
         second = calculate_reciprocal_score(**kwargs)
         self.assertEqual(first.calculation_fingerprint, second.calculation_fingerprint)
 
+    def test_external_cap_is_applied_and_fingerprinted(self) -> None:
+        result = calculate_reciprocal_score(
+            buyer_to_exhibitor_score="95",
+            exhibitor_to_buyer_score="95",
+            buyer_confidence="1",
+            exhibitor_confidence="1",
+            acceptance_capacity_score="1",
+            eligibility=self.eligible,
+            caps=(ScoreCap("EXHIBITOR_PREFERENCE_UNCONFIRMED", 80),),
+        )
+
+        self.assertEqual(Decimal(80), result.final_reciprocal_score)
+        self.assertIsNone(result.minimum_direction_cap)
+        self.assertEqual(
+            ("EXHIBITOR_PREFERENCE_UNCONFIRMED",),
+            result.applied_cap_codes,
+        )
+        self.assertEqual(64, len(result.calculation_fingerprint))
+
     def test_reciprocal_hard_filter_failure_is_not_scored(self) -> None:
         failed = EligibilityDecision(
             False, "filter-evaluation-004", ("EXCLUSIVE_CONTRACT_CONFLICT",)

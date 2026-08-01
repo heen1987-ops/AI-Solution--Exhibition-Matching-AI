@@ -246,6 +246,8 @@ class ReciprocalScoreResult:
     policy_adjustment: Decimal
     uncapped_final_score: Decimal
     final_reciprocal_score: Decimal
+    cap_rules: tuple[ScoreCap, ...]
+    applied_cap_codes: tuple[str, ...]
     grade: str
     match_status: str
     recommended_action: str
@@ -309,9 +311,12 @@ def calculate_directional_score(
         raise ScoreValidationError("at least one score component is required")
 
     active_weight_total = sum((policy.weights[name] for name in present), ZERO)
-    effective_weights = {
-        name: policy.weights[name] / active_weight_total for name in present
-    }
+    present_names = list(present)
+    effective_weights: dict[str, Decimal] = {}
+    for name in present_names[:-1]:
+        effective_weights[name] = policy.weights[name] / active_weight_total
+    last_name = present_names[-1]
+    effective_weights[last_name] = ONE - sum(effective_weights.values(), ZERO)
     contributions = {name: effective_weights[name] * present[name] for name in present}
     normalized_score = sum(contributions.values(), ZERO)
     uncapped_score = normalized_score * ONE_HUNDRED
@@ -402,6 +407,7 @@ def calculate_reciprocal_score(
     eligibility: EligibilityDecision,
     policy: ReciprocalPolicy | None = None,
     policy_adjustment: Number = ZERO,
+    caps: Sequence[ScoreCap] = (),
 ) -> ReciprocalScoreResult:
     """Combine directional B2B scores using the published stage-13 formula."""
 
@@ -457,14 +463,31 @@ def calculate_reciprocal_score(
         )
         uncapped = min(ONE_HUNDRED, max(ZERO, uncapped))
 
-        applicable_caps = [
+        applicable_gate_caps = [
             cap
             for threshold, cap in active_policy.minimum_gate_caps
             if minimum_score < threshold
         ]
+        minimum_gate_cap = min(applicable_gate_caps, default=None)
+        normalized_caps = tuple(caps)
+        external_cap = min(
+            (cap.maximum for cap in normalized_caps),
+            default=None,
+        )
+        applicable_caps = [
+            cap for cap in (minimum_gate_cap, external_cap) if cap is not None
+        ]
         minimum_cap = min(applicable_caps, default=None)
         final_score = (
             min(uncapped, minimum_cap) if minimum_cap is not None else uncapped
+        )
+
+    applied_cap_codes: list[str] = []
+    if final_score < uncapped:
+        if minimum_gate_cap is not None and minimum_gate_cap == minimum_cap:
+            applied_cap_codes.append("MINIMUM_DIRECTION_GATE")
+        applied_cap_codes.extend(
+            sorted(cap.code for cap in normalized_caps if cap.maximum == minimum_cap)
         )
 
     match_status, recommended_action = _reciprocal_status_and_action(minimum_score)
@@ -472,6 +495,13 @@ def calculate_reciprocal_score(
         "acceptance_capacity_score": _decimal_text(acceptance),
         "buyer_confidence": _decimal_text(buyer_conf),
         "buyer_to_exhibitor_score": _decimal_text(buyer_score),
+        "caps": [
+            {"code": cap.code, "maximum": _decimal_text(cap.maximum)}
+            for cap in sorted(
+                normalized_caps,
+                key=lambda item: (item.maximum, item.code),
+            )
+        ],
         "eligibility_evaluation_id": eligibility.evaluation_id,
         "exhibitor_confidence": _decimal_text(exhibitor_conf),
         "exhibitor_to_buyer_score": _decimal_text(exhibitor_score),
@@ -498,7 +528,7 @@ def calculate_reciprocal_score(
         exhibitor_to_buyer_score=exhibitor_score,
         reciprocal_base_score=base_score,
         minimum_direction_score=minimum_score,
-        minimum_direction_cap=minimum_cap,
+        minimum_direction_cap=minimum_gate_cap,
         imbalance_value=imbalance,
         imbalance_penalty=imbalance_penalty,
         confidence_score=confidence_score,
@@ -508,6 +538,8 @@ def calculate_reciprocal_score(
         policy_adjustment=adjustment,
         uncapped_final_score=uncapped,
         final_reciprocal_score=final_score,
+        cap_rules=normalized_caps,
+        applied_cap_codes=tuple(applied_cap_codes),
         grade=_grade(final_score, "R") or "R1",
         match_status=match_status,
         recommended_action=recommended_action,
