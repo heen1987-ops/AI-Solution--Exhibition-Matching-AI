@@ -86,6 +86,6 @@ def test_alembic_chain_has_one_exhibition_head() -> None:
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    # 0007_meeting(app/models/meeting.py)이 0006_matching 위에 쌓였다. 다음 도메인이
-    # 이어붙이면 이 값도 함께 갱신해야 한다.
-    assert script.get_heads() == ["0007_meeting"]
+    # 0008_widen_recommended_action(matching.match_result CHECK 제약 확장)이 0007_meeting
+    # 위에 쌓였다. 다음 마이그레이션이 이어붙이면 이 값도 함께 갱신해야 한다.
+    assert script.get_heads() == ["0008_widen_recommended_action"]

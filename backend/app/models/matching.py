@@ -137,7 +137,13 @@ FALLBACK_STRATEGIES: tuple[str, ...] = (
     "POPULARITY_FALLBACK",
 )
 
-#: db-erd 15.3절 "VISIT_NOW 등"; 5단계 상세설계 7.2절 추천 행동 7종을 그대로 채택한다.
+#: db-erd 15.3절 "VISIT_NOW 등"; 5단계 상세설계 7.2절 추천 행동 7종(GENERAL_VISITOR 경로)과
+#: meet_ai.scoring.calculate_reciprocal_score가 반환하는 4종(BUYER/EXHIBITOR 경로,
+#: docs/11-13-scoring-implementation.md)의 합집합이다. 두 경로가 서로 다른 recommended_action
+#: 값 체계를 쓰므로(양쪽 다 matching.match_result 한 테이블에 쓴다) CHECK 제약은 합집합을
+#: 허용해야 한다 - 이전에는 REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION/DO_NOT_PUSH가 이
+#: 목록에 없어 orchestrator.py가 손실 있는 매핑을 거쳐야 했다(0008_widen_recommended_action
+#: 마이그레이션과 docs/09-10-matching-implementation.md 참고).
 RECOMMENDED_ACTIONS: tuple[str, ...] = (
     "VISIT_NOW",
     "SAVE_FOR_LATER",
@@ -146,6 +152,9 @@ RECOMMENDED_ACTIONS: tuple[str, ...] = (
     "COMPARE_PRODUCTS",
     "JOIN_PROGRAM",
     "REFINE_PROFILE",
+    "DO_NOT_PUSH",
+    "REQUEST_INFORMATION",
+    "CONFIRM_TRADE_CONDITION",
 )
 
 #: db-erd 15.4절.

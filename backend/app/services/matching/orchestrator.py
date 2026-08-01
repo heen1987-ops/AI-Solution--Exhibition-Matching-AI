@@ -20,16 +20,17 @@ docs/11-13-scoring-implementation.md "다음 구현 순서". 이 모듈이 그 �
   raw_score에도 100 스케일 그대로 넣는다 - 두 경로의 raw_score가 같은 척도가 아니라는 뜻이며,
   경로 간 raw_score를 직접 비교해서는 안 된다).
 
-recommended_action 어휘 불일치
+recommended_action 두 어휘 체계
 --------------------------------
 meet_ai.scoring.calculate_reciprocal_score가 반환하는 recommended_action(DO_NOT_PUSH/
-REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION/REQUEST_MEETING)은 matching.match_result의
-recommended_action CHECK 제약이 허용하는 5단계 7.2절 어휘(VISIT_NOW/SAVE_FOR_LATER/
-REQUEST_MEETING/ADD_TO_ROUTE/COMPARE_PRODUCTS/JOIN_PROGRAM/REFINE_PROFILE)의 부분집합이
-아니다. 두 값 체계를 하나로 합치는 스키마 변경 없이, 이 파일은 손실이 있는 매핑
-(_map_reciprocal_action)을 쓴다: DO_NOT_PUSH는 아예 결과에서 제외하고, 나머지는 가장
-가까운 기존 값으로 옮긴다. 정본 해법은 match_result CHECK 제약을 두 어휘의 합집합으로
-넓히는 것이며, docs/09-10-matching-implementation.md의 "다음 구현 순서"에 남겨뒀다.
+REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION/REQUEST_MEETING)은 GENERAL_VISITOR 경로가
+쓰는 5단계 7.2절 어휘(VISIT_NOW 등)와 서로 다른 체계다. matching.match_result.
+recommended_action CHECK 제약(app/models/matching.py의 RECOMMENDED_ACTIONS)은
+0008_widen_recommended_action 마이그레이션 이후 두 어휘의 합집합을 허용하므로, 이 파일은
+BUYER 경로의 recommended_action 값을 그대로 저장한다(더 이상 값 매핑이 필요 없다). 다만
+DO_NOT_PUSH는 "이 후보를 밀지 말라"는 스코어링 코어의 판단이므로, 값 자체는 저장 가능해도
+최종 추천 결과(top-N)에는 올리지 않는다 - 이는 어휘 제약이 아니라 추천 정책 결정이다
+(_EXCLUDED_RECIPROCAL_ACTIONS 참고).
 """
 
 from __future__ import annotations
@@ -94,15 +95,9 @@ from app.services.matching.hard_filter_engine import (
 from app.services.matching.profile_resolver import resolve_profile
 from app.services.matching.request_validator import validate_request
 
-#: meet_ai.scoring.calculate_reciprocal_score의 recommended_action ->
-#: matching.match_result.recommended_action(5단계 7.2절 어휘) 매핑. None은 "이 후보는 최종
-#: 결과에서 제외한다"는 뜻이다 (모듈 docstring "recommended_action 어휘 불일치" 참고).
-_RECIPROCAL_ACTION_MAP: dict[str, str | None] = {
-    "DO_NOT_PUSH": None,
-    "REQUEST_INFORMATION": "SAVE_FOR_LATER",
-    "CONFIRM_TRADE_CONDITION": "REQUEST_MEETING",
-    "REQUEST_MEETING": "REQUEST_MEETING",
-}
+#: 스코어링 코어가 "밀지 말라"고 판단한 후보는 값 자체는 저장 가능해도(모듈 docstring
+#: "recommended_action 두 어휘 체계" 참고) 최종 추천 결과에는 올리지 않는다.
+_EXCLUDED_RECIPROCAL_ACTIONS: frozenset[str] = frozenset({"DO_NOT_PUSH"})
 
 
 @dataclass(frozen=True)
@@ -386,7 +381,7 @@ async def generate_buyer_recommendations(
     }
 
     buyer_facts_by_id, exhibitor_facts_by_id = await _load_buyer_candidate_facts(
-        session, list(eligible_by_id)
+        session, list(eligible_by_id), fused
     )
     buyer_profile_facts = BuyerProfileFacts(
         required_category_concept_ids=request.required_category_concept_ids,
@@ -451,12 +446,12 @@ async def generate_buyer_recommendations(
         )
         scored.append((recommendable_id, reciprocal_result, eligibility_result))
 
-    # DO_NOT_PUSH는 최종 결과에서 제외한다 (모듈 docstring "recommended_action 어휘
-    # 불일치" 참고).
+    # DO_NOT_PUSH는 최종 결과에서 제외한다 (모듈 docstring "recommended_action 두 어휘
+    # 체계" 참고).
     scored = [
         item
         for item in scored
-        if _RECIPROCAL_ACTION_MAP.get(item[1].recommended_action) is not None
+        if item[1].recommended_action not in _EXCLUDED_RECIPROCAL_ACTIONS
     ]
     scored.sort(key=lambda item: item[1].final_reciprocal_score, reverse=True)
     top = scored[: request.limit]
@@ -472,9 +467,7 @@ async def generate_buyer_recommendations(
             rank=rank,
             trade_score=reciprocal_result.reciprocal_base_score,
             trust_score=reciprocal_result.confidence_score,
-            recommended_action=_RECIPROCAL_ACTION_MAP[
-                reciprocal_result.recommended_action
-            ],
+            recommended_action=reciprocal_result.recommended_action,
         )
         session.add(match_result)
         await session.flush()
@@ -517,17 +510,25 @@ def _template_reciprocal_reason_text(result: ReciprocalScoreResult) -> str:
 
 
 async def _load_buyer_candidate_facts(
-    session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
+    session: AsyncSession,
+    recommendable_ids: Sequence[uuid.UUID],
+    fused_candidates: Sequence,
 ) -> tuple[
     dict[uuid.UUID, BuyerCandidateFacts], dict[uuid.UUID, ExhibitorCandidateFacts]
 ]:
     """업체 공통 거래조건(trade_condition, event_product_id IS NULL) 기준으로 바이어/업체
-    양방향 사실관계를 함께 조회한다. 제품군(category_concept_ids)은 아직 채우지 않는다 -
-    structured_search_exhibitors가 업체 단위로만 검색하고 제품 조인을 하지 않기 때문이다
-    (candidate_generator.py의 같은 함수 docstring 참고)."""
+    양방향 사실관계를 함께 조회한다. category_concept_ids는 fused_candidates(RRF 병합
+    결과)의 matched_concept_ids를 그대로 쓴다 - structured_search_exhibitors가 이미 업체별
+    출품 제품의 category_concept_id 집합을 채워서 넘기기 때문이다(_load_consumer_candidate_
+    facts와 같은 패턴, candidate_generator.py의 _exhibitor_category_concept_ids 참고)."""
 
     if not recommendable_ids:
         return {}, {}
+
+    concept_ids_by_recommendable = {
+        candidate.recommendable_id: candidate.matched_concept_ids
+        for candidate in fused_candidates
+    }
 
     stmt = (
         select(
@@ -561,7 +562,9 @@ async def _load_buyer_candidate_facts(
     ) in rows:
         buyer_facts[recommendable_id] = BuyerCandidateFacts(
             recommendable_id=recommendable_id,
-            category_concept_ids=frozenset(),
+            category_concept_ids=concept_ids_by_recommendable.get(
+                recommendable_id, frozenset()
+            ),
             wholesale_price_amount=wholesale_price_max_amount,
             min_order_quantity=min_order_quantity,
         )

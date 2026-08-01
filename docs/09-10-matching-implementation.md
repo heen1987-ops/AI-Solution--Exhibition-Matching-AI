@@ -118,11 +118,19 @@ FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundar
   필수 값으로 요구하는데 아직 실제 신뢰도 모델(08단계 16절)이 연결되지 않았다.
   `feature_builder.component_confidence()`가 "채워진 구성요소 비율"을 임시 대리지표로
   쓴다 - 지어낸 값이 아니라 명시적으로 낮은 근거를 반영하는 값이라는 점은 유지한다.
-- **recommended_action 어휘 불일치**: `calculate_reciprocal_score`의 recommended_action
+- **recommended_action 두 어휘 체계**: `calculate_reciprocal_score`의 recommended_action
   (DO_NOT_PUSH/REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION/REQUEST_MEETING)은
-  matching.match_result의 CHECK 제약(5단계 7.2절 어휘)과 다른 값 체계다. 오케스트레이터가
-  손실 있는 매핑을 적용하고(DO_NOT_PUSH는 결과에서 제외), 정본 해법(CHECK 제약을 두
-  어휘의 합집합으로 넓히는 스키마 변경)은 아래 "다음 구현 순서"로 남겼다.
+  matching.match_result의 CHECK 제약(5단계 7.2절 어휘)과 다른 값 체계였다.
+  `20260802_0900_0008_widen_recommended_action.py` 마이그레이션으로 CHECK 제약을 두
+  어휘의 합집합으로 넓혀 손실 있는 매핑(`_RECIPROCAL_ACTION_MAP`)을 제거했다 - 이제
+  `reciprocal_result.recommended_action`을 그대로 저장한다. 다만 DO_NOT_PUSH는 값 자체는
+  저장 가능해졌어도 "밀지 말라"는 스코어링 코어의 판단이므로 여전히 최종 결과(top-N)에는
+  올리지 않는다(`_EXCLUDED_RECIPROCAL_ACTIONS`) - 이는 어휘 제약이 아니라 추천 정책
+  결정이다.
+- **제품 카테고리 연결**: `structured_search_exhibitors`가 이제 업체가 출품한 승인된
+  event_product들의 category_concept_id 집합을 `ChannelHit.matched_concept_ids`로 채운다
+  (`_exhibitor_category_concept_ids`). 이전에는 이 값이 항상 빈 집합이라
+  `build_buyer_components`의 `product` 구성요소가 실질적으로 항상 불일치(0점)로 계산됐다.
 - **검증**: throwaway Postgres에 tenant/event/exhibitor/participation/trade_condition/
   recommendable(EXHIBITOR)/profile(BUYER)/buyer_need를 심고 종단 호출 - MOQ 100 <= 200
   통과, 상호 적합도 91.43점, `REQUEST_MEETING` 정확히 생성 확인. GENERAL_VISITOR 경로와
@@ -142,10 +150,11 @@ FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundar
 5. 비동기 DB 통합테스트 conftest/fixture 관례를 정하고, 이번 수동 검증 스크립트들(일반
    관람객·바이어 양쪽)을 정식 테스트로 옮긴다.
 6. 14단계(상황 재정렬)와 18단계(추천 이유 생성)를 오케스트레이터의 해당 자리에 연결한다.
-7. `matching.match_result.recommended_action` CHECK 제약을 5단계 7.2절 어휘와
+7. ~~`matching.match_result.recommended_action` CHECK 제약을 5단계 7.2절 어휘와
    `calculate_reciprocal_score`의 상담 어휘(REQUEST_INFORMATION/CONFIRM_TRADE_CONDITION)의
    합집합으로 넓히는 마이그레이션을 추가하고, `_RECIPROCAL_ACTION_MAP`의 손실 있는 매핑을
-   제거한다.
-8. `structured_search_exhibitors`가 제품 카테고리(category_concept_ids)를 채우도록
+   제거한다.~~ 완료 (`0008_widen_recommended_action`, 위 "recommended_action 두 어휘
+   체계" 참고).
+8. ~~`structured_search_exhibitors`가 제품 카테고리(category_concept_ids)를 채우도록
    event_product/product 조인을 추가해, `build_buyer_components`의 `product` 구성요소가
-   항상 None이 되는 현재 한계를 없앤다.
+   항상 None이 되는 현재 한계를 없앤다.~~ 완료 (위 "제품 카테고리 연결" 참고).

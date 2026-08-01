@@ -279,6 +279,12 @@ async def structured_search_exhibitors(
     거래조건이 아직 등록되지 않은 업체(trade_condition 행 자체가 없는 경우)는 이 채널에서는
     제외된다 - 9단계 23.2절 "미확인 업체 별도 후보"는 이 함수 하나로 표현하지 않고, 별도
     채널(관리자 지정 후보 등)이나 미확인 후보 병합 단계에서 다뤄야 한다(아직 미구현).
+
+    ChannelHit.matched_concept_ids는 해당 업체가 이 행사에 출품한 승인된 event_product들의
+    category_concept_id 전체다(업체 하나가 여러 제품군을 취급할 수 있으므로 집합). 순위·상한
+    산정에 쓰는 첫 쿼리와 분리된 두 번째 쿼리로 채운다 - 카테고리 조인을 순위 쿼리에 바로
+    넣으면 업체당 제품 수만큼 행이 늘어나 limit/rank가 업체 단위가 아니라 (업체, 제품) 쌍
+    단위가 되어버리기 때문이다.
     """
 
     stmt = (
@@ -308,8 +314,56 @@ async def structured_search_exhibitors(
     stmt = stmt.limit(limit)
 
     rows = (await session.execute(stmt)).all()
+    recommendable_ids = [recommendable_id for recommendable_id, _ in rows]
+    categories_by_recommendable = await _exhibitor_category_concept_ids(
+        session, recommendable_ids
+    )
+
     hits = tuple(
-        ChannelHit(recommendable_id=recommendable_id, rank=rank)
+        ChannelHit(
+            recommendable_id=recommendable_id,
+            rank=rank,
+            matched_concept_ids=categories_by_recommendable.get(
+                recommendable_id, frozenset()
+            ),
+        )
         for rank, (recommendable_id, _min_order_quantity) in enumerate(rows, start=1)
     )
     return ChannelResult(channel="STRUCTURED", hits=hits)
+
+
+async def _exhibitor_category_concept_ids(
+    session: AsyncSession, recommendable_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, frozenset[uuid.UUID]]:
+    """업체별 recommendable_id -> 출품 제품들의 category_concept_id 집합.
+
+    event_product.participation_id는 recommendable.participation_id와 같은 값이다(둘 다
+    exhibitor_participation을 가리킨다) - 별도로 exhibitor_participation을 다시 조인할
+    필요 없이 Recommendable.participation_id로 바로 이을 수 있다.
+    """
+
+    if not recommendable_ids:
+        return {}
+
+    stmt = (
+        select(Recommendable.recommendable_id, Product.category_concept_id)
+        .join(
+            EventProduct,
+            EventProduct.participation_id == Recommendable.participation_id,
+        )
+        .join(Product, Product.product_id == EventProduct.product_id)
+        .where(
+            Recommendable.recommendable_id.in_(recommendable_ids),
+            EventProduct.approval_status == "APPROVED",
+            Product.category_concept_id.is_not(None),
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+
+    categories: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for recommendable_id, category_concept_id in rows:
+        categories.setdefault(recommendable_id, set()).add(category_concept_id)
+    return {
+        recommendable_id: frozenset(concept_ids)
+        for recommendable_id, concept_ids in categories.items()
+    }
