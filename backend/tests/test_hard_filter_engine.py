@@ -7,8 +7,14 @@ from app.services.matching.hard_filter_engine import (
     FilterOutcome,
     HardFilterRule,
     evaluate_candidate,
+    rule_capacity_min,
+    rule_channel_supported,
+    rule_export_required,
     rule_moq_max,
+    rule_oem_required,
     rule_price_max,
+    rule_private_label_required,
+    rule_region_supported,
     rule_required_service,
     to_filter_result_rows,
 )
@@ -151,6 +157,127 @@ def test_unknown_result_respects_unknown_policy_exclude() -> None:
 
     assert result.passed is False
     assert result.outcomes[0].result == "FAIL"
+
+
+def test_capacity_rule_conditional_pass_when_expansion_available() -> None:
+    recommendable_id = uuid.uuid4()
+    rule = rule_capacity_min(
+        rule_order=1,
+        required_monthly_units=1_000,
+        remaining_capacity_of=lambda _rid: 500,
+        capacity_available_after_days_of=lambda _rid: 60,
+    )
+
+    result = evaluate_candidate(
+        recommendable_id, rules=[rule], context=_context(), evaluation_id="eval-9"
+    )
+
+    assert result.passed is True
+    assert result.outcomes[0].result == "CONDITIONAL_PASS"
+
+
+def test_capacity_rule_fails_when_no_expansion_available() -> None:
+    recommendable_id = uuid.uuid4()
+    rule = rule_capacity_min(
+        rule_order=1,
+        required_monthly_units=1_000,
+        remaining_capacity_of=lambda _rid: 500,
+    )
+
+    result = evaluate_candidate(
+        recommendable_id, rules=[rule], context=_context(), evaluation_id="eval-10"
+    )
+
+    assert result.passed is False
+    assert result.reason_codes == ("INSUFFICIENT_CAPACITY",)
+
+
+def test_channel_rule_fails_when_not_supported() -> None:
+    recommendable_id = uuid.uuid4()
+    rule = rule_channel_supported(rule_order=1, status_of=lambda _rid: "NOT_AVAILABLE")
+
+    result = evaluate_candidate(
+        recommendable_id, rules=[rule], context=_context(), evaluation_id="eval-11"
+    )
+
+    assert result.passed is False
+    assert result.reason_codes == ("CHANNEL_EXCLUDED_BY_EXHIBITOR",)
+
+
+def test_channel_rule_passes_for_active_and_preferred() -> None:
+    recommendable_id = uuid.uuid4()
+    for status in ("ACTIVE", "AVAILABLE", "PREFERRED"):
+        rule = rule_channel_supported(
+            rule_order=1, status_of=lambda _rid, status=status: status
+        )
+        result = evaluate_candidate(
+            recommendable_id, rules=[rule], context=_context(), evaluation_id="eval-12"
+        )
+        assert result.passed is True
+
+
+def test_region_rule_passes_on_nationwide_and_fails_on_not_supported() -> None:
+    recommendable_id = uuid.uuid4()
+
+    nationwide_rule = rule_region_supported(
+        rule_order=1, match_type_of=lambda _rid: "NATIONWIDE"
+    )
+    passed = evaluate_candidate(
+        recommendable_id,
+        rules=[nationwide_rule],
+        context=_context(),
+        evaluation_id="eval-13",
+    )
+    assert passed.passed is True
+
+    not_supported_rule = rule_region_supported(
+        rule_order=1, match_type_of=lambda _rid: "NOT_SUPPORTED"
+    )
+    failed = evaluate_candidate(
+        recommendable_id,
+        rules=[not_supported_rule],
+        context=_context(),
+        evaluation_id="eval-14",
+    )
+    assert failed.passed is False
+    assert failed.reason_codes == ("REGION_NOT_SUPPORTED",)
+
+
+def test_availability_status_rules_share_no_conditional_yes_semantics() -> None:
+    recommendable_id = uuid.uuid4()
+    context = _context()
+
+    for factory, rule_code in (
+        (rule_oem_required, "OEM_NOT_AVAILABLE"),
+        (rule_private_label_required, "PB_NOT_AVAILABLE"),
+        (rule_export_required, "EXPORT_NOT_AVAILABLE"),
+    ):
+        fail_result = evaluate_candidate(
+            recommendable_id,
+            rules=[factory(rule_order=1, status_of=lambda _rid: "NO")],
+            context=context,
+            evaluation_id=f"eval-{rule_code}-no",
+        )
+        assert fail_result.passed is False
+        assert fail_result.reason_codes == (rule_code,)
+
+        conditional_result = evaluate_candidate(
+            recommendable_id,
+            rules=[factory(rule_order=1, status_of=lambda _rid: "NEGOTIABLE")],
+            context=context,
+            evaluation_id=f"eval-{rule_code}-negotiable",
+        )
+        assert conditional_result.passed is True
+        assert conditional_result.outcomes[0].result == "CONDITIONAL_PASS"
+
+        pass_result = evaluate_candidate(
+            recommendable_id,
+            rules=[factory(rule_order=1, status_of=lambda _rid: "YES")],
+            context=context,
+            evaluation_id=f"eval-{rule_code}-yes",
+        )
+        assert pass_result.passed is True
+        assert pass_result.outcomes[0].result == "PASS"
 
 
 def test_to_filter_result_rows_only_includes_excluding_outcomes() -> None:

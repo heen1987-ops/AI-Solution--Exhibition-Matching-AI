@@ -66,7 +66,7 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
 | 모듈 | 역할 | 구현 범위 |
 |---|---|---|
 | `candidate_generator.py` | 9단계 후보검색 | 순위 기반 정규화·가중 RRF 병합·업체별 상한·후보 풀 크기 제어는 순수 함수로 완전히 구현. 구조화 검색(SQL) 채널 하나만 실제로 동작한다. 키워드·벡터·행동·인기·신규 채널은 미구현(각 모듈 docstring 참고 - 벡터 인덱스·행동 이벤트 파이프라인이 아직 없다) |
-| `hard_filter_engine.py` | 10단계 Hard Filter | 평가 엔진(실행순서, PRODUCTION 단락회로/EXPLAIN 전체평가, UNKNOWN 정책, filter_result 행 변환)은 완전히 구현. 대표 규칙 3종(가격 상한, 필수 서비스 가능여부, MOQ 상한)만 예시로 제공하며 나머지 규칙은 같은 `HardFilterRule` 계약으로 추가하면 된다 |
+| `hard_filter_engine.py` | 10단계 Hard Filter | 평가 엔진(실행순서, PRODUCTION 단락회로/EXPLAIN 전체평가, UNKNOWN 정책, filter_result 행 변환)은 완전히 구현. 규칙은 가격 상한·필수 서비스 가능여부·MOQ 상한에 더해 생산·공급역량(15절)·유통채널(16절)·공급지역(17절)·OEM/PB/수출 가용상태(18~19절, `rule_availability_status` 하나로 세 규칙을 만든다)까지 9종을 제공한다. 상담 가능성(20절)·일정충돌(21절)·위치·거리(22절)는 프로파일·일정 데이터가 아직 없어 남겨뒀다 |
 | `feature_builder.py` | Feature Builder | `CONSUMER_SCORE_V1`/`BUYER_SCORE_V1` 구성요소 중 계산 가능한 것(category, price, moq)만 채우고 나머지는 `None`을 반환한다. `meet_ai.scoring.calculate_directional_score`는 `None`을 "정보 없음"으로 처리해 가중치 분모에서 제외하므로, 데이터가 없는 구성요소를 지어내지 않는 것이 계산 계약에 맞다 |
 | `profile_resolver.py` | Profile Resolver | UserProfile + 최신 ProfileVersion + BuyerNeed + 활성 ProfileAttribute 조회. 어떤 속성이 "제품군 요구조건"인지 같은 의미 해석(concept_type 조회)은 온톨로지 조회 계층과 함께 다음 커밋에서 연결한다 |
 | `context_resolver.py` | Context Resolver | VisitSession + 최신 ContextProfile 조회, recommendation_session.context_snapshot 스냅샷 생성 |
@@ -78,7 +78,8 @@ sorted_tables` 개수, alembic head)도 이번 커밋으로 갱신했다 - 어�
 - 단위 테스트(`backend/tests/test_candidate_generator.py`, `test_hard_filter_engine.py`,
   `test_feature_builder.py`): RRF 병합의 다중채널 가점, 업체별 상한, 후보 풀 절단,
   PRODUCTION 단락회로 vs EXPLAIN 전체평가, UNKNOWN 정책, 가격/카테고리/MOQ 구성요소
-  계산, "정보 없음은 None이지 0이 아니다"를 모두 확인한다. DB 없이 실행 가능하다.
+  계산, "정보 없음은 None이지 0이 아니다", 생산·공급역량/유통채널/공급지역/OEM·PB·수출
+  가용상태 규칙의 PASS/FAIL/CONDITIONAL_PASS 분기를 모두 확인한다. DB 없이 실행 가능하다.
 - 수동 종단 검증: throwaway Postgres에 tenant/event/exhibitor/product/event_product/
   recommendable/profile/profile_version/policy_version을 직접 심고
   `generate_general_visitor_recommendations`를 실제로 호출해 RecommendationSession
@@ -140,8 +141,11 @@ FK가 없다고 적혀 있었지만 실제로는 `fk_user_role_exhibitor_boundar
 
 1. 벡터 검색(9단계 8절)·행동 기반 검색(9절)·인기/신규 탐색 후보(10·11절) 채널을 후보검색에
    연결한다 - `ai.object_embedding`과 행동 이벤트 파이프라인이 선행되어야 한다.
-2. 나머지 Hard Filter 규칙(공급지역, 유통채널, OEM/PB, 수출조건, 상담시간, 접근성 등,
-   10단계 6~27절)을 `HardFilterRule` 계약으로 추가한다.
+2. ~~나머지 Hard Filter 규칙(공급지역, 유통채널, OEM/PB, 수출조건, 상담시간, 접근성 등,
+   10단계 6~27절)을 `HardFilterRule` 계약으로 추가한다.~~ 부분 완료: 실제 DB 필드가 이미
+   있는 생산·공급역량(15절)·유통채널(16절)·공급지역(17절, 지역계층 조회는 온톨로지
+   카탈로그 선행 필요)·OEM/PB/수출 가용상태(18~19절)를 추가했다. 상담 가능성(20절)·
+   일정충돌(21절)·위치·거리(22절)는 프로파일·일정 데이터 조회 계층이 아직 없어 남아있다.
 3. `profile_resolver`가 돌려주는 ProfileAttribute를 온톨로지 concept_type과 함께 해석해
    `feature_builder`의 나머지 구성요소(goal/sensory/alcohol/service/usage/behavior/trust,
    business_goal/channel/capacity/region/cooperation/meeting)를 채운다.

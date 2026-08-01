@@ -11,10 +11,15 @@
 ----------------------
 - 평가 엔진 자체(실행순서, 단락회로, UNKNOWN 정책, 평가모드 3종, 결과 저장 행 변환)는
   완전히 구현했다.
-- 구체 규칙(rule_code별 evaluate 함수)은 10단계 문서가 나열한 40여 개 필터 코드 전체가
-  아니라 대표 유형 몇 개(가격 상한, 필수 서비스 가능 여부, MOQ 상한)만 예시로 제공한다.
-  나머지 규칙(공급지역, 유통채널, OEM/PB, 수출조건, 상담시간, 접근성 등)은 실제 프로파일·
-  거래조건 필드가 정의된 이후 같은 HardFilterRule 계약으로 추가하면 된다.
+- 구체 규칙(rule_code별 evaluate 함수)은 가격 상한·필수 서비스 가능 여부·MOQ 상한에 더해
+  생산·공급역량(15절)·유통채널(16절)·공급지역(17절)·OEM/PB/수출 가용상태(18~19절)까지
+  추가했다 - exhibition.trade_condition이 이미 oem_status/private_label_status/
+  export_status를 YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN 5단계로 저장하므로(같은 값
+  체계라 rule_availability_status 하나로 셋 다 만든다), 실제 컬럼이 있는 규칙부터
+  구현했다. 여전히 남은 것: 상담 가능성(20절)·일정충돌(21절)·위치·거리(22절) 등 프로파일·
+  일정 데이터가 아직 이 서비스 계층에 없는 규칙, 그리고 지역 계층 조회(서울↔수도권 같은
+  상위 권역 판정)처럼 온톨로지 카탈로그가 선행되어야 하는 부분(rule_region_supported의
+  match_type_of 콜백 docstring 참고).
 """
 
 from __future__ import annotations
@@ -354,4 +359,269 @@ def rule_moq_max(
         rule_order=rule_order,
         evaluate=evaluate,
         unknown_policy="MANUAL_REVIEW",
+    )
+
+
+def rule_capacity_min(
+    *,
+    rule_order: int,
+    required_monthly_units: int,
+    remaining_capacity_of: Callable[[uuid.UUID], int | None],
+    capacity_available_after_days_of: Callable[[uuid.UUID], int | None] = lambda _: (
+        None
+    ),
+) -> HardFilterRule:
+    """10단계 15.2/15.3절: 생산·공급역량 필터.
+
+    전체 생산량이 아니라 "신규계약에 쓸 수 있는 잔여" 생산능력만 비교한다(15.2절 예시) -
+    호출자(orchestrator)가 이미 기존 계약물량을 뺀 값을 remaining_capacity_of로 넘겨야
+    하고, 이 함수 자체는 그 차감을 수행하지 않는다. 잔여량이 부족해도 증설로 확보 가능한
+    시점이 있으면(15.3절) rule_moq_max의 negotiable_of와 같은 패턴으로 CONDITIONAL_PASS로
+    완화한다.
+    """
+
+    def evaluate(
+        recommendable_id: uuid.UUID, context: FilterContext
+    ) -> FilterOutcome | None:
+        remaining = remaining_capacity_of(recommendable_id)
+        if remaining is None:
+            return FilterOutcome(
+                rule_code="CAPACITY_INFORMATION_UNKNOWN",
+                rule_type="HARD",
+                result="UNKNOWN",
+            )
+        if remaining >= required_monthly_units:
+            return FilterOutcome(
+                rule_code="INSUFFICIENT_CAPACITY", rule_type="HARD", result="PASS"
+            )
+        available_after_days = capacity_available_after_days_of(recommendable_id)
+        if available_after_days is not None:
+            return FilterOutcome(
+                rule_code="CAPACITY_AVAILABLE_AFTER_EXPANSION",
+                rule_type="HARD",
+                result="CONDITIONAL_PASS",
+                user_value={"required_monthly_units": required_monthly_units},
+                candidate_value={
+                    "remaining_capacity": remaining,
+                    "available_after_days": available_after_days,
+                },
+                reason_code="CAPACITY_AVAILABLE_AFTER_EXPANSION",
+            )
+        return FilterOutcome(
+            rule_code="INSUFFICIENT_CAPACITY",
+            rule_type="HARD",
+            result="FAIL",
+            user_value={"required_monthly_units": required_monthly_units},
+            candidate_value={"remaining_capacity": remaining},
+            reason_code="INSUFFICIENT_CAPACITY",
+        )
+
+    return HardFilterRule(
+        rule_code="INSUFFICIENT_CAPACITY",
+        rule_type="HARD",
+        rule_order=rule_order,
+        evaluate=evaluate,
+        unknown_policy="MANUAL_REVIEW",
+    )
+
+
+#: 16단계 16.1절 표: ACTIVE/AVAILABLE/PREFERRED는 통과다. PREFERRED의 "가점"은 Hard
+#: Filter 범위 밖(Soft Score 몫)이라 여기서는 PASS와 동일하게만 취급한다.
+_CHANNEL_STATUS_PASS: frozenset[str] = frozenset({"ACTIVE", "AVAILABLE", "PREFERRED"})
+
+
+def rule_channel_supported(
+    *, rule_order: int, status_of: Callable[[uuid.UUID], str | None]
+) -> HardFilterRule:
+    """10단계 16.1절 유통채널 필터. 업체 지원상태(exhibition.trade_condition_term의
+    term_type='CHANNEL'과 연결된 지원여부)를 6종 상태로 판정한다."""
+
+    def evaluate(
+        recommendable_id: uuid.UUID, context: FilterContext
+    ) -> FilterOutcome | None:
+        status = status_of(recommendable_id)
+        if status is None or status == "UNKNOWN":
+            return FilterOutcome(
+                rule_code="CHANNEL_NOT_SUPPORTED", rule_type="HARD", result="UNKNOWN"
+            )
+        if status in _CHANNEL_STATUS_PASS:
+            return FilterOutcome(
+                rule_code="CHANNEL_NOT_SUPPORTED", rule_type="HARD", result="PASS"
+            )
+        if status == "CONDITIONAL":
+            return FilterOutcome(
+                rule_code="CHANNEL_NOT_SUPPORTED",
+                rule_type="HARD",
+                result="CONDITIONAL_PASS",
+                candidate_value={"status": status},
+                reason_code="CHANNEL_CONDITIONAL",
+            )
+        return FilterOutcome(
+            rule_code="CHANNEL_NOT_SUPPORTED",
+            rule_type="HARD",
+            result="FAIL",
+            candidate_value={"status": status},
+            reason_code="CHANNEL_EXCLUDED_BY_EXHIBITOR",
+        )
+
+    return HardFilterRule(
+        rule_code="CHANNEL_NOT_SUPPORTED",
+        rule_type="HARD",
+        rule_order=rule_order,
+        evaluate=evaluate,
+        unknown_policy="MANUAL_REVIEW",
+    )
+
+
+#: 17단계 17.1절 지역 관계 중 통과로 이어지는 것들.
+_REGION_MATCH_PASS: frozenset[str] = frozenset({"EXACT", "PARENT_REGION", "NATIONWIDE"})
+
+
+def rule_region_supported(
+    *, rule_order: int, match_type_of: Callable[[uuid.UUID], str | None]
+) -> HardFilterRule:
+    """10단계 17.1절 공급지역 필터.
+
+    지역 계층 조회(예: "서울"이 업체가 공급하는 "수도권"에 포함되는지)는 온톨로지
+    카탈로그의 책임이다(9단계 6.3절 category_concept_ids 확장과 같은 이유로, 이 순수
+    평가엔진은 DB나 카탈로그를 조회하지 않는다) - 그래서 이 함수는 이미 계산된 관계
+    유형만 match_type_of로 받는다. match_type_of가 반환하는 값: "EXACT"/"PARENT_REGION"/
+    "NATIONWIDE"(모두 통과) / "CONDITIONAL"(조건부 통과) / "NOT_SUPPORTED"(제거) /
+    None(미확인).
+    """
+
+    def evaluate(
+        recommendable_id: uuid.UUID, context: FilterContext
+    ) -> FilterOutcome | None:
+        match_type = match_type_of(recommendable_id)
+        if match_type is None:
+            return FilterOutcome(
+                rule_code="REGION_NOT_SUPPORTED", rule_type="HARD", result="UNKNOWN"
+            )
+        if match_type in _REGION_MATCH_PASS:
+            reason = (
+                "NATIONWIDE_SUPPLY_AVAILABLE" if match_type == "NATIONWIDE" else None
+            )
+            return FilterOutcome(
+                rule_code="REGION_NOT_SUPPORTED",
+                rule_type="HARD",
+                result="PASS",
+                reason_code=reason,
+            )
+        if match_type == "CONDITIONAL":
+            return FilterOutcome(
+                rule_code="REGION_NOT_SUPPORTED",
+                rule_type="HARD",
+                result="CONDITIONAL_PASS",
+                candidate_value={"match_type": match_type},
+            )
+        return FilterOutcome(
+            rule_code="REGION_NOT_SUPPORTED",
+            rule_type="HARD",
+            result="FAIL",
+            candidate_value={"match_type": match_type},
+            reason_code="REGION_NOT_SUPPORTED",
+        )
+
+    return HardFilterRule(
+        rule_code="REGION_NOT_SUPPORTED",
+        rule_type="HARD",
+        rule_order=rule_order,
+        evaluate=evaluate,
+        unknown_policy="MANUAL_REVIEW",
+    )
+
+
+def rule_availability_status(
+    *,
+    rule_order: int,
+    rule_code: str,
+    not_available_reason_code: str,
+    status_of: Callable[[uuid.UUID], str | None],
+) -> HardFilterRule:
+    """18.1절 YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN 5단계 가용상태의 공통 패턴.
+
+    exhibition.trade_condition의 oem_status/private_label_status/export_status가
+    이미 이 값 체계(TRADE_AVAILABILITY_STATUSES)를 쓰므로, 이 함수 하나로 OEM 필수조건
+    (18.2절), PB 필수조건, 수출 가능 여부(19.1절 "수출 가능 여부" 항목)를 전부 만든다 -
+    세 규칙 각각의 rule_code/reason_code만 다르고 판정 로직은 동일하다.
+    NO -> FAIL, CONDITIONAL/NEGOTIABLE -> CONDITIONAL_PASS(18.2절 예시), YES -> PASS,
+    UNKNOWN/정보없음 -> UNKNOWN(규칙별 unknown_policy가 최종 처리를 결정한다, 18.2절
+    "UNKNOWN -> MANUAL_REVIEW 또는 FAIL"의 "또는"이 바로 unknown_policy 선택지다).
+    """
+
+    def evaluate(
+        recommendable_id: uuid.UUID, context: FilterContext
+    ) -> FilterOutcome | None:
+        status = status_of(recommendable_id)
+        if status is None or status == "UNKNOWN":
+            return FilterOutcome(
+                rule_code=rule_code, rule_type="HARD", result="UNKNOWN"
+            )
+        if status == "NO":
+            return FilterOutcome(
+                rule_code=rule_code,
+                rule_type="HARD",
+                result="FAIL",
+                candidate_value={"status": status},
+                reason_code=not_available_reason_code,
+            )
+        if status in ("CONDITIONAL", "NEGOTIABLE"):
+            return FilterOutcome(
+                rule_code=rule_code,
+                rule_type="HARD",
+                result="CONDITIONAL_PASS",
+                candidate_value={"status": status},
+                reason_code="COOPERATION_CONDITIONAL",
+            )
+        return FilterOutcome(rule_code=rule_code, rule_type="HARD", result="PASS")
+
+    return HardFilterRule(
+        rule_code=rule_code,
+        rule_type="HARD",
+        rule_order=rule_order,
+        evaluate=evaluate,
+        unknown_policy="MANUAL_REVIEW",
+    )
+
+
+def rule_oem_required(
+    *, rule_order: int, status_of: Callable[[uuid.UUID], str | None]
+) -> HardFilterRule:
+    """10단계 18.2절 OEM 필수조건 - rule_availability_status의 OEM 특수화."""
+
+    return rule_availability_status(
+        rule_order=rule_order,
+        rule_code="OEM_NOT_AVAILABLE",
+        not_available_reason_code="OEM_NOT_AVAILABLE",
+        status_of=status_of,
+    )
+
+
+def rule_private_label_required(
+    *, rule_order: int, status_of: Callable[[uuid.UUID], str | None]
+) -> HardFilterRule:
+    """10단계 18.1절과 같은 5단계 상태를 PB(private label)에 적용한 특수화."""
+
+    return rule_availability_status(
+        rule_order=rule_order,
+        rule_code="PB_NOT_AVAILABLE",
+        not_available_reason_code="PB_NOT_AVAILABLE",
+        status_of=status_of,
+    )
+
+
+def rule_export_required(
+    *, rule_order: int, status_of: Callable[[uuid.UUID], str | None]
+) -> HardFilterRule:
+    """10단계 19.1절 "수출 가능 여부" 항목의 특수화. 19.2절 "수출 가능 문구만으로 수출
+    적격 후보로 판단하지 않는다"에 따라, 대상국 인증·라벨 등 나머지 검증항목은 별도
+    규칙(예: rule_availability_status를 대상국 인증 여부에 다시 적용)으로 추가해야 하며
+    이 규칙 통과만으로 수출 적격을 확정하지 않는다."""
+
+    return rule_availability_status(
+        rule_order=rule_order,
+        rule_code="EXPORT_NOT_AVAILABLE",
+        not_available_reason_code="EXPORT_NOT_AVAILABLE",
+        status_of=status_of,
     )
