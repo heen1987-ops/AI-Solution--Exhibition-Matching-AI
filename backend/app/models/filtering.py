@@ -52,6 +52,15 @@ class FilterEvaluation(Base):
             ],
             name="fk_filter_evaluation_profile_version",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id", "profile_id"],
+            [
+                f"{SCHEMA_PROFILE}.user_profile.tenant_id",
+                f"{SCHEMA_PROFILE}.user_profile.event_id",
+                f"{SCHEMA_PROFILE}.user_profile.profile_id",
+            ],
+            name="fk_filter_evaluation_profile_boundary",
+        ),
         CheckConstraint(
             "candidate_count >= 0 AND eligible_count >= 0 AND rejected_count >= 0",
             name="counts_nonnegative",
@@ -73,6 +82,12 @@ class FilterEvaluation(Base):
             "event_id",
             "request_id",
             name="uq_filter_evaluation_request",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "event_id",
+            "filter_evaluation_id",
+            name="uq_filter_evaluation_boundary_id",
         ),
         Index(
             "uq_filter_evaluation_idempotency",

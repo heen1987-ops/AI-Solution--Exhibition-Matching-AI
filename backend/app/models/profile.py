@@ -132,6 +132,12 @@ class UserProfile(Base):
                 "deleted_at IS NULL AND guest_session_id IS NOT NULL"
             ),
         ),
+        UniqueConstraint(
+            "tenant_id",
+            "event_id",
+            "profile_id",
+            name="uq_user_profile_boundary_id",
+        ),
         {"schema": SCHEMA_PROFILE},
     )
 
@@ -489,6 +495,12 @@ class VisitSession(Base):
             name="available_minutes_nonneg",
         ),
         Index("ix_visit_session_event_date", "tenant_id", "event_id", "visit_date"),
+        UniqueConstraint(
+            "tenant_id",
+            "event_id",
+            "visit_session_id",
+            name="uq_visit_session_boundary_id",
+        ),
         {"schema": SCHEMA_PROFILE},
     )
 

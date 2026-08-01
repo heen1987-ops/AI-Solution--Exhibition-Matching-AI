@@ -1188,6 +1188,9 @@ class Booth(Base):
             ],
             name="fk_booth_participation_boundary",
         ),
+        UniqueConstraint(
+            "tenant_id", "event_id", "booth_id", name="uq_booth_boundary_id"
+        ),
         UniqueConstraint("event_id", "booth_number", name="uq_booth_event_number"),
         CheckConstraint(
             f"operating_status IN ({_in_list(BOOTH_OPERATING_STATUSES)})",
@@ -1377,6 +1380,9 @@ class Program(Base):
                 f"{SCHEMA_EXHIBITION}.event_zone.event_zone_id",
             ],
             name="fk_program_zone_same_event",
+        ),
+        UniqueConstraint(
+            "tenant_id", "event_id", "program_id", name="uq_program_boundary_id"
         ),
         CheckConstraint(
             "start_at IS NULL OR end_at IS NULL OR start_at < end_at",

@@ -197,6 +197,7 @@ class MatchReasonDraft:
     contribution_score: float | None
     generated_by: str  # TEMPLATE | LLM
     display_order: int = 0
+    ai_run_id: uuid.UUID | None = None
 
 
 @dataclass

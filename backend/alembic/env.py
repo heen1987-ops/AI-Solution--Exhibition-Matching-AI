@@ -17,12 +17,15 @@ from alembic import context
 from app.core.config import get_settings
 from app.db.base import SCHEMA_ONTOLOGY, Base
 from app.models import (  # noqa: F401
+    ai,
     consent,
     core,
     exhibitor,
     filtering,
     identity,
+    matching,
     ontology_refs,
+    policy,
     profile,
 )
 from sqlalchemy import pool

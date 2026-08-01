@@ -30,10 +30,15 @@ def test_metadata_contains_published_supply_and_filter_tables() -> None:
         "exhibition.profile_attribute",
         "matching.filter_evaluation",
         "matching.filter_result",
+        "matching.match_policy_version",
+        "matching.recommendation_session",
+        "matching.match_result",
+        "ai.model_version",
+        "ai.ai_run",
     }
 
     assert expected <= set(Base.metadata.tables)
-    assert len(Base.metadata.sorted_tables) == 49
+    assert len(Base.metadata.sorted_tables) == 61
 
 
 def test_event_product_and_booth_are_bound_to_participation_event() -> None:
@@ -45,6 +50,34 @@ def test_event_product_and_booth_are_bound_to_participation_event() -> None:
 
     assert expected in _foreign_key_targets("exhibition.event_product")
     assert expected in _foreign_key_targets("exhibition.booth")
+
+
+def test_matching_records_preserve_tenant_and_event_boundaries() -> None:
+    assert (
+        "profile.user_profile.tenant_id",
+        "profile.user_profile.event_id",
+        "profile.user_profile.profile_id",
+    ) in _foreign_key_targets("matching.filter_evaluation")
+    assert (
+        "matching.filter_evaluation.tenant_id",
+        "matching.filter_evaluation.event_id",
+        "matching.filter_evaluation.filter_evaluation_id",
+    ) in _foreign_key_targets("matching.recommendation_session")
+    assert (
+        "matching.recommendation_session.tenant_id",
+        "matching.recommendation_session.event_id",
+        "matching.recommendation_session.recommendation_session_id",
+    ) in _foreign_key_targets("matching.match_result")
+    assert (
+        "exhibition.recommendable.tenant_id",
+        "exhibition.recommendable.event_id",
+        "exhibition.recommendable.recommendable_id",
+    ) in _foreign_key_targets("matching.match_result")
+    assert (
+        "exhibition.recommendable.tenant_id",
+        "exhibition.recommendable.event_id",
+        "exhibition.recommendable.recommendable_id",
+    ) in _foreign_key_targets("interaction.interaction_event")
 
 
 def test_supply_attribute_code_is_bound_to_canonical_concept() -> None:
@@ -83,4 +116,4 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0006_filter_evaluation"]
+    assert script.get_heads() == ["0008_matching_runtime"]
