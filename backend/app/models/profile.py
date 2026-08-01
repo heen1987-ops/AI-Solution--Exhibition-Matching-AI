@@ -404,6 +404,11 @@ class ProfileVersion(Base):
         UniqueConstraint(
             "profile_id", "version_number", name="uq_profile_version_number"
         ),
+        UniqueConstraint(
+            "profile_id",
+            "profile_version_id",
+            name="uq_profile_version_profile_id_version_id",
+        ),
         CheckConstraint("version_number >= 1", name="version_number_positive"),
         {"schema": SCHEMA_PROFILE},
     )

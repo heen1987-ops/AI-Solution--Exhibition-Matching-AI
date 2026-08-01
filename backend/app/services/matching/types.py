@@ -305,11 +305,32 @@ class MatchCandidate:
 class FilterOutcome:
     """5.5 Hard Filter Engine 처리 결과 (05번 문서 5.5절 "처리 결과" JSON 그대로)."""
 
+    filter_evaluation_id: uuid.UUID
     object_id: uuid.UUID
     object_type: str
+    recommendable_id: uuid.UUID | None
     passed: bool
     filter_code: str | None
     details: dict[str, Any] = field(default_factory=dict)
+    evidence_refs: list[str] = field(default_factory=list)
+    candidate_fingerprint: str = ""
+
+
+@dataclass
+class HardFilterEvaluation:
+    """One reproducible stage-10 run and its admitted candidate set."""
+
+    filter_evaluation_id: uuid.UUID
+    policy_version: str
+    input_fingerprint: str
+    started_at: datetime
+    completed_at: datetime
+    eligible_candidates: list[MatchCandidate]
+    outcomes: list[FilterOutcome]
+
+    @property
+    def rejected_count(self) -> int:
+        return sum(not outcome.passed for outcome in self.outcomes)
 
 
 @dataclass

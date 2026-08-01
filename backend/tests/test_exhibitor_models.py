@@ -21,17 +21,19 @@ def _foreign_key_targets(table_name: str) -> set[tuple[str, ...]]:
     }
 
 
-def test_exhibition_metadata_contains_stage_8_supply_tables() -> None:
+def test_metadata_contains_published_supply_and_filter_tables() -> None:
     expected = {
         "exhibition.exhibitor_profile",
         "exhibition.product_profile",
         "exhibition.supply_capability",
         "exhibition.buyer_preference",
         "exhibition.profile_attribute",
+        "matching.filter_evaluation",
+        "matching.filter_result",
     }
 
     assert expected <= set(Base.metadata.tables)
-    assert len(Base.metadata.sorted_tables) == 47
+    assert len(Base.metadata.sorted_tables) == 49
 
 
 def test_event_product_and_booth_are_bound_to_participation_event() -> None:
@@ -76,9 +78,9 @@ def test_exhibition_sql_contract_is_immutable_and_has_hard_boundary_triggers() -
     assert "exhibition.taxonomy_" not in text
 
 
-def test_alembic_chain_has_one_exhibition_head() -> None:
+def test_alembic_chain_has_one_published_head() -> None:
     config = Config(str(ROOT / "backend" / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0005_exhibition"]
+    assert script.get_heads() == ["0006_filter_evaluation"]

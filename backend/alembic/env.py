@@ -20,6 +20,7 @@ from app.models import (  # noqa: F401
     consent,
     core,
     exhibitor,
+    filtering,
     identity,
     ontology_refs,
     profile,
