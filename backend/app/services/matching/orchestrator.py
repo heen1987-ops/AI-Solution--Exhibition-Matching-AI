@@ -199,6 +199,11 @@ async def generate_general_visitor_recommendations(
         required_category_concept_ids=request.required_category_concept_ids,
         price_min=request.price_min,
         price_max=request.price_max,
+        required_service_codes=frozenset(
+            attribute.attribute_code
+            for attribute in profile_resolution.active_attributes
+            if attribute.attribute_code.startswith("SERVICE.")
+        ),
         required_concept_ids_by_component=group_concept_ids_by_component(
             (attribute.attribute_code, attribute.concept_id)
             for attribute in profile_resolution.active_attributes
@@ -334,6 +339,8 @@ async def _load_consumer_candidate_facts(
         select(
             Recommendable.recommendable_id,
             EventProduct.event_price_amount,
+            EventProduct.tasting_status,
+            EventProduct.purchase_status,
             Product.category_concept_id,
         )
         .join(
@@ -350,7 +357,13 @@ async def _load_consumer_candidate_facts(
     )
 
     facts: dict[uuid.UUID, ConsumerCandidateFacts] = {}
-    for recommendable_id, event_price_amount, category_concept_id in rows:
+    for (
+        recommendable_id,
+        event_price_amount,
+        tasting_status,
+        purchase_status,
+        category_concept_id,
+    ) in rows:
         concept_ids = set(concept_ids_by_recommendable.get(recommendable_id, ()))
         if category_concept_id is not None:
             concept_ids.add(category_concept_id)
@@ -361,6 +374,8 @@ async def _load_consumer_candidate_facts(
             concept_ids_by_component=attribute_components_by_id.get(
                 recommendable_id, {}
             ),
+            tasting_available=tasting_status == "AVAILABLE",
+            purchase_available=purchase_status == "AVAILABLE",
         )
     return facts
 

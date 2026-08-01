@@ -102,11 +102,42 @@ async def _seed_ontology_concept(
     return taxonomy_version_id, concept_id
 
 
+async def _ensure_ontology_concept(
+    session: AsyncSession, *, concept_code: str, concept_type: str
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """`_seed_ontology_concept`과 달리 이미 있으면 재사용한다 - concept_code가 전역
+    UNIQUE라서 매 테스트 실행마다 새로 만들 수 없는 고정 코드(예: feature_builder.py의
+    "SERVICE.TASTING"처럼 하드코딩된 매칭 키)에 쓴다."""
+
+    existing = (
+        await session.execute(
+            text(
+                "SELECT cr.taxonomy_version_id, c.concept_id "
+                "FROM ontology.concept c "
+                "JOIN ontology.concept_revision cr ON cr.concept_id = c.concept_id "
+                "WHERE c.concept_code = :code LIMIT 1"
+            ),
+            {"code": concept_code},
+        )
+    ).first()
+    if existing is not None:
+        return existing.taxonomy_version_id, existing.concept_id
+
+    return await _seed_ontology_concept(
+        session,
+        suffix=_unique_suffix(),
+        concept_code=concept_code,
+        concept_type=concept_type,
+    )
+
+
 async def _seed_general_visitor_scenario(
     session: AsyncSession,
     *,
     require_sensory: bool = False,
     tag_product_sensory: bool = False,
+    require_tasting: bool = False,
+    tasting_status: str = "AVAILABLE",
 ) -> GeneralVisitorRecommendationRequest:
     suffix = _unique_suffix()
     tenant = Tenant(
@@ -156,6 +187,7 @@ async def _seed_general_visitor_scenario(
         participation_id=participation.participation_id,
         product_id=product.product_id,
         event_price_amount=20_000,
+        tasting_status=tasting_status,
         approval_status="APPROVED",
     )
     session.add(event_product)
@@ -243,6 +275,28 @@ async def _seed_general_visitor_scenario(
             )
         )
 
+    if require_tasting:
+        # feature_builder._SERVICE_CODE_TO_AVAILABILITY_FIELD는 정확히 "SERVICE.TASTING"
+        # 문자열을 찾으므로, 접미사 없이 이 코드를 재사용해야 한다(concept_code는 전역
+        # UNIQUE라 매 테스트가 새로 만들면 안 된다) - 있으면 재사용하고 없으면 만든다.
+        (
+            tasting_taxonomy_version_id,
+            tasting_concept_id,
+        ) = await _ensure_ontology_concept(
+            session, concept_code="SERVICE.TASTING", concept_type="SERVICE"
+        )
+        session.add(
+            ProfileAttribute(
+                profile_id=profile.profile_id,
+                taxonomy_version_id=tasting_taxonomy_version_id,
+                concept_id=tasting_concept_id,
+                attribute_code="SERVICE.TASTING",
+                value_json={"selected": True},
+                requirement_level="PREFERRED",
+                source_type="USER_SELECTED",
+            )
+        )
+
     await session.commit()
 
     return GeneralVisitorRecommendationRequest(
@@ -288,6 +342,49 @@ async def test_generate_general_visitor_recommendations_end_to_end(
     # 14단계 상황 재정렬이 연결되어 있으면 context_score가 채워진다(방문 세션이 없어도
     # "정보 없음"은 만점으로 처리한다, context_reranker.compute_context_score 참고).
     assert float(results[0].context_score) == pytest.approx(1.0)
+
+
+async def test_generate_general_visitor_recommendations_scores_lower_when_tasting_paused(
+    db_session: AsyncSession,
+) -> None:
+    """feature_builder._service_match(exhibition.event_product.tasting_status 연결,
+    item 3의 나머지 구성요소 중 하나)를 검증한다: 시음을 요구하는 프로파일에 대해
+    시음 가능한 후보가, 시음이 일시중단된 후보보다 raw_score가 높아야 한다."""
+
+    available_request = await _seed_general_visitor_scenario(
+        db_session, require_tasting=True, tasting_status="AVAILABLE"
+    )
+    available_session = await generate_general_visitor_recommendations(
+        db_session, available_request
+    )
+    await db_session.commit()
+
+    paused_request = await _seed_general_visitor_scenario(
+        db_session, require_tasting=True, tasting_status="PAUSED"
+    )
+    paused_session = await generate_general_visitor_recommendations(
+        db_session, paused_request
+    )
+    await db_session.commit()
+
+    available_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == available_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    paused_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == paused_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(available_result.raw_score) > float(paused_result.raw_score)
 
 
 async def test_generate_general_visitor_recommendations_generates_reason_per_matched_component(

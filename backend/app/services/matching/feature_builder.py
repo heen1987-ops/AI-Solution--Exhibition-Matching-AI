@@ -10,7 +10,8 @@
 ----------------------
 현재 채워지는 구성요소:
     - CONSUMER_SCORE_V1: category, price, goal/sensory/alcohol/usage(온톨로지 concept
-      매칭, 아래 "concept 기반 구성요소" 참고)
+      매칭, 아래 "concept 기반 구성요소" 참고), service(SERVICE.TASTING/SERVICE.PURCHASE
+      요구를 exhibition.event_product.tasting_status/purchase_status와 비교)
     - BUYER_SCORE_V1: product, price, moq, business_goal/channel/region(concept 매칭),
       capacity(exhibition.supply_capability.available_capacity 숫자 비교)
     - EXHIBITOR_SCORE_V1 (양면 적합도의 업체->바이어 방향): order_volume,
@@ -35,9 +36,6 @@ ontology.concept과 조인해 concept_code를 얻어야 한다(orchestrator._loa
 candidate_facts 참고) - 이 모듈 자체는 이미 묶인 dict만 받아 순수하게 교집합만 비교한다.
 
 여전히 None으로 남기는 구성요소와 이유:
-    - service(CONSUMER): concept 매칭이 아니라 exhibition.event_product의
-      tasting_status/purchase_status 상태값 비교가 필요하다(hard_filter_engine의
-      rule_required_service와 같은 데이터, 아직 이 함수에 연결하지 않았다).
     - cooperation(BUYER), trade_type(EXHIBITOR): exhibition.trade_condition.oem_status/
       private_label_status/export_status(YES/NO/CONDITIONAL/NEGOTIABLE/UNKNOWN) 상태값
       비교가 필요하다 - concept 매칭 대상이 아니다.
@@ -111,6 +109,10 @@ class ConsumerCandidateFacts:
     concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
         default_factory=dict
     )
+    #: exhibition.event_product.tasting_status/purchase_status == 'AVAILABLE'.
+    #: hard_filter_engine.rule_required_service와 같은 데이터를 소프트 점수용으로도 쓴다.
+    tasting_available: bool | None = None
+    purchase_available: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,12 @@ class ConsumerProfileFacts:
     required_category_concept_ids: frozenset[uuid.UUID]
     price_min: int | None
     price_max: int | None
+    #: profile.profile_attribute(active)의 attribute_code 중 "SERVICE."로 시작하는 것들
+    #: (예: "SERVICE.TASTING") 전체 - concept_id가 아니라 문자열 자체로 비교한다(온톨로지
+    #: 카탈로그의 고정 코드 "SERVICE.TASTING"/"SERVICE.PURCHASE"를 그대로 쓰는 게, concept_id
+    #: 교집합보다 단순하고 이 두 값만 다루면 충분하기 때문이다 - _component_match 같은
+    #: 범용 메커니즘을 새로 만들 필요가 없다).
+    required_service_codes: frozenset[str] = field(default_factory=frozenset)
     #: profile.profile_attribute(active)를 concept_type별로 묶은 결과.
     required_concept_ids_by_component: Mapping[str, frozenset[uuid.UUID]] = field(
         default_factory=dict
@@ -237,6 +245,34 @@ def _component_match(
     return Decimal(1) if candidate_concepts & required else Decimal(0)
 
 
+#: 온톨로지 카탈로그의 고정 서비스 코드(BOOTH_SERVICE concept_type) -> 후보 사실관계
+#: 필드 이름. 이 두 코드만 다루므로 attribute_code 문자열을 직접 비교한다(모듈 docstring
+#: "concept 기반 구성요소" 참고 - concept_id 교집합 메커니즘을 새로 만들 필요가 없다).
+_SERVICE_CODE_TO_AVAILABILITY_FIELD: Mapping[str, str] = {
+    "SERVICE.TASTING": "tasting_available",
+    "SERVICE.PURCHASE": "purchase_available",
+}
+
+
+def _service_match(
+    candidate: ConsumerCandidateFacts, profile: ConsumerProfileFacts
+) -> Decimal | None:
+    """요구한 서비스(SERVICE.TASTING/SERVICE.PURCHASE) 중 하나라도 이용 불가면 0, 요구가
+    없으면 None, 그 외(요구한 서비스가 전부 확인되고 이용 가능)면 1이다. hard_filter_
+    engine.rule_required_service가 같은 데이터로 하드 배제를 하는 것과 달리, 여기서는
+    소프트 점수 하나로만 반영한다."""
+
+    if not profile.required_service_codes:
+        return None
+    for code in profile.required_service_codes:
+        field_name = _SERVICE_CODE_TO_AVAILABILITY_FIELD.get(code)
+        if field_name is None:
+            continue
+        if getattr(candidate, field_name) is False:
+            return Decimal(0)
+    return Decimal(1)
+
+
 def build_consumer_components(
     candidate: ConsumerCandidateFacts, profile: ConsumerProfileFacts
 ) -> Mapping[str, Decimal | None]:
@@ -260,7 +296,7 @@ def build_consumer_components(
             candidate.event_price_amount, profile.price_min, profile.price_max
         ),
         "alcohol": component("alcohol"),
-        "service": None,
+        "service": _service_match(candidate, profile),
         "usage": component("usage"),
         "behavior": None,
         "trust": None,

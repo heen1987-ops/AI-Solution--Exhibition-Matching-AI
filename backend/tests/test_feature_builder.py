@@ -103,9 +103,9 @@ def test_consumer_category_mismatch_scores_zero_not_none() -> None:
 
 
 def test_unimplemented_consumer_components_are_none_not_fabricated() -> None:
-    """service/behavior/trust는 concept 교집합이 아니라 각각 다른 데이터(EventProduct
-    상태값, 행동 이벤트 집계, 데이터 신뢰도 모델)가 필요해 아직 미구현이다(모듈
-    docstring 참고) - 후보 사실관계에 아무것도 없어도 항상 None이어야 한다."""
+    """behavior/trust는 각각 행동 이벤트 집계·데이터 신뢰도 모델이 필요해 아직
+    미구현이다(모듈 docstring 참고) - 후보 사실관계에 아무것도 없어도 항상 None이어야
+    한다."""
 
     candidate = ConsumerCandidateFacts(
         recommendable_id=uuid.uuid4(),
@@ -118,8 +118,64 @@ def test_unimplemented_consumer_components_are_none_not_fabricated() -> None:
 
     components = build_consumer_components(candidate, profile)
 
-    for component in ("service", "behavior", "trust"):
+    for component in ("behavior", "trust"):
         assert components[component] is None
+
+
+def test_service_is_none_when_profile_has_no_requirement() -> None:
+    candidate = ConsumerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        event_price_amount=None,
+        tasting_available=False,
+    )
+    profile = ConsumerProfileFacts(
+        required_category_concept_ids=frozenset(), price_min=None, price_max=None
+    )
+
+    components = build_consumer_components(candidate, profile)
+
+    assert components["service"] is None
+
+
+def test_service_scores_one_when_required_service_available() -> None:
+    candidate = ConsumerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        event_price_amount=None,
+        tasting_available=True,
+    )
+    profile = ConsumerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        price_min=None,
+        price_max=None,
+        required_service_codes=frozenset({"SERVICE.TASTING"}),
+    )
+
+    components = build_consumer_components(candidate, profile)
+
+    assert components["service"] == Decimal(1)
+
+
+def test_service_scores_zero_when_required_service_unavailable() -> None:
+    candidate = ConsumerCandidateFacts(
+        recommendable_id=uuid.uuid4(),
+        category_concept_ids=frozenset(),
+        event_price_amount=None,
+        tasting_available=False,
+        purchase_available=True,
+    )
+    profile = ConsumerProfileFacts(
+        required_category_concept_ids=frozenset(),
+        price_min=None,
+        price_max=None,
+        required_service_codes=frozenset({"SERVICE.TASTING", "SERVICE.PURCHASE"}),
+    )
+
+    components = build_consumer_components(candidate, profile)
+
+    # 두 서비스 중 하나(시음)라도 불가능하면 전체가 0점이어야 한다.
+    assert components["service"] == Decimal(0)
 
 
 def test_component_of_attribute_code_maps_known_prefixes() -> None:
