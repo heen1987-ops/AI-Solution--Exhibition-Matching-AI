@@ -262,12 +262,18 @@ tasks:
     wave: 1
     track: QA_SECURITY
     priority: P2
-    status: READY
+    status: DONE
     depends_on: []
     owned_paths:
       - "backend/tests/test_ontology_api.py"
     acceptance:
       - "다국어(ko/en) 유사어 해석 케이스 포함"
+    completed_note: >
+      7개 신규 테스트 추가(PRODUCT/CONSUMER/BUYER 컨텍스트 실제 카탈로그 쌍 사용,
+      컨텍스트 불일치, 대소문자 무관, 미매핑 텍스트, locale 스코핑). 카탈로그에 en 유사어가
+      전혀 없다는 사실을 발견해 가짜 assertion을 만들지 않고 "0건 매칭이 정상"이라는
+      회귀 테스트로 정직하게 반영 - AIS-002-followup으로 데이터 공백 등록.
+      전체 스위트 90 passed / 11 skipped(회귀 없음).
     note: >
       원래 track: AI_SEARCH로 기록했으나 owned_paths(backend/tests/**)가 locks.yaml상
       QA_SECURITY 전속 경로라 트랙 불일치가 있었다 - QA_SECURITY로 정정(디스패치 전 발견,
@@ -291,7 +297,7 @@ tasks:
     wave: 1
     track: QA_SECURITY
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["FND-003"]
     owned_paths:
       - ".github/**"
@@ -300,6 +306,32 @@ tasks:
     acceptance:
       - "ruff/mypy 결과가 .harness/reports/lint/에 기록된다"
       - "기본 시크릿 스캔이 CI에 포함된다"
+    completed_note: >
+      gitleaks(고정 바이너리, marketplace action 아님) secret-scan 잡 추가 +
+      baseline(기존 오탐 4건 제외) + ruff/pytest/unittest 결과를 .harness/reports/**로
+      아티팩트 업로드. 로컬 검증: YAML 유효, gitleaks baseline 적용 후 0건, pytest 90
+      passed/11 skipped. 워커가 스스로 발견한 불일치: 이 태스크의 owned_paths(.github/**)가
+      locks.yaml상 FOUNDATION 전속과 충돌 - locks.yaml을 정본으로 유지하고, 앞으로
+      QA_SECURITY가 CI를 고쳐야 하면 직접 수정하지 말고 FOUNDATION에 핸드오프 요청하는
+      것으로 원칙을 재확인(아래 owned_paths는 이번 1회의 실제 이력 기록으로 남기되,
+      locks.yaml 자체는 변경하지 않는다). 핸드오프: .harness/handoffs/qa/QAS-001.md.
+
+  - id: AIS-002-followup
+    title: "(참고) 온톨로지 영어(en) 유사어 데이터 공백"
+    wave: 1
+    track: CONTRACTS
+    priority: P2
+    status: PENDING_DECOMPOSITION
+    depends_on: []
+    owned_paths:
+      - "src/meet_ai/ontology/catalog.v1.json"
+    acceptance:
+      - "K-6(다국어) 요구가 실제로 영어 유사어 데이터를 필요로 하는지 CONTRACTS/AI_SEARCH가 결정"
+    note: >
+      AIS-002 실행 중 발견: catalog.v1.json에는 ko-KR 유사어 11건만 있고 en 유사어가
+      전혀 없다. 테스트는 이 사실을 조작하지 않고 "0건 매칭"을 정상 동작으로 검증했다
+      (backend/tests/test_ontology_api.py). 실제 영어 데이터 추가 필요 여부는 데이터
+      작업이지 코드 작업이 아니므로 결정 대기 상태로만 등록.
 
   # ---------------- WAVE 2: CORE PARALLEL IMPLEMENTATION (coarse groups, refine at wave start) ----------------
   - id: BAC-GROUP-001
