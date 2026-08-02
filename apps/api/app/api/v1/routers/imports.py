@@ -39,7 +39,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,7 @@ from app.models.integration import SyncJob, SyncRowError
 from app.schemas.imports import (
     ExcelImportResponse,
     ExcelImportSheetSummary,
+    ExcelMatchExportRequest,
     ExhibitorImportRequest,
     ExhibitorImportRow,
     ImportBatchResult,
@@ -58,6 +59,12 @@ from app.schemas.imports import (
     ProductImportRow,
     VisitorImportRequest,
     VisitorImportRow,
+)
+from app.services.batch_matching_export import (
+    XLSX_MEDIA_TYPE,
+    BatchMatchingExportError,
+    render_batch_matching_workbook,
+    run_batch_matching,
 )
 from app.services.excel_import import (
     EXCEL_IMPORT_SCHEMA_VERSION,
@@ -300,7 +307,7 @@ async def import_excel(
             tenant_id=tenant_id,
             event_id=event_id,
             source_system_code=source_system_code,
-            job_type="VISITOR_EXCEL_IMPORT",
+            job_type="VISITOR_IMPORT",
             rows=parsed.visitors.rows,
             upsert_one=upsert_visitor,
             error_row_numbers=parsed.visitors.row_numbers,
@@ -313,7 +320,7 @@ async def import_excel(
             tenant_id=tenant_id,
             event_id=event_id,
             source_system_code=source_system_code,
-            job_type="EXHIBITOR_EXCEL_IMPORT",
+            job_type="EXHIBITOR_IMPORT",
             rows=parsed.exhibitors.rows,
             upsert_one=upsert_exhibitor,
             error_row_numbers=parsed.exhibitors.row_numbers,
@@ -333,6 +340,51 @@ async def import_excel(
         exhibitors=exhibitor_summary,
         visitor_import=visitor_import,
         exhibitor_import=exhibitor_import,
+    )
+
+
+@router.post(
+    "/admin/imports/excel/matches",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {XLSX_MEDIA_TYPE: {}},
+            "description": "사전등록자별 Top-N 참여기업 매칭 XLSX",
+        }
+    },
+)
+async def export_excel_matches(
+    request: ExcelMatchExportRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Export canonical recommendations for selected imported preregistrants.
+
+    The operation does not match raw workbook rows. Every source ID must resolve to a canonical
+    profile, and each result goes through consent, approved catalog, Hard Filter, common scoring,
+    explanation, and persistence policies.
+    """
+
+    try:
+        report = await run_batch_matching(
+            db,
+            tenant_id=request.tenant_id,
+            event_id=request.event_id,
+            source_system_code=request.source_system_code,
+            source_record_ids=request.source_record_ids,
+            top_n=request.top_n,
+        )
+    except BatchMatchingExportError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.code) from None
+
+    return Response(
+        content=render_batch_matching_workbook(report),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="meet-ai-batch-matches.xlsx"'
+            ),
+            "X-Workbook-Schema": report.schema_version,
+        },
     )
 
 

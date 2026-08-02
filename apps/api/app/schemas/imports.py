@@ -28,7 +28,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # 공용 조각
@@ -126,6 +126,27 @@ class ExcelImportResponse(BaseModel):
     exhibitors: ExcelImportSheetSummary
     visitor_import: ImportBatchResult | None = None
     exhibitor_import: ImportBatchResult | None = None
+
+
+class ExcelMatchExportRequest(BaseModel):
+    """Imported preregistrants to evaluate through the canonical recommendation pipeline."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    tenant_id: UUID
+    event_id: UUID
+    source_system_code: str = Field(default="EXCEL_UPLOAD", min_length=1, max_length=50)
+    source_record_ids: list[Annotated[str, Field(min_length=1, max_length=255)]] = (
+        Field(min_length=1, max_length=100)
+    )
+    top_n: int = Field(default=5, ge=1, le=10)
+
+    @field_validator("source_record_ids")
+    @classmethod
+    def source_record_ids_must_be_unique(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("source_record_ids must be unique")
+        return values
 
 
 # ---------------------------------------------------------------------------

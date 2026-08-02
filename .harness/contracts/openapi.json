@@ -4446,6 +4446,44 @@
         }
       }
     },
+    "/api/v1/admin/imports/excel/matches": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Export Excel Matches",
+        "description": "Export canonical recommendations for selected imported preregistrants.\n\nThe operation does not match raw workbook rows. Every source ID must resolve to a canonical\nprofile, and each result goes through consent, approved catalog, Hard Filter, common scoring,\nexplanation, and persistence policies.",
+        "operationId": "export_excel_matches_api_v1_admin_imports_excel_matches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExcelMatchExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "사전등록자별 Top-N 참여기업 매칭 XLSX",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/imports/products": {
       "post": {
         "tags": [
@@ -8048,6 +8086,53 @@
         ],
         "title": "ExcelImportSheetSummary",
         "description": "XLSX 한 입력 시트의 검증 집계. 원본 개인정보 값은 응답하지 않는다."
+      },
+      "ExcelMatchExportRequest": {
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "source_system_code": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Source System Code",
+            "default": "EXCEL_UPLOAD"
+          },
+          "source_record_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Source Record Ids"
+          },
+          "top_n": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Top N",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "event_id",
+          "source_record_ids"
+        ],
+        "title": "ExcelMatchExportRequest",
+        "description": "Imported preregistrants to evaluate through the canonical recommendation pipeline."
       },
       "ExhibitorImportRequest": {
         "properties": {

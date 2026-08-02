@@ -261,3 +261,20 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
 - The existing `/api/v1/search` remains the natural-language path; no parallel scoring formula was
   introduced. Focused parser/API tests pass `7/7`; the generated workbook was rendered and all five
   sheets were visually inspected before publication.
+
+## 2026-08-02 — BACKEND-012 preregistrant Top-N XLSX export
+
+- Added `POST /api/v1/admin/imports/excel/matches` with a maximum of 100 unique opaque source IDs
+  and Top 1–10. Each source ID resolves to its canonical imported profile and executes the existing
+  `EXHIBITOR` recommendation orchestrator; raw workbook rows are never scored directly.
+- Consent, age confirmation, event state, approved catalog retrieval, Hard Filter, common scoring
+  facade, deterministic reasons, and result persistence remain unchanged. Missing or ineligible
+  profiles are isolated into the status sheet without automatic condition relaxation.
+- Published `meet-ai-batch-match-export-v1.0` with summary formulas, ranked public exhibitor results,
+  safe reason/evidence fields, policy and ranking versions, eligibility IDs, score fingerprints, and
+  per-profile status. Direct identity and raw profile fields are absent.
+- Fixed the CR-007 persisted Excel import job types to use the database-allowed `VISITOR_IMPORT` and
+  `EXHIBITOR_IMPORT` values; added a regression test for `dry_run=false`.
+- Focused import/export tests pass `13/13`. The example workbook formula scan returned zero errors,
+  all three sheets were rendered and visually inspected, full backend passed `197` with `2` skipped,
+  and root deterministic engine/ontology tests passed `45`.

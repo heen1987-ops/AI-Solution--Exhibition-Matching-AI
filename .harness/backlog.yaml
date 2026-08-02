@@ -581,6 +581,27 @@ tasks:
       - "업체 승인 및 공개 인덱스 경계를 우회하지 않고 자연어 검색은 기존 /api/v1/search 사용"
     evidence: "meet-ai-excel-import-v1.0 parser/API/template published; focused tests 7 passed; workbook rendered and all five sheets visually inspected."
 
+  - id: BACKEND-012
+    title: 사전등록자별 Top-N 참여기업 일괄 매칭 XLSX export
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-011, AIENGINE-004]
+    owned_paths:
+      - "apps/api/app/services/batch_matching_export.py"
+      - "apps/api/app/api/v1/routers/imports.py"
+      - "apps/api/app/schemas/imports.py"
+      - "apps/api/tests/test_batch_matching_export.py"
+      - ".harness/handoffs/contracts/change-request-008-excel-match-export.md"
+    acceptance:
+      - "선택한 원천 사전등록 ID를 canonical profile로 해석하고 기존 EXHIBITOR 추천 파이프라인 실행"
+      - "개인화 동의·연령확인·승인 카탈로그·Hard Filter를 우회하거나 자동 완화하지 않음"
+      - "Top-N 결과에 점수·등급·근거·정책 버전·eligibility ID·계산지문을 포함"
+      - "실패 프로파일은 안정 오류코드로 격리하고 다른 프로파일 처리를 계속"
+      - "이름·전화·이메일·원문 프로파일 속성 없이 요약·매칭결과·처리상태 XLSX 제공"
+    evidence: "meet-ai-batch-match-export-v1.0 endpoint/service/workbook published; focused import/export tests 13 passed, full backend 197 passed/2 skipped, root 45 passed; all three output sheets rendered and visually inspected with zero formula errors."
+
   - id: QA-003
     title: Wave 2 계약·범위·보안 기준선 감사
     wave: 2

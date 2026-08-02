@@ -4,7 +4,10 @@ import uuid
 from pathlib import Path
 
 import pytest
+from app.api.v1.routers import imports as imports_router
+from app.db.session import get_db
 from app.main import app
+from app.schemas.imports import ImportBatchResult
 from app.services.excel_import import (
     EXCEL_IMPORT_SCHEMA_VERSION,
     ExcelImportValidationError,
@@ -109,3 +112,43 @@ def test_excel_endpoint_rejects_ambiguous_content_type() -> None:
 
     assert response.status_code == 415
     assert response.json()["detail"] == "EXCEL_CONTENT_TYPE_UNSUPPORTED"
+
+
+def test_excel_persist_uses_database_allowed_import_job_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_job_types: list[str] = []
+
+    async def fake_db():
+        yield object()
+
+    async def fake_run_batch(db, **kwargs):
+        del db
+        observed_job_types.append(kwargs["job_type"])
+        return ImportBatchResult(
+            import_id=uuid.uuid4(),
+            status="COMPLETED",
+            total_rows=len(kwargs["rows"]),
+            success_rows=len(kwargs["rows"]),
+            failed_rows=0,
+            errors=[],
+        )
+
+    monkeypatch.setattr(imports_router, "_run_batch", fake_run_batch)
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        response = TestClient(app).post(
+            "/api/v1/admin/imports/excel",
+            params={
+                "tenant_id": str(uuid.uuid4()),
+                "event_id": str(uuid.uuid4()),
+                "dry_run": "false",
+            },
+            content=_fixture("excel-import-v1-valid.xlsx"),
+            headers={"Content-Type": XLSX_MEDIA_TYPE},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert observed_job_types == ["VISITOR_IMPORT", "EXHIBITOR_IMPORT"]
