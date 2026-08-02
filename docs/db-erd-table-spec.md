@@ -1069,9 +1069,72 @@ UNIQUE(tenant_id, principal_fingerprint, method, route, idempotency_key).
 
 ### 19.5 integration.outbox_event
 
-aggregate type/id, tenant/event, event type, schema version, payload, dedupe key, status, attempt count, next_attempt_at, created/published at을 저장한다.
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| outbox_event_id | UUID | PK |
+| tenant_id, event_id | UUID | 테넌트·행사 경계 |
+| aggregate_type, aggregate_id | VARCHAR, UUID | 발행 원천 객체 |
+| event_type | VARCHAR | 업무 이벤트 타입 |
+| schema_version | VARCHAR | payload 계약 버전 |
+| payload | JSONB | 소비자에게 필요한 최소 참조값 |
+| dedupe_key | VARCHAR | 동일 업무 이벤트 중복 차단 |
+| status | VARCHAR | PENDING, PROCESSING, PUBLISHED, FAILED |
+| attempt_count | INTEGER | worker 시도 횟수 |
+| next_attempt_at | TIMESTAMPTZ | 다음 재시도 가능시각 |
+| locked_until | TIMESTAMPTZ | worker 임대 만료시각 |
+| created_at, published_at | TIMESTAMPTZ | 생성·발행시각 |
 
-업무 트랜잭션과 같은 DB 트랜잭션에서 insert한다. 발행 worker는 SKIP LOCKED로 가져간다.
+UNIQUE(tenant_id, dedupe_key).
+
+업무 트랜잭션과 같은 DB 트랜잭션에서 insert한다. 발행 worker는 SKIP LOCKED로 가져가고
+`locked_until`이 지난 PROCESSING 행은 다른 worker가 재회수할 수 있다.
+
+알림 Outbox payload에는 `notification_delivery_id`만 저장한다. 전화번호·이메일·이름·개인
+링크·공급자 request/response 본문을 넣지 않는다.
+
+### 19.6 integration.notification_delivery
+
+CR-012의 모바일 웹 진입 알림 단위다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| notification_delivery_id | UUID | PK |
+| tenant_id, event_id, user_id | UUID | 수신자 업무 경계 |
+| recommendation_session_id | UUID | 알림 대상 Snapshot, 선택 |
+| personal_access_link_id | UUID | 단일 사용 개인 링크 참조 |
+| notification_type | VARCHAR | 승인된 정보성 업무 이벤트 |
+| message_class | VARCHAR | INFORMATIONAL 고정 |
+| template_code | VARCHAR | 공급자 독립 논리 템플릿 코드 |
+| template_parameters | JSONB | 건수 등 비식별 bounded 변수 |
+| access_url_enc | BYTEA | 개인 URL AEAD 암호문 |
+| dedupe_key | VARCHAR | Snapshot/상태 버전별 발송 중복 차단 |
+| status | VARCHAR | QUEUED, PROCESSING, SENT, DELIVERED, FAILED |
+| queued/sent/delivered/clicked/failed_at | TIMESTAMPTZ | 안전한 전달 상태시각 |
+| created_at | TIMESTAMPTZ | 생성시각 |
+
+UNIQUE(tenant_id, dedupe_key), UNIQUE(personal_access_link_id).
+
+전화번호·이메일·이름·토큰·평문 URL 컬럼은 없다. worker가 발송 직전에
+`identity.user_identity`의 암호화 연락처와 `access_url_enc`를 메모리에서만 복호화한다.
+
+### 19.7 integration.notification_attempt
+
+알림톡 → SMS → 이메일 순서의 채널별 append-only 시도 이력이다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| notification_attempt_id | UUID | PK |
+| notification_delivery_id | UUID | 전달 단위 FK |
+| sequence | INTEGER | 채널 시도 순번 |
+| channel | VARCHAR | KAKAO_ALIMTALK, SMS, EMAIL |
+| provider_code | VARCHAR | 승인된 adapter 식별자 |
+| status | VARCHAR | SENT, DELIVERED, FAILED, SKIPPED |
+| provider_message_id | VARCHAR | 공급자의 안전한 추적 ID |
+| failure_code | VARCHAR | allowlist 실패 코드 |
+| requested/sent/delivered/failed_at | TIMESTAMPTZ | 시도 상태시각 |
+
+공급자 request/response 본문과 수신 연락처는 저장하지 않는다. 카카오 공식 딜러·SMS·이메일
+공급자별 callback 인증과 상태 매핑은 공급자 계약 승인 뒤 adapter에서 추가한다.
 
 ## 20. 감사·품질·분석
 

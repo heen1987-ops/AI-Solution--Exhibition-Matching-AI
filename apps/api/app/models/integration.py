@@ -41,6 +41,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -52,7 +53,15 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import SCHEMA_CORE, SCHEMA_INTEGRATION, Base
+from app.db.base import (
+    SCHEMA_CORE,
+    SCHEMA_EXHIBITION,
+    SCHEMA_IDENTITY,
+    SCHEMA_INTEGRATION,
+    SCHEMA_MATCHING,
+    SCHEMA_PROFILE,
+    Base,
+)
 from app.models.common import new_uuid7
 
 _new_uuid = new_uuid7
@@ -88,6 +97,30 @@ EXTERNAL_REFERENCE_SYNC_STATUSES: tuple[str, ...] = ("SYNCED", "FAILED", "CONFLI
 
 SYNC_ROW_ERROR_RETRY_STATUSES: tuple[str, ...] = ("PENDING", "RETRIED", "IGNORED")
 
+NOTIFICATION_TYPES: tuple[str, ...] = (
+    "REGISTRATION_COMPLETED",
+    "RECOMMENDATION_READY",
+    "EVENT_EVE_REMINDER",
+    "MEETING_STATUS_CHANGED",
+    "MEETING_IMMINENT",
+    "POST_EVENT_SUMMARY",
+)
+NOTIFICATION_CHANNELS: tuple[str, ...] = ("KAKAO_ALIMTALK", "SMS", "EMAIL")
+NOTIFICATION_STATUSES: tuple[str, ...] = (
+    "QUEUED",
+    "PROCESSING",
+    "SENT",
+    "DELIVERED",
+    "FAILED",
+)
+NOTIFICATION_ATTEMPT_STATUSES: tuple[str, ...] = (
+    "SENT",
+    "DELIVERED",
+    "FAILED",
+    "SKIPPED",
+)
+OUTBOX_STATUSES: tuple[str, ...] = ("PENDING", "PROCESSING", "PUBLISHED", "FAILED")
+
 
 class SourceSystem(Base):
     """integration.source_system - db-erd 19.1.
@@ -113,7 +146,9 @@ class SourceSystem(Base):
         UUID(as_uuid=True), primary_key=True, default=_new_uuid
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey(f"{SCHEMA_CORE}.tenant.tenant_id"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_CORE}.tenant.tenant_id"),
+        nullable=False,
     )
     system_code: Mapped[str] = mapped_column(String(50), nullable=False)
     system_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -153,9 +188,7 @@ class ExternalReference(Base):
             f"sync_status IN ({_in_list(EXTERNAL_REFERENCE_SYNC_STATUSES)})",
             name="sync_status_allowed",
         ),
-        Index(
-            "ix_external_reference_internal_id", "object_type", "internal_id"
-        ),
+        Index("ix_external_reference_internal_id", "object_type", "internal_id"),
         {"schema": SCHEMA_INTEGRATION},
     )
 
@@ -204,8 +237,12 @@ class SyncJob(Base):
 
     __tablename__ = "sync_job"
     __table_args__ = (
-        CheckConstraint(f"job_type IN ({_in_list(SYNC_JOB_TYPES)})", name="job_type_allowed"),
-        CheckConstraint(f"status IN ({_in_list(SYNC_JOB_STATUSES)})", name="status_allowed"),
+        CheckConstraint(
+            f"job_type IN ({_in_list(SYNC_JOB_TYPES)})", name="job_type_allowed"
+        ),
+        CheckConstraint(
+            f"status IN ({_in_list(SYNC_JOB_STATUSES)})", name="status_allowed"
+        ),
         CheckConstraint("total_rows >= 0", name="total_rows_nonneg"),
         CheckConstraint("success_rows >= 0", name="success_rows_nonneg"),
         CheckConstraint("failed_rows >= 0", name="failed_rows_nonneg"),
@@ -216,7 +253,9 @@ class SyncJob(Base):
         UUID(as_uuid=True), primary_key=True, default=_new_uuid
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey(f"{SCHEMA_CORE}.tenant.tenant_id"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_CORE}.tenant.tenant_id"),
+        nullable=False,
     )
     event_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
@@ -327,7 +366,9 @@ class IdempotencyRecord(Base):
         UUID(as_uuid=True), primary_key=True, default=_new_uuid
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey(f"{SCHEMA_CORE}.tenant.tenant_id"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_CORE}.tenant.tenant_id"),
+        nullable=False,
     )
     # 인증 주체 또는 발신 시스템의 HMAC 지문. 웹훅은 source_system_id를 HMAC한 값을 쓴다.
     principal_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
@@ -348,3 +389,196 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class NotificationDelivery(Base):
+    """One informational notification linked to a web access link.
+
+    Contact values and the raw personal token are deliberately absent. The only secret persisted
+    here is the complete access URL encrypted with authenticated encryption; dispatch workers read
+    the separately encrypted identity contact only while preparing a provider request.
+    """
+
+    __tablename__ = "notification_delivery"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.event.tenant_id",
+                f"{SCHEMA_EXHIBITION}.event.event_id",
+            ],
+            name="fk_notification_delivery_event_boundary",
+        ),
+        UniqueConstraint(
+            "tenant_id", "dedupe_key", name="uq_notification_delivery_dedupe"
+        ),
+        CheckConstraint(
+            f"notification_type IN ({_in_list(NOTIFICATION_TYPES)})",
+            name="notification_type_allowed",
+        ),
+        CheckConstraint(
+            f"status IN ({_in_list(NOTIFICATION_STATUSES)})",
+            name="status_allowed",
+        ),
+        CheckConstraint(
+            "message_class = 'INFORMATIONAL'", name="message_class_informational"
+        ),
+        Index(
+            "ix_notification_delivery_dispatch",
+            "status",
+            "queued_at",
+        ),
+        Index(
+            "ix_notification_delivery_user_event",
+            "user_id",
+            "event_id",
+            "queued_at",
+        ),
+        {"schema": SCHEMA_INTEGRATION},
+    )
+
+    notification_delivery_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_new_uuid
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_PROFILE}.user_account.user_id"),
+        nullable=False,
+    )
+    recommendation_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            f"{SCHEMA_MATCHING}.recommendation_session.recommendation_session_id"
+        ),
+        nullable=True,
+    )
+    personal_access_link_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_IDENTITY}.personal_access_link.personal_access_link_id"),
+        nullable=False,
+        unique=True,
+    )
+    notification_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    message_class: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="INFORMATIONAL"
+    )
+    template_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    template_parameters: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    access_url_enc: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="QUEUED")
+    queued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    clicked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class NotificationAttempt(Base):
+    """Append-only result of one channel in the Alimtalk → SMS → email chain."""
+
+    __tablename__ = "notification_attempt"
+    __table_args__ = (
+        UniqueConstraint(
+            "notification_delivery_id",
+            "sequence",
+            name="uq_notification_attempt_sequence",
+        ),
+        CheckConstraint(
+            f"channel IN ({_in_list(NOTIFICATION_CHANNELS)})",
+            name="channel_allowed",
+        ),
+        CheckConstraint(
+            f"status IN ({_in_list(NOTIFICATION_ATTEMPT_STATUSES)})",
+            name="status_allowed",
+        ),
+        CheckConstraint("sequence > 0", name="sequence_positive"),
+        Index(
+            "ix_notification_attempt_delivery",
+            "notification_delivery_id",
+            "sequence",
+        ),
+        {"schema": SCHEMA_INTEGRATION},
+    )
+
+    notification_attempt_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_new_uuid
+    )
+    notification_delivery_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            f"{SCHEMA_INTEGRATION}.notification_delivery.notification_delivery_id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_code: Mapped[str] = mapped_column(String(60), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_message_id: Mapped[str | None] = mapped_column(String(200))
+    failure_code: Mapped[str | None] = mapped_column(String(100))
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OutboxEvent(Base):
+    """Privacy-minimized transactional Outbox event claimed with SKIP LOCKED."""
+
+    __tablename__ = "outbox_event"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            [
+                f"{SCHEMA_EXHIBITION}.event.tenant_id",
+                f"{SCHEMA_EXHIBITION}.event.event_id",
+            ],
+            name="fk_outbox_event_event_boundary",
+        ),
+        UniqueConstraint("tenant_id", "dedupe_key", name="uq_outbox_event_dedupe"),
+        CheckConstraint(
+            f"status IN ({_in_list(OUTBOX_STATUSES)})", name="status_allowed"
+        ),
+        CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
+        Index("ix_outbox_event_claim", "status", "next_attempt_at", "created_at"),
+        {"schema": SCHEMA_INTEGRATION},
+    )
+
+    outbox_event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_new_uuid
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_CORE}.tenant.tenant_id"),
+        nullable=False,
+    )
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    aggregate_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

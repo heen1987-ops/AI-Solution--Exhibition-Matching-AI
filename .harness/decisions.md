@@ -273,3 +273,23 @@ Both the normal `/home` route and opaque personal-link `/e/{event_slug}/my` rout
 mobile-first My Event dashboard. Kakao, SMS, and email remain optional entry adapters that carry a
 personal access link, not alternate recommendation products. No provider integration or dedicated
 kiosk flow is introduced by this decision; the CR-009 web-first boundary remains authoritative.
+
+## DECISION-022 (2026-08-03) — Alimtalk is the primary doorway, not the product
+
+The mobile My Event web remains the service surface. An approved informational business event may
+enqueue one personal-link notification through a transactional Outbox, with channel order fixed to
+`KAKAO_ALIMTALK → SMS → EMAIL`. A successful channel stops the chain. Rank movement, ordinary
+catalog changes, saved-item changes, searches, and page views never enqueue a message.
+
+The queue stores only pseudonymous business references and an AEAD-encrypted access URL. Phone,
+email, name, raw token, and provider request/response bodies are absent from notification and Outbox
+records. Channel attempts are append-only and use safe provider IDs/failure codes. Workers use
+`SKIP LOCKED` plus expiring leases so a crashed worker does not strand a delivery. Personal-link
+exchange records the first click using the link reference; no separate tracking token is added.
+
+Only `INFORMATIONAL` templates are accepted. The initial recommendation-ready template includes
+event name, recipient name, factual result count, and one My Event web button; it contains no named
+exhibitor, sponsor placement, discount, purchase inducement, or numeric score. Actual external
+sending remains disabled until an official Kakao dealer, business channel, approved template codes,
+callback authentication/status mapping, SMS/email fallbacks, credentials, and legal/operations
+approval are supplied. The Kakao Talk Message API is not used for service notifications.

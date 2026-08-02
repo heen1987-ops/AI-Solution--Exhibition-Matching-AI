@@ -407,6 +407,34 @@ tasks:
     note: "CR-011 is approved by the user's explicit calculation-versus-delivery direction."
     evidence: "GET /api/v1/home delivers the newest owned ACTIVE snapshot without invoking the orchestrator; missing snapshots return RECOMMENDATION_NOT_READY. Personal-link and /home routes share MyEventDashboard, render up to ten grounded cards, and record explicit dismiss feedback. API 248 passed/2 skipped, common engine 72 passed, user web 5 passed plus typecheck/lint/21-route production build, OpenAPI 75-path local-reference validation, touched Ruff and diff check PASS."
 
+  - id: NOTIFY-001
+    title: Alimtalk-first informational delivery foundation
+    wave: 2
+    track: CONTRACTS_BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-006, CONTRACT-010, DELIVERY-001]
+    owned_paths:
+      - "apps/api/app/models/integration.py"
+      - "apps/api/alembic/versions/20260803_0019_notification_outbox.py"
+      - "apps/api/app/services/notification_delivery.py"
+      - "apps/api/app/api/v1/routers/auth.py"
+      - "apps/api/tests/test_notification_delivery.py"
+      - "apps/api/tests/test_auth.py"
+      - "apps/api/tests/test_exhibitor_models.py"
+      - "docs/db-erd-table-spec.md"
+      - ".harness/handoffs/contracts/change-request-012-alimtalk-notification-delivery.md"
+      - ".harness/handoffs/integration/NOTIFY-001.md"
+    acceptance:
+      - "Only approved informational triggers can enqueue a notification and rank-only changes cannot enqueue"
+      - "KAKAO_ALIMTALK is attempted first, SMS is fallback, and EMAIL is last-resort only"
+      - "Phone, email, name, raw personal token, and provider response bodies are absent from delivery/outbox persistence"
+      - "Notification delivery and a privacy-minimized Outbox event are created in one transaction boundary with stable dedupe"
+      - "A successful personal-link exchange records clicked_at using the link reference"
+      - "No external provider call is enabled before dealer/template/callback contracts and credentials exist"
+    note: "CR-012 is approved by the user's explicit Alimtalk-first delivery direction."
+    evidence: "CR-012, 0019 single-head migration, notification_delivery/attempt/outbox models, encrypted Magic Link enqueue, idempotent Snapshot dedupe, SKIP LOCKED lease recovery, Alimtalk→SMS→email adapter policy, and link-exchange click attribution implemented. Notification focused 9 passed; API 257 passed/2 skipped; common engine 72 passed; touched Ruff, compileall, pip check, Alembic full offline upgrade, and diff check PASS. No external provider is enabled pending dealer/template/callback/credential approval."
+
   # ---------- WAVE 2: USER_WEB (substantially done) ----------
   - id: USERWEB-001
     title: Next.js 골격 + API 클라이언트 + 레이아웃

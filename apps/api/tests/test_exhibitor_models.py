@@ -56,10 +56,13 @@ def test_metadata_contains_published_supply_and_filter_tables() -> None:
         "ai.object_embedding",
         "kiosk.kiosk_session",
         "kiosk.kiosk_qr_handoff",
+        "integration.notification_delivery",
+        "integration.notification_attempt",
+        "integration.outbox_event",
     }
 
     assert expected <= set(Base.metadata.tables)
-    assert len(Base.metadata.sorted_tables) == 100
+    assert len(Base.metadata.sorted_tables) == 103
     assert "context_details" in Base.metadata.tables["matching.match_result"].c
     assert (
         "context_policy_version_id" in Base.metadata.tables["matching.match_result"].c
@@ -164,7 +167,7 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(APP_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0018_auth_session_mfa"]
+    assert script.get_heads() == ["0019_notification_outbox"]
 
 
 def test_object_embedding_migration_fail_closes_stale_catalog_summaries() -> None:

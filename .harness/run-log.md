@@ -513,3 +513,23 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
 - Verification: common engine 72 passed; API 248 passed/2 skipped; user web 5 passed, typecheck,
   lint, and 21-route production build PASS on clean NTFS; touched Ruff, OpenAPI 75-path local-ref
   validation, and diff check PASS. The two PostgreSQL integration tests remain environment-gated.
+
+## 2026-08-03 — NOTIFY-001 Alimtalk-first informational delivery foundation
+
+- Approved CR-012 after rechecking the living product conversation and current official Kakao
+  Business guidance. Alimtalk is the primary access-link channel, SMS is failure fallback, email is
+  last-resort backup, and the mobile My Event web remains the actual product.
+- Added Alembic 0019 and published `integration.notification_delivery`, append-only
+  `notification_attempt`, and transactional `outbox_event`. The Outbox payload contains only the
+  notification ID; contact values and provider bodies are never stored there.
+- Added idempotent recommendation-ready enqueue. It issues the existing single-use personal link,
+  stores the URL only as AEAD ciphertext, and inserts the delivery plus Outbox in the caller's
+  transaction. Rank/catalog drift is not an approved trigger.
+- Added provider-neutral bounded rendering and dispatch policy. A successful Alimtalk stops the
+  chain; failure proceeds to SMS and then email. Provider exceptions become allowlisted codes and
+  raw responses are not persisted. No production provider implementation or credentials exist.
+- Added SKIP LOCKED claims, expiring worker leases, append-only retry sequences, and first-click
+  attribution during personal-link exchange without another tracking token.
+- Verification: notification-focused 9 passed; API 257 passed/2 PostgreSQL environment skips;
+  common engine 72 passed; touched Ruff, compileall, pip check, Alembic single head/full offline
+  upgrade, harness parse, and diff check PASS.

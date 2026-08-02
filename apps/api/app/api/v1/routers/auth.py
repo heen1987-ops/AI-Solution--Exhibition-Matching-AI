@@ -11,7 +11,7 @@ from uuid import UUID
 
 import pyotp
 from fastapi import APIRouter, Depends, Request, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn import (
     base64url_to_bytes,
@@ -62,6 +62,7 @@ from app.models.auth import (
 )
 from app.models.consent import AuditLog
 from app.models.identity import UserAccount
+from app.models.integration import NotificationDelivery
 from app.schemas.auth import (
     AuthError,
     AuthMagicLinkExchangeRequest,
@@ -93,6 +94,21 @@ _AUTH_ERRORS = {
     403: {"model": AuthError},
     429: {"model": AuthError},
 }
+
+
+async def _record_notification_click(
+    db: AsyncSession, personal_access_link_id: UUID, clicked_at: datetime
+) -> None:
+    """Record the first My Event doorway click without adding a tracking token."""
+
+    await db.execute(
+        update(NotificationDelivery)
+        .where(
+            NotificationDelivery.personal_access_link_id == personal_access_link_id,
+            NotificationDelivery.clicked_at.is_(None),
+        )
+        .values(clicked_at=clicked_at)
+    )
 
 
 def _session_response(
@@ -284,6 +300,7 @@ async def exchange_magic_link(
     db.add(session)
     link.consumed_at = now
     account.last_authenticated_at = now
+    await _record_notification_click(db, link.personal_access_link_id, now)
     await db.flush()
     _audit(
         db,
