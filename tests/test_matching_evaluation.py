@@ -10,12 +10,16 @@ import pytest
 from meet_ai.evaluation import (
     GoldenSetValidationError,
     HybridShadowFixtureValidationError,
+    IntentFixtureValidationError,
     evaluate_golden_set,
     evaluate_hybrid_shadow_fixture,
+    evaluate_intent_fixture,
     load_golden_set,
     load_golden_set_payload,
     load_hybrid_shadow_fixture,
     load_hybrid_shadow_fixture_payload,
+    load_intent_fixture,
+    load_intent_fixture_payload,
 )
 from meet_ai.evaluation.__main__ import main
 
@@ -25,6 +29,12 @@ HYBRID_FIXTURE = (
     / "fixtures"
     / "matching"
     / "hybrid-rrf-shadow.v1.json"
+)
+INTENT_FIXTURE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "matching"
+    / "intent-normalization.v1.json"
 )
 
 
@@ -264,3 +274,45 @@ def test_hybrid_shadow_fixture_rejects_unknown_relevance_boundary() -> None:
 
     with pytest.raises(HybridShadowFixtureValidationError, match="must cover every"):
         load_hybrid_shadow_fixture_payload(payload)
+
+
+def test_intent_fixture_passes_multilingual_ambiguity_negation_and_excel_parity() -> None:
+    report = evaluate_intent_fixture(load_intent_fixture(INTENT_FIXTURE))
+
+    assert report.status == "PASS"
+    assert report.scenario_count == 7
+    assert report.failures == ()
+    assert len(report.input_fingerprint) == 64
+    assert len(report.result_fingerprint) == 64
+    parity = [
+        item.semantic_signature
+        for item in report.scenarios
+        if item.parity_group == "takju-preference"
+    ]
+    assert len(parity) == 3
+    assert len(set(parity)) == 1
+
+
+def test_intent_fixture_is_order_independent_and_detects_expected_regression() -> None:
+    payload = json.loads(INTENT_FIXTURE.read_text(encoding="utf-8"))
+    first = evaluate_intent_fixture(load_intent_fixture_payload(payload))
+    reordered = copy.deepcopy(payload)
+    reordered["scenarios"].reverse()
+    second = evaluate_intent_fixture(load_intent_fixture_payload(reordered))
+
+    assert first.input_fingerprint == second.input_fingerprint
+    assert first.result_fingerprint == second.result_fingerprint
+
+    changed = copy.deepcopy(payload)
+    changed["scenarios"][0]["expected"]["prefer_codes"] = ["ALCOHOL.YAKJU"]
+    report = evaluate_intent_fixture(load_intent_fixture_payload(changed))
+    assert report.status == "FAIL"
+    assert "ko-published-synonym:PREFER_CODES_MISMATCH" in report.failures
+
+
+def test_intent_fixture_rejects_unknown_source() -> None:
+    payload = json.loads(INTENT_FIXTURE.read_text(encoding="utf-8"))
+    payload["scenarios"][0]["source"] = "KIOSK"
+
+    with pytest.raises(IntentFixtureValidationError, match="source is invalid"):
+        load_intent_fixture_payload(payload)

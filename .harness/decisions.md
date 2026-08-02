@@ -168,3 +168,17 @@ removal decision defines retention and rollback. Default root validation/build e
 `backju-kiosk`. The matching engine remains channel-independent, and existing score, Hard Filter,
 UNKNOWN, approval, evidence, and contact-sharing contracts do not change. See
 `.harness/reports/integration/web-first-pivot-20260802.md`.
+
+## DECISION-015 (2026-08-03) — 자연어와 Excel은 하나의 의도 계약으로 수렴
+
+자연어 검색어와 표준 Excel에서 정본화된 프로파일 코드는 별도 점수식이나 별도 의미체계를
+사용하지 않는다. 둘 다 `matching-intent-result-v1.0`의 `MUST`, `PREFER`, `EXCLUDE`,
+`UNKNOWN`, `UNRESOLVED` 구조로 정규화한다. 자연어는 게시된 온톨로지의 선택 가능한 코드,
+라벨, 승인 동의어만 확정하며 `OEM`, `수출`처럼 여러 코드로 해석되는 표현은 후보를 보존한
+`UNRESOLVED`로 남긴다.
+
+이메일·전화번호는 정규화·provider 호출·입력지문 전에 치환하고 결과에 원문을 포함하지 않는다.
+선택적 LLM adapter의 출력은 `intent-proposal-v1.0` JSON Schema와 게시 온톨로지를 통과해도
+`VALIDATED_PROPOSAL_ONLY` 상태일 뿐 Hard Filter나 점수 입력으로 자동 승격되지 않는다. 현재
+`weighted-v1` 검색·추천 순위는 변경하지 않는다. 상세 증거는
+`.harness/reports/integration/intent-normalization-20260803.md`를 따른다.

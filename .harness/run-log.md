@@ -315,3 +315,22 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   integration skips.
 - The next engine task remains AIENGINE-006: one deterministic intent contract for natural-language
   queries and canonical Excel profiles.
+
+## 2026-08-03 — AIENGINE-006 shared natural-language and Excel intent
+
+- Rechecked the living roadmap and applied the supplied personalization benchmark at the common
+  engine boundary, with its kiosk assumptions replaced by the approved GUEST_WEB scope.
+- Published `matching-intent-command/result-v1.0` and `intent-normalization-v1.0`. Natural language
+  and canonical Excel/profile codes now converge on deterministic MUST/PREFER/EXCLUDE buckets plus
+  explicit UNKNOWN and UNRESOLVED states.
+- Resolution is limited to the published, assignable 259-concept ontology. Korean labels and
+  approved synonyms resolve; English ontology tokens resolve; ambiguous acronyms and labels retain
+  their candidate codes without guessing. Explicit Korean/English negation maps to EXCLUDE.
+- Email and phone patterns are redacted before provider calls and fingerprints. Optional model
+  output is validated against `intent-proposal-v1.0` and the published ontology but remains
+  proposal-only, never a Hard Filter or score input.
+- Seven regression scenarios cover Korean, English, acronym, negation, ambiguity, Excel parity, and
+  UNKNOWN. Verification: fixture PASS; focused 38 passed; root 62 passed; backend 197 passed/2
+  skipped; Ruff, compileall, pip check, and diff check PASS.
+- AIENGINE-007 is next: project confirmed intent into retrieval and Hard Filter plans without
+  changing the published weighted-v1 order.

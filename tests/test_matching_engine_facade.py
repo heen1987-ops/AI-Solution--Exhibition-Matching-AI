@@ -8,22 +8,28 @@ import pytest
 import meet_ai.engine.facade as facade_module
 from meet_ai.engine import (
     CATALOG_SEARCH_POLICY_VERSION,
+    INTENT_PROPOSAL_SCHEMA_V1,
     MATCHING_ENGINE_COMMAND_V1,
     MATCHING_ENGINE_COMMAND_V1_1,
     MATCHING_ENGINE_RESULT_V1_1,
     REASON_CLAIM_POLICY_VERSION,
     CandidateSignalDiagnostics,
+    CanonicalProfileIntentCommand,
     CatalogSearchSignals,
     HybridRrfShadowCommand,
     HybridShadowValidationError,
+    IntentNormalizationValidationError,
     MatchingCandidateCommand,
     MatchingEngineCommand,
     MatchingEngineValidationError,
     MatchingMode,
+    NaturalLanguageIntentCommand,
     RecallChannelRanking,
     RecallChannelState,
     execute_hybrid_rrf_shadow,
     execute_matching,
+    normalize_canonical_profile_intent,
+    normalize_natural_language_intent,
 )
 from meet_ai.scoring import EligibilityDecision
 
@@ -34,6 +40,136 @@ def _eligibility(candidate_id: str, passed: bool = True) -> EligibilityDecision:
         f"eligibility:{candidate_id}",
         () if passed else ("EXHIBITOR_NOT_APPROVED",),
     )
+
+
+def _semantic_intent(result: object) -> tuple[tuple[str, ...], ...]:
+    return (
+        tuple(item.concept_code for item in result.must),
+        tuple(item.concept_code for item in result.prefer),
+        tuple(item.concept_code for item in result.exclude),
+        tuple(item.field_code for item in result.unknown),
+        tuple(
+            f"{item.reason_code}:{','.join(item.candidate_codes)}"
+            for item in result.unresolved
+        ),
+    )
+
+
+def test_natural_language_and_excel_profile_share_semantic_intent_contract() -> None:
+    natural = normalize_natural_language_intent(
+        NaturalLanguageIntentCommand("막걸리", context="PRODUCT")
+    )
+    profile = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(prefer_codes=("ALCOHOL.TAKJU",))
+    )
+
+    assert _semantic_intent(natural) == _semantic_intent(profile)
+    assert natural.contract_version == profile.contract_version
+    assert natural.policy_version == profile.policy_version
+    assert natural.ontology_version == profile.ontology_version == "1.0.0"
+
+
+def test_negation_unknown_and_ambiguity_are_not_coerced_to_false_or_zero() -> None:
+    excluded = normalize_natural_language_intent(
+        NaturalLanguageIntentCommand("막걸리 제외", context="PRODUCT")
+    )
+    ambiguous = normalize_natural_language_intent(
+        NaturalLanguageIntentCommand("OEM", locale="en-US", context="BUYER")
+    )
+    profile = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(
+            must_codes=("TRADE.OEM",), unknown_fields=("MOQ",)
+        )
+    )
+
+    assert [item.concept_code for item in excluded.exclude] == ["ALCOHOL.TAKJU"]
+    assert ambiguous.must == ambiguous.prefer == ambiguous.exclude == ()
+    assert ambiguous.unresolved[0].reason_code == "AMBIGUOUS_PUBLISHED_TERM"
+    assert "TRADE.OEM" in ambiguous.unresolved[0].candidate_codes
+    assert profile.unknown[0].knowledge_state == "UNKNOWN"
+    assert not hasattr(profile.unknown[0], "value")
+
+
+def test_intent_fingerprints_are_reproducible_order_independent_and_pii_redacted() -> None:
+    first = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(
+            prefer_codes=("USE.GIFT", "ALCOHOL.TAKJU"),
+            unknown_fields=("MOQ", "CERTIFICATION"),
+        )
+    )
+    second = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(
+            prefer_codes=("ALCOHOL.TAKJU", "USE.GIFT"),
+            unknown_fields=("CERTIFICATION", "MOQ"),
+        )
+    )
+    with_first_email = normalize_natural_language_intent(
+        NaturalLanguageIntentCommand("막걸리 buyer.one@example.com", context="PRODUCT")
+    )
+    with_second_email = normalize_natural_language_intent(
+        NaturalLanguageIntentCommand("막걸리 buyer.two@example.com", context="PRODUCT")
+    )
+
+    assert first.input_fingerprint == second.input_fingerprint
+    assert first.result_fingerprint == second.result_fingerprint
+    assert with_first_email.input_fingerprint == with_second_email.input_fingerprint
+    assert with_first_email.redacted_input_kinds == ("EMAIL",)
+    assert "buyer.one" not in repr(with_first_email)
+    assert "buyer.one" not in str(with_first_email.to_dict())
+
+
+def test_optional_provider_output_is_schema_validated_and_never_promoted() -> None:
+    class ProposalAdapter:
+        redacted_query = ""
+
+        def propose(self, **kwargs: object) -> dict[str, object]:
+            self.redacted_query = str(kwargs["redacted_query"])
+            return {
+                "schema_version": INTENT_PROPOSAL_SCHEMA_V1,
+                "items": [
+                    {"concept_code": "USE.GIFT", "requirement": "PREFER"}
+                ],
+            }
+
+    adapter = ProposalAdapter()
+    result = normalize_natural_language_intent(
+        NaturalLanguageIntentCommand("새로운 것 test@example.com"),
+        proposal_adapter=adapter,
+    )
+
+    assert adapter.redacted_query == "새로운 것 [redacted-email]"
+    assert result.prefer == ()
+    assert result.proposals[0].concept_code == "USE.GIFT"
+    assert result.proposals[0].proposal_state == "VALIDATED_PROPOSAL_ONLY"
+    assert result.unresolved[0].reason_code == "NO_PUBLISHED_MAPPING"
+
+
+def test_unpublished_or_malformed_intent_inputs_fail_closed() -> None:
+    with pytest.raises(IntentNormalizationValidationError, match="published ontology"):
+        normalize_canonical_profile_intent(
+            CanonicalProfileIntentCommand(prefer_codes=("MADE.UP",))
+        )
+    with pytest.raises(IntentNormalizationValidationError, match="privacy-safe"):
+        CanonicalProfileIntentCommand(unknown_fields=("person@example.com",))
+
+    class InvalidProposalAdapter:
+        def propose(self, **_: object) -> dict[str, object]:
+            return {
+                "schema_version": INTENT_PROPOSAL_SCHEMA_V1,
+                "items": [
+                    {
+                        "concept_code": "USE.GIFT",
+                        "requirement": "PREFER",
+                        "claim": "unsupported",
+                    }
+                ],
+            }
+
+    with pytest.raises(IntentNormalizationValidationError, match="strict schema"):
+        normalize_natural_language_intent(
+            NaturalLanguageIntentCommand("선물"),
+            proposal_adapter=InvalidProposalAdapter(),
+        )
 
 
 def test_catalog_search_mode_preserves_frozen_formula_and_provenance() -> None:

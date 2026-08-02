@@ -619,7 +619,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-005, BACKEND-011]
     owned_paths:
       - "src/meet_ai/engine/**"
@@ -634,6 +634,28 @@ tasks:
       - "온톨로지 코드·동의어는 게시 버전에만 매핑하며 모호한 용어를 임의 추정하지 않음"
       - "PII 없이 입력·결과 fingerprint가 재현되고 한국어/영문/약어/부정어 fixture가 회귀 계약으로 동작"
       - "LLM은 선택적 proposal adapter로만 허용하고 schema 검증 전 결과를 Hard Filter나 점수에 사용하지 않음"
+    evidence: "matching-intent-command/result-v1.0 and intent-normalization-v1.0 published. Natural-language and canonical Excel/profile inputs converge on MUST/PREFER/EXCLUDE plus explicit UNKNOWN/UNRESOLVED; only published assignable ontology codes resolve. PII is redacted before provider calls/fingerprints, ambiguous OEM/export terms remain unresolved, and schema-validated AI items remain proposal-only. Seven-scenario KO/EN/acronym/negation/Excel fixture PASS with parity fingerprint; root 62 passed, backend 197 passed/2 skipped."
+
+  - id: AIENGINE-007
+    title: 정규화 의도 기반 검색·Hard Filter 투영 계약
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-006, AIENGINE-003]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "정규화된 PREFER는 후보검색 feature로, 명시적 MUST/EXCLUDE만 검증 가능한 Hard Filter 입력으로 결정론적으로 투영"
+      - "UNKNOWN/UNRESOLVED와 proposal-only 항목은 pass, mismatch, 0점 또는 검색조건으로 변환하지 않음"
+      - "자연어와 canonical Excel profile의 동일 semantic intent가 동일한 retrieval/filter plan을 생성"
+      - "게시 온톨로지·정책 버전과 입력·결과 fingerprint를 보존하고 현재 weighted-v1 공개순위를 변경하지 않음"
+      - "검증 가능한 후보 필드가 없는 MUST는 자동 적격 처리하지 않고 INFORMATION_REQUIRED로 분리"
 
   - id: BACKEND-011
     title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿
