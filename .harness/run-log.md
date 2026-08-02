@@ -145,3 +145,14 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   ORM 94 tables, dependency and harness checks pass.
 - Live PostgreSQL trigger/concurrency behavior remains part of the already-open G3 isolated-stack
   validation; semantic search is still disabled by default.
+
+## 2026-08-02 — living roadmap alignment checkpoint
+
+- Re-read `chatgpt-conversation://6a6c5792-ca44-83ee-ad67-b02c77ba7f7b`. Its recent sequence is the
+  long-range roadmap: Wave 2D document structuring, Wave 2E operations analytics, Wave 3 release
+  validation, production/pilot, and evidence-driven v1.1A through v1.1D.
+- The repository remains at Wave 2 / `G2_FEATURE_COMPLETE` in progress (70%), with
+  `CONTRACT-005` as the next task. Later conversational Waves are not treated as completed entry
+  conditions and will not be started early.
+- Added a durable `AGENTS.md` rule requiring every implementation unit to compare the newest
+  roadmap turns with harness state, frozen contracts, and handoffs before changing product behavior.

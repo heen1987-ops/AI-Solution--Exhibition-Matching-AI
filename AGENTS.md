@@ -10,6 +10,20 @@ The page is larger than ordinary text fetch limits. If a tool cannot return it d
 
 Apply its transferable design principles to this exhibition domain; do not copy the source thread's unrelated research-platform entities.
 
+### Living product-roadmap conversation
+
+The evolving product and release roadmap is maintained in the shared ChatGPT conversation:
+
+- `chatgpt-conversation://6a6c5792-ca44-83ee-ad67-b02c77ba7f7b` (`사이트 확인 및 매칭 서비스`)
+
+At the start of every implementation unit, read the newest relevant turns from that conversation
+and compare them with `.harness/state.json`, `.harness/backlog.yaml`, the active contracts, and the
+latest handoffs. Treat the conversation as the intended roadmap and product-direction record, while
+the repository harness remains the authority for which prerequisites and gates have actually passed.
+Never skip ahead to a later conversational Wave merely because it is the newest turn. If the two
+sources conflict, preserve the safer frozen contract, record the mismatch in the harness, and resolve
+it before implementing a divergent architecture, data model, AI behavior, API contract, or user flow.
+
 Mandatory invariants:
 
 1. Start as a modular monolith and add service boundaries only from measured operational need.

@@ -40,7 +40,7 @@
     "QA-001(FND-002 의존)"
   ],
   "next_recommended_task": "CONTRACT-005",
-  "last_successful_run": "2026-08-02T16:46:46+09:00",
+  "last_successful_run": "2026-08-02T16:50:16+09:00",
   "scope_status": "LOCKED",
   "contract_status": "FROZEN",
   "mvp_progress_percent": 70,
@@ -54,6 +54,7 @@
     "Embedding SUMMARY inputs preserve company/product names before fairly budgeted descriptions; source/membership triggers share a short global catalog lock with final activation, deactivate stale participation vectors, and gate its revalidated snapshot.",
     "Local pnpm linking remains unreliable on the Google Drive path; a clean NTFS temporary workspace was used for reproducible frozen install, test, typecheck, and production-build verification.",
     "The stale Python lib/ ignore rule now explicitly re-includes apps/*/lib so API clients, types, and kiosk session modules cannot disappear from commits.",
-    "The pnpm lock now resolves Rollup 4.62.3 and explicitly permits only esbuild and unrs-resolver install scripts, satisfying the active minimum-release-age supply-chain policy."
+    "The pnpm lock now resolves Rollup 4.62.3 and explicitly permits only esbuild and unrs-resolver install scripts, satisfying the active minimum-release-age supply-chain policy.",
+    "Every implementation unit rechecks the living ChatGPT roadmap conversation, but .harness gate evidence controls execution order so future Wave 2D/2E/3 and v1.1 plans cannot be started early."
   ]
 }
