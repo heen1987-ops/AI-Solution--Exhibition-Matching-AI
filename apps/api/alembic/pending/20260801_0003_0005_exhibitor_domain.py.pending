@@ -1,0 +1,1166 @@
+"""create exhibitor, product, booth, and supply-profile domain tables
+
+Revision ID: 0005_exhibitor_domain
+Revises: 0004_profile_domain
+Create Date: 2026-08-01
+
+NEEDS_REBASE 참고
+------------------
+이 리포지토리는 여러 에이전트가 동시에 alembic 마이그레이션을 추가하고 있다. 이 파일을
+작성하는 시점에 `alembic history`로 확인한 최신 head는 "0004_profile_domain"이었다
+(0001_create_schemas -> 0002_ontology -> 0003_foundation -> 0004_profile_domain). 그래서
+down_revision을 "0004_profile_domain"으로 연결했다.
+
+다른 에이전트가 같은 "0004_profile_domain"에서 동시에 분기하는 마이그레이션을 만들었다면
+`alembic upgrade head`가 multiple heads 오류를 낼 수 있다. 그 경우 통합 단계에서
+`alembic merge`로 두 head를 합치거나 이 파일의 down_revision을 재배치해야 한다
+(app/models/profile.py 마이그레이션 파일 상단의 "REBASE 이력" 메모와 동일한 절차).
+
+이 마이그레이션이 생성하는 테이블 중 다음 컬럼은 이 리포지토리의 다른 마이그레이션이 이미
+만든 테이블을 참조하는 ForeignKey/ForeignKeyConstraint다 (전부 0004_profile_domain 또는 그
+조상 리비전에서 생성됨):
+    - core.tenant(tenant_id)                                 - exhibitor
+    - exhibition.event(tenant_id, event_id)                  - exhibitor_participation,
+      event_product, booth, program (복합 FK)
+    - exhibition.event_zone(tenant_id, event_id,
+      event_zone_id)                                         - booth, program (복합 FK, 같은
+                                                                행사 소속 구역만 허용)
+    - profile.user_account(user_id)                          - exhibitor_staff,
+      booth_status_history
+    - ontology.concept_revision(taxonomy_version_id,
+      concept_id)                                            - exhibitor, exhibitor_business_type,
+      participation_category, staff_topic, product, product_attribute,
+      trade_condition_term, buyer_preference, profile_attribute (전부 복합 FK, 0002_ontology에서
+      생성)
+
+product_attribute.ai_run_id는 app/models/exhibitor.py에서 ai.ai_run.ai_run_id를 참조하도록
+선언되어 있지만, 이 시점까지 어떤 마이그레이션도 ai 스키마에 실제 테이블을 만들지 않았다.
+여기서 실제 FK 제약을 걸면 이 스키마의 조상 체인만으로는 절대 만족할 수 없는 제약이 되어
+`alembic upgrade`가 실패하므로, 이 마이그레이션은 컬럼만 만들고 FK 제약은 걸지 않는다.
+TODO(AI 도메인 마이그레이션 추가 후): ai.ai_run이 생성되면 후속 마이그레이션에서
+`ALTER TABLE exhibition.product_attribute ADD CONSTRAINT ... FOREIGN KEY (ai_run_id)
+REFERENCES ai.ai_run(ai_run_id)`를 추가한다.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
+revision: str = "0005_exhibitor_domain"
+down_revision: str | None = "0004_profile_domain"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+SCHEMA = "exhibition"
+
+# app/models/exhibitor.py의 동일 이름 상수와 값을 맞춰야 한다. 마이그레이션은 app.models를
+# import하지 않는 이 리포지토리의 관례를 따르므로(0003_foundation.py 참고) 값을 복제한다.
+MASTER_APPROVAL_STATUSES = ("DRAFT", "APPROVED", "REJECTED")
+PROFILE_APPROVAL_STATUSES = ("DRAFT", "SUBMITTED", "APPROVED", "REJECTED")
+REVIEW_STATUSES = ("PENDING", "APPROVED", "REJECTED")
+VERIFICATION_STATUSES = (
+    "SELF_DECLARED",
+    "DOCUMENT_SUBMITTED",
+    "OPERATOR_REVIEWED",
+    "VERIFIED",
+    "EXPIRED",
+    "REJECTED",
+)
+TRADE_AVAILABILITY_STATUSES = ("YES", "NO", "CONDITIONAL", "NEGOTIABLE", "UNKNOWN")
+VISIBILITY_LEVELS = (
+    "PUBLIC",
+    "BUYER_ONLY",
+    "MATCHED_BUYER_ONLY",
+    "MEETING_ACCEPTED",
+    "PRIVATE",
+)
+SUPPLY_SOURCE_TYPES = (
+    "EXHIBITOR_ENTERED",
+    "EXHIBITOR_CONFIRMED",
+    "OPERATOR_ENTERED",
+    "OPERATOR_VERIFIED",
+    "AI_EXTRACTED",
+    "EXTERNAL_SYNC",
+    "DOCUMENT_VERIFIED",
+    "SYSTEM_CALCULATED",
+    "REALTIME_OPERATION",
+    "USER_FEEDBACK",
+)
+PRODUCT_ATTRIBUTE_SOURCES = ("EXHIBITOR", "AI", "OPERATOR")
+BUYER_PREFERENCE_LEVELS = ("REQUIRED", "PREFERRED", "EXCLUDED")
+TASTING_STATUSES = ("AVAILABLE", "PAUSED", "ENDED")
+PURCHASE_STATUSES = ("AVAILABLE", "LIMITED", "ENDED")
+INVENTORY_STATUSES = ("AVAILABLE", "LOW", "SOLD_OUT", "UNKNOWN")
+PARTICIPATION_STATUSES = ("APPLIED", "APPROVED", "CANCELLED")
+BOOTH_OPERATING_STATUSES = ("OPEN", "PAUSED", "CLOSED")
+BOOTH_CONGESTION_LEVELS = ("LOW", "MEDIUM", "HIGH", "UNKNOWN")
+BOOTH_QR_STATUSES = ("ACTIVE", "REVOKED", "EXPIRED")
+PROGRAM_STATUSES = ("PLANNED", "OPEN", "CLOSED", "CANCELLED")
+TRADE_CONDITION_TERM_TYPES = ("REGION", "CHANNEL", "COUNTRY")
+SUPPLY_ATTRIBUTE_OBJECT_TYPES = ("EXHIBITOR", "PRODUCT", "TRADE_CONDITION")
+
+
+def _uuid(name: str, *, nullable: bool = False, primary_key: bool = False) -> sa.Column:
+    return sa.Column(
+        name,
+        postgresql.UUID(as_uuid=True),
+        nullable=nullable if not primary_key else False,
+        primary_key=primary_key,
+    )
+
+
+def _created_at() -> sa.Column:
+    return sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
+
+
+def _updated_at() -> sa.Column:
+    return sa.Column(
+        "updated_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
+
+
+def _in_list(values: tuple[str, ...]) -> str:
+    return ", ".join(f"'{value}'" for value in values)
+
+
+def _ontology_fk(local_columns: list[str], name: str) -> sa.ForeignKeyConstraint:
+    return sa.ForeignKeyConstraint(
+        local_columns,
+        [
+            "ontology.concept_revision.taxonomy_version_id",
+            "ontology.concept_revision.concept_id",
+        ],
+        name=name,
+    )
+
+
+def upgrade() -> None:
+    # ------------------------------------------------------------------
+    # 1. exhibitor + exhibitor_business_type (db-erd 12.2, 08 4.2절)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "exhibitor",
+        _uuid("exhibitor_id", primary_key=True),
+        _uuid("tenant_id"),
+        sa.Column("company_name", sa.String(200), nullable=False),
+        sa.Column("business_registration_hmac", sa.LargeBinary(), nullable=True),
+        sa.Column("company_summary", sa.Text(), nullable=True),
+        _uuid("business_type_taxonomy_version_id", nullable=True),
+        _uuid("business_type_concept_id", nullable=True),
+        _uuid("region_taxonomy_version_id", nullable=True),
+        _uuid("region_concept_id", nullable=True),
+        sa.Column("website_url", sa.Text(), nullable=True),
+        sa.Column(
+            "master_approval_status",
+            sa.String(20),
+            nullable=False,
+            server_default="DRAFT",
+        ),
+        sa.Column(
+            "data_completeness_percent",
+            sa.Numeric(5, 2),
+            nullable=False,
+            server_default="0",
+        ),
+        sa.Column(
+            "current_profile_version", sa.Integer(), nullable=False, server_default="1"
+        ),
+        _created_at(),
+        _updated_at(),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"], ["core.tenant.tenant_id"], name="fk_exhibitor_tenant_id_tenant"
+        ),
+        _ontology_fk(
+            ["business_type_taxonomy_version_id", "business_type_concept_id"],
+            "fk_exhibitor_business_type_ontology_revision",
+        ),
+        _ontology_fk(
+            ["region_taxonomy_version_id", "region_concept_id"],
+            "fk_exhibitor_region_ontology_revision",
+        ),
+        sa.CheckConstraint(
+            f"master_approval_status IN ({_in_list(MASTER_APPROVAL_STATUSES)})",
+            name="master_approval_status_allowed",
+        ),
+        sa.CheckConstraint(
+            "data_completeness_percent >= 0 AND data_completeness_percent <= 100",
+            name="data_completeness_percent_range",
+        ),
+        schema=SCHEMA,
+    )
+    op.create_index(
+        "ix_exhibitor_tenant", "exhibitor", ["tenant_id"], schema=SCHEMA
+    )
+
+    op.create_table(
+        "exhibitor_business_type",
+        _uuid("exhibitor_business_type_id", primary_key=True),
+        _uuid("exhibitor_id"),
+        _uuid("taxonomy_version_id"),
+        _uuid("concept_id"),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["exhibitor_id"],
+            ["exhibition.exhibitor.exhibitor_id"],
+            name="fk_exhibitor_business_type_exhibitor_id_exhibitor",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "concept_id"],
+            "fk_exhibitor_business_type_ontology_revision",
+        ),
+        sa.UniqueConstraint(
+            "exhibitor_id",
+            "taxonomy_version_id",
+            "concept_id",
+            name="uq_exhibitor_business_type_concept",
+        ),
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 2. exhibitor_participation + participation_category (db-erd 12.3)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "exhibitor_participation",
+        _uuid("participation_id", primary_key=True),
+        _uuid("tenant_id"),
+        _uuid("event_id"),
+        _uuid("exhibitor_id"),
+        sa.Column(
+            "participation_status",
+            sa.String(20),
+            nullable=False,
+            server_default="APPLIED",
+        ),
+        sa.Column("promotion_summary", sa.Text(), nullable=True),
+        sa.Column(
+            "consultation_enabled",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
+        sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            ["exhibition.event.tenant_id", "exhibition.event.event_id"],
+            name="fk_exhibitor_participation_event_boundary",
+        ),
+        sa.ForeignKeyConstraint(
+            ["exhibitor_id"],
+            ["exhibition.exhibitor.exhibitor_id"],
+            name="fk_exhibitor_participation_exhibitor_id_exhibitor",
+        ),
+        sa.UniqueConstraint(
+            "event_id", "exhibitor_id", name="uq_exhibitor_participation_event"
+        ),
+        sa.CheckConstraint(
+            f"participation_status IN ({_in_list(PARTICIPATION_STATUSES)})",
+            name="participation_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "participation_category",
+        _uuid("participation_id", primary_key=True),
+        _uuid("taxonomy_version_id", primary_key=True),
+        _uuid("concept_id", primary_key=True),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["participation_id"],
+            ["exhibition.exhibitor_participation.participation_id"],
+            name="fk_participation_category_participation_id_exhibitor_participation",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "concept_id"],
+            "fk_participation_category_ontology_revision",
+        ),
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 3. exhibitor_staff + staff_topic (db-erd 12.4)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "exhibitor_staff",
+        _uuid("staff_id", primary_key=True),
+        _uuid("participation_id"),
+        _uuid("user_id", nullable=True),
+        sa.Column("display_name", sa.String(100), nullable=False),
+        sa.Column("position_name", sa.String(100), nullable=True),
+        sa.Column(
+            "active", sa.Boolean(), nullable=False, server_default=sa.text("true")
+        ),
+        sa.ForeignKeyConstraint(
+            ["participation_id"],
+            ["exhibition.exhibitor_participation.participation_id"],
+            name="fk_exhibitor_staff_participation_id_exhibitor_participation",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["profile.user_account.user_id"],
+            name="fk_exhibitor_staff_user_id_user_account",
+        ),
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "staff_topic",
+        _uuid("staff_id", primary_key=True),
+        _uuid("taxonomy_version_id", primary_key=True),
+        _uuid("concept_id", primary_key=True),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["staff_id"],
+            ["exhibition.exhibitor_staff.staff_id"],
+            name="fk_staff_topic_staff_id_exhibitor_staff",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "concept_id"], "fk_staff_topic_ontology_revision"
+        ),
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 4. product + event_product (db-erd 12.5, 12.6)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "product",
+        _uuid("product_id", primary_key=True),
+        _uuid("exhibitor_id"),
+        sa.Column("product_name", sa.String(200), nullable=False),
+        _uuid("category_taxonomy_version_id", nullable=True),
+        _uuid("category_concept_id", nullable=True),
+        sa.Column("product_summary", sa.Text(), nullable=True),
+        sa.Column("alcohol_percentage", sa.Numeric(5, 2), nullable=True),
+        sa.Column(
+            "main_ingredients_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column("production_method", sa.Text(), nullable=True),
+        sa.Column(
+            "master_approval_status",
+            sa.String(20),
+            nullable=False,
+            server_default="DRAFT",
+        ),
+        _created_at(),
+        _updated_at(),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["exhibitor_id"],
+            ["exhibition.exhibitor.exhibitor_id"],
+            name="fk_product_exhibitor_id_exhibitor",
+        ),
+        _ontology_fk(
+            ["category_taxonomy_version_id", "category_concept_id"],
+            "fk_product_category_ontology_revision",
+        ),
+        sa.CheckConstraint(
+            "alcohol_percentage IS NULL "
+            "OR (alcohol_percentage >= 0 AND alcohol_percentage <= 100)",
+            name="alcohol_percentage_range",
+        ),
+        sa.CheckConstraint(
+            f"master_approval_status IN ({_in_list(MASTER_APPROVAL_STATUSES)})",
+            name="master_approval_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+    # db-erd 21절 idx_product_category.
+    op.create_index(
+        "idx_product_category",
+        "product",
+        ["category_taxonomy_version_id", "category_concept_id"],
+        schema=SCHEMA,
+        postgresql_where=sa.text(
+            "deleted_at IS NULL AND master_approval_status = 'APPROVED'"
+        ),
+    )
+
+    op.create_table(
+        "event_product",
+        _uuid("event_product_id", primary_key=True),
+        _uuid("tenant_id"),
+        _uuid("event_id"),
+        _uuid("participation_id"),
+        _uuid("product_id"),
+        sa.Column("retail_price_amount", sa.BigInteger(), nullable=True),
+        sa.Column("event_price_amount", sa.BigInteger(), nullable=True),
+        sa.Column("currency", sa.CHAR(3), nullable=False, server_default="KRW"),
+        sa.Column(
+            "tasting_status", sa.String(20), nullable=False, server_default="AVAILABLE"
+        ),
+        sa.Column(
+            "purchase_status", sa.String(20), nullable=False, server_default="AVAILABLE"
+        ),
+        sa.Column(
+            "inventory_status", sa.String(20), nullable=False, server_default="UNKNOWN"
+        ),
+        sa.Column("status_observed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "approval_status", sa.String(20), nullable=False, server_default="DRAFT"
+        ),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            ["exhibition.event.tenant_id", "exhibition.event.event_id"],
+            name="fk_event_product_event_boundary",
+        ),
+        sa.ForeignKeyConstraint(
+            ["participation_id"],
+            ["exhibition.exhibitor_participation.participation_id"],
+            name="fk_event_product_participation_id_exhibitor_participation",
+        ),
+        sa.ForeignKeyConstraint(
+            ["product_id"],
+            ["exhibition.product.product_id"],
+            name="fk_event_product_product_id_product",
+        ),
+        sa.UniqueConstraint(
+            "event_id", "product_id", name="uq_event_product_event_product"
+        ),
+        sa.CheckConstraint(
+            "retail_price_amount IS NULL OR retail_price_amount >= 0",
+            name="retail_price_amount_nonneg",
+        ),
+        sa.CheckConstraint(
+            "event_price_amount IS NULL OR event_price_amount >= 0",
+            name="event_price_amount_nonneg",
+        ),
+        sa.CheckConstraint(
+            f"tasting_status IN ({_in_list(TASTING_STATUSES)})",
+            name="tasting_status_allowed",
+        ),
+        sa.CheckConstraint(
+            f"purchase_status IN ({_in_list(PURCHASE_STATUSES)})",
+            name="purchase_status_allowed",
+        ),
+        sa.CheckConstraint(
+            f"inventory_status IN ({_in_list(INVENTORY_STATUSES)})",
+            name="inventory_status_allowed",
+        ),
+        sa.CheckConstraint(
+            f"approval_status IN ({_in_list(MASTER_APPROVAL_STATUSES)})",
+            name="approval_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+    # db-erd 21절 idx_event_product_filter.
+    op.create_index(
+        "idx_event_product_filter",
+        "event_product",
+        [
+            "event_id",
+            "approval_status",
+            "inventory_status",
+            "tasting_status",
+            "purchase_status",
+        ],
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 5. product_attribute + product_image (db-erd 12.7)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "product_attribute",
+        _uuid("product_attribute_id", primary_key=True),
+        _uuid("product_id"),
+        _uuid("taxonomy_version_id"),
+        _uuid("concept_id"),
+        sa.Column("numeric_value", sa.Numeric(), nullable=True),
+        sa.Column("text_value", sa.Text(), nullable=True),
+        sa.Column("source", sa.String(20), nullable=False),
+        sa.Column("confidence", sa.Numeric(4, 3), nullable=True),
+        sa.Column(
+            "review_status", sa.String(20), nullable=False, server_default="PENDING"
+        ),
+        # ai.ai_run은 아직 어떤 마이그레이션도 만들지 않았다 - 모듈 docstring 참고. FK 없이
+        # 값만 저장한다.
+        _uuid("ai_run_id", nullable=True),
+        sa.Column("evidence_ref", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["product_id"],
+            ["exhibition.product.product_id"],
+            name="fk_product_attribute_product_id_product",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "concept_id"],
+            "fk_product_attribute_ontology_revision",
+        ),
+        sa.CheckConstraint(
+            "num_nonnulls(numeric_value, text_value) = 1", name="exactly_one_value"
+        ),
+        sa.CheckConstraint(
+            f"source IN ({_in_list(PRODUCT_ATTRIBUTE_SOURCES)})", name="source_allowed"
+        ),
+        sa.CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="confidence_range",
+        ),
+        sa.CheckConstraint(
+            f"review_status IN ({_in_list(REVIEW_STATUSES)})",
+            name="review_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+    op.create_index(
+        "ix_product_attribute_lookup",
+        "product_attribute",
+        ["product_id", "taxonomy_version_id", "concept_id"],
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "product_image",
+        _uuid("product_image_id", primary_key=True),
+        _uuid("product_id"),
+        sa.Column("storage_key", sa.String(500), nullable=False),
+        sa.Column("image_type", sa.String(30), nullable=True),
+        sa.Column(
+            "display_order", sa.SmallInteger(), nullable=False, server_default="0"
+        ),
+        sa.Column("alt_text", sa.String(300), nullable=True),
+        sa.Column(
+            "approval_status", sa.String(20), nullable=False, server_default="PENDING"
+        ),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["product_id"],
+            ["exhibition.product.product_id"],
+            name="fk_product_image_product_id_product",
+        ),
+        sa.CheckConstraint(
+            f"approval_status IN ({_in_list(REVIEW_STATUSES)})",
+            name="approval_status_allowed",
+        ),
+        sa.CheckConstraint("display_order >= 0", name="display_order_nonneg"),
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 6. trade_condition + trade_condition_term (db-erd 12.8)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "trade_condition",
+        _uuid("trade_condition_id", primary_key=True),
+        _uuid("participation_id"),
+        _uuid("event_product_id", nullable=True),
+        sa.Column("min_order_quantity", sa.Integer(), nullable=True),
+        sa.Column("max_order_quantity", sa.Integer(), nullable=True),
+        sa.Column("monthly_capacity", sa.Integer(), nullable=True),
+        sa.Column("wholesale_price_min_amount", sa.BigInteger(), nullable=True),
+        sa.Column("wholesale_price_max_amount", sa.BigInteger(), nullable=True),
+        sa.Column("currency", sa.CHAR(3), nullable=False, server_default="KRW"),
+        sa.Column(
+            "oem_status", sa.String(20), nullable=False, server_default="UNKNOWN"
+        ),
+        sa.Column(
+            "private_label_status",
+            sa.String(20),
+            nullable=False,
+            server_default="UNKNOWN",
+        ),
+        sa.Column(
+            "exclusive_distribution_considered",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
+        sa.Column(
+            "export_status", sa.String(20), nullable=False, server_default="UNKNOWN"
+        ),
+        sa.Column("lead_time_days", sa.Integer(), nullable=True),
+        sa.Column("valid_from", sa.Date(), nullable=True),
+        sa.Column("valid_until", sa.Date(), nullable=True),
+        sa.Column(
+            "approval_status", sa.String(20), nullable=False, server_default="DRAFT"
+        ),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["participation_id"],
+            ["exhibition.exhibitor_participation.participation_id"],
+            name="fk_trade_condition_participation_id_exhibitor_participation",
+        ),
+        sa.ForeignKeyConstraint(
+            ["event_product_id"],
+            ["exhibition.event_product.event_product_id"],
+            name="fk_trade_condition_event_product_id_event_product",
+        ),
+        sa.CheckConstraint(
+            "min_order_quantity IS NULL OR min_order_quantity >= 0",
+            name="min_order_quantity_nonneg",
+        ),
+        sa.CheckConstraint(
+            "max_order_quantity IS NULL OR max_order_quantity >= 0",
+            name="max_order_quantity_nonneg",
+        ),
+        sa.CheckConstraint(
+            "min_order_quantity IS NULL OR max_order_quantity IS NULL "
+            "OR min_order_quantity <= max_order_quantity",
+            name="order_quantity_order",
+        ),
+        sa.CheckConstraint(
+            "monthly_capacity IS NULL OR monthly_capacity >= 0",
+            name="monthly_capacity_nonneg",
+        ),
+        sa.CheckConstraint(
+            "wholesale_price_min_amount IS NULL OR wholesale_price_min_amount >= 0",
+            name="wholesale_price_min_nonneg",
+        ),
+        sa.CheckConstraint(
+            "wholesale_price_max_amount IS NULL OR wholesale_price_max_amount >= 0",
+            name="wholesale_price_max_nonneg",
+        ),
+        sa.CheckConstraint(
+            "wholesale_price_min_amount IS NULL OR wholesale_price_max_amount IS NULL "
+            "OR wholesale_price_min_amount <= wholesale_price_max_amount",
+            name="wholesale_price_order",
+        ),
+        sa.CheckConstraint(
+            f"oem_status IN ({_in_list(TRADE_AVAILABILITY_STATUSES)})",
+            name="oem_status_allowed",
+        ),
+        sa.CheckConstraint(
+            f"private_label_status IN ({_in_list(TRADE_AVAILABILITY_STATUSES)})",
+            name="private_label_status_allowed",
+        ),
+        sa.CheckConstraint(
+            f"export_status IN ({_in_list(TRADE_AVAILABILITY_STATUSES)})",
+            name="export_status_allowed",
+        ),
+        sa.CheckConstraint(
+            "lead_time_days IS NULL OR lead_time_days >= 0",
+            name="lead_time_days_nonneg",
+        ),
+        sa.CheckConstraint(
+            "valid_from IS NULL OR valid_until IS NULL OR valid_from <= valid_until",
+            name="valid_period_order",
+        ),
+        sa.CheckConstraint(
+            f"approval_status IN ({_in_list(MASTER_APPROVAL_STATUSES)})",
+            name="approval_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "trade_condition_term",
+        _uuid("trade_condition_term_id", primary_key=True),
+        _uuid("trade_condition_id"),
+        sa.Column("term_type", sa.String(20), nullable=False),
+        _uuid("taxonomy_version_id"),
+        _uuid("concept_id"),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["trade_condition_id"],
+            ["exhibition.trade_condition.trade_condition_id"],
+            name="fk_trade_condition_term_trade_condition_id_trade_condition",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "concept_id"],
+            "fk_trade_condition_term_ontology_revision",
+        ),
+        sa.CheckConstraint(
+            f"term_type IN ({_in_list(TRADE_CONDITION_TERM_TYPES)})",
+            name="term_type_allowed",
+        ),
+        sa.UniqueConstraint(
+            "trade_condition_id",
+            "term_type",
+            "taxonomy_version_id",
+            "concept_id",
+            name="uq_trade_condition_term",
+        ),
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 7. booth + booth_status_history + booth_qr (db-erd 13.1)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "booth",
+        _uuid("booth_id", primary_key=True),
+        _uuid("tenant_id"),
+        _uuid("event_id"),
+        _uuid("participation_id"),
+        _uuid("zone_id", nullable=True),
+        sa.Column("booth_number", sa.String(30), nullable=False),
+        sa.Column("map_x", sa.Numeric(10, 3), nullable=True),
+        sa.Column("map_y", sa.Numeric(10, 3), nullable=True),
+        sa.Column(
+            "operating_status", sa.String(20), nullable=False, server_default="CLOSED"
+        ),
+        sa.Column(
+            "congestion_level", sa.String(20), nullable=False, server_default="UNKNOWN"
+        ),
+        sa.Column("estimated_wait_minutes", sa.Integer(), nullable=True),
+        sa.Column("status_observed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("row_version", sa.BigInteger(), nullable=False, server_default="1"),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            ["exhibition.event.tenant_id", "exhibition.event.event_id"],
+            name="fk_booth_event_boundary",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "event_id", "zone_id"],
+            [
+                "exhibition.event_zone.tenant_id",
+                "exhibition.event_zone.event_id",
+                "exhibition.event_zone.event_zone_id",
+            ],
+            name="fk_booth_zone_same_event",
+        ),
+        sa.ForeignKeyConstraint(
+            ["participation_id"],
+            ["exhibition.exhibitor_participation.participation_id"],
+            name="fk_booth_participation_id_exhibitor_participation",
+        ),
+        sa.UniqueConstraint(
+            "event_id", "booth_number", name="uq_booth_event_number"
+        ),
+        sa.CheckConstraint(
+            f"operating_status IN ({_in_list(BOOTH_OPERATING_STATUSES)})",
+            name="operating_status_allowed",
+        ),
+        sa.CheckConstraint(
+            f"congestion_level IN ({_in_list(BOOTH_CONGESTION_LEVELS)})",
+            name="congestion_level_allowed",
+        ),
+        sa.CheckConstraint(
+            "estimated_wait_minutes IS NULL OR estimated_wait_minutes >= 0",
+            name="estimated_wait_minutes_nonneg",
+        ),
+        schema=SCHEMA,
+    )
+    # db-erd 21절 idx_booth_live.
+    op.create_index(
+        "idx_booth_live",
+        "booth",
+        ["event_id", "operating_status", "congestion_level"],
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "booth_status_history",
+        _uuid("booth_status_history_id", primary_key=True),
+        _uuid("booth_id"),
+        sa.Column("previous_status", sa.String(20), nullable=True),
+        sa.Column("new_status", sa.String(20), nullable=False),
+        _uuid("changed_by_user_id", nullable=True),
+        sa.Column("reason_code", sa.String(50), nullable=True),
+        _uuid("request_id", nullable=True),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["booth_id"],
+            ["exhibition.booth.booth_id"],
+            name="fk_booth_status_history_booth_id_booth",
+        ),
+        sa.ForeignKeyConstraint(
+            ["changed_by_user_id"],
+            ["profile.user_account.user_id"],
+            name="fk_booth_status_history_changed_by_user_id_user_account",
+        ),
+        sa.CheckConstraint(
+            f"previous_status IS NULL OR previous_status IN "
+            f"({_in_list(BOOTH_OPERATING_STATUSES)})",
+            name="previous_status_allowed",
+        ),
+        sa.CheckConstraint(
+            f"new_status IN ({_in_list(BOOTH_OPERATING_STATUSES)})",
+            name="new_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+    op.create_index(
+        "ix_booth_status_history_booth_created",
+        "booth_status_history",
+        ["booth_id", "created_at"],
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "booth_qr",
+        _uuid("booth_qr_id", primary_key=True),
+        _uuid("booth_id"),
+        sa.Column("token_hmac", sa.LargeBinary(), nullable=False),
+        sa.Column("valid_from", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("valid_until", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("status", sa.String(20), nullable=False, server_default="ACTIVE"),
+        sa.Column("key_version", sa.Integer(), nullable=False, server_default="1"),
+        _created_at(),
+        sa.ForeignKeyConstraint(
+            ["booth_id"],
+            ["exhibition.booth.booth_id"],
+            name="fk_booth_qr_booth_id_booth",
+        ),
+        sa.UniqueConstraint("token_hmac", name="uq_booth_qr_token_hmac"),
+        sa.CheckConstraint(
+            f"status IN ({_in_list(BOOTH_QR_STATUSES)})", name="status_allowed"
+        ),
+        sa.CheckConstraint(
+            "valid_from IS NULL OR valid_until IS NULL OR valid_from < valid_until",
+            name="valid_period_order",
+        ),
+        sa.CheckConstraint("key_version >= 1", name="key_version_positive"),
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 8. program (db-erd 13.2)
+    # ------------------------------------------------------------------
+    op.create_table(
+        "program",
+        _uuid("program_id", primary_key=True),
+        _uuid("tenant_id"),
+        _uuid("event_id"),
+        _uuid("zone_id", nullable=True),
+        sa.Column("program_name", sa.String(200), nullable=False),
+        sa.Column("program_type", sa.String(30), nullable=True),
+        sa.Column("start_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("end_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("capacity", sa.Integer(), nullable=True),
+        sa.Column(
+            "reservation_required",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
+        sa.Column("status", sa.String(20), nullable=False, server_default="PLANNED"),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "event_id"],
+            ["exhibition.event.tenant_id", "exhibition.event.event_id"],
+            name="fk_program_event_boundary",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "event_id", "zone_id"],
+            [
+                "exhibition.event_zone.tenant_id",
+                "exhibition.event_zone.event_id",
+                "exhibition.event_zone.event_zone_id",
+            ],
+            name="fk_program_zone_same_event",
+        ),
+        sa.CheckConstraint(
+            "start_at IS NULL OR end_at IS NULL OR start_at < end_at",
+            name="time_range",
+        ),
+        sa.CheckConstraint("capacity IS NULL OR capacity >= 0", name="capacity_nonneg"),
+        sa.CheckConstraint(
+            f"status IN ({_in_list(PROGRAM_STATUSES)})", name="status_allowed"
+        ),
+        schema=SCHEMA,
+    )
+
+    # ------------------------------------------------------------------
+    # 9. 08 문서 27절 공급 프로파일 확장 테이블
+    # ------------------------------------------------------------------
+    op.create_table(
+        "exhibitor_profile",
+        _uuid("exhibitor_profile_id", primary_key=True),
+        _uuid("exhibitor_id"),
+        sa.Column("business_type", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("capability_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "preferred_buyer_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column("trade_readiness_score", sa.Numeric(5, 2), nullable=True),
+        sa.Column(
+            "consumer_completeness", sa.Numeric(5, 2), nullable=False, server_default="0"
+        ),
+        sa.Column(
+            "buyer_completeness", sa.Numeric(5, 2), nullable=False, server_default="0"
+        ),
+        sa.Column("current_version", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column(
+            "approval_status", sa.String(20), nullable=False, server_default="DRAFT"
+        ),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["exhibitor_id"],
+            ["exhibition.exhibitor.exhibitor_id"],
+            name="fk_exhibitor_profile_exhibitor_id_exhibitor",
+        ),
+        sa.UniqueConstraint("exhibitor_id", name="uq_exhibitor_profile_exhibitor_id"),
+        sa.CheckConstraint(
+            "trade_readiness_score IS NULL "
+            "OR (trade_readiness_score >= 0 AND trade_readiness_score <= 100)",
+            name="trade_readiness_score_range",
+        ),
+        sa.CheckConstraint(
+            "consumer_completeness >= 0 AND consumer_completeness <= 100",
+            name="consumer_completeness_range",
+        ),
+        sa.CheckConstraint(
+            "buyer_completeness >= 0 AND buyer_completeness <= 100",
+            name="buyer_completeness_range",
+        ),
+        sa.CheckConstraint(
+            f"approval_status IN ({_in_list(PROFILE_APPROVAL_STATUSES)})",
+            name="approval_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "product_profile",
+        _uuid("product_profile_id", primary_key=True),
+        _uuid("product_id"),
+        sa.Column("category_code", sa.String(100), nullable=True),
+        sa.Column("taste_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("aroma_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("usage_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("feature_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "consumer_score", sa.Numeric(5, 2), nullable=False, server_default="0"
+        ),
+        sa.Column("buyer_score", sa.Numeric(5, 2), nullable=False, server_default="0"),
+        sa.Column("current_version", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column(
+            "approval_status", sa.String(20), nullable=False, server_default="DRAFT"
+        ),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["product_id"],
+            ["exhibition.product.product_id"],
+            name="fk_product_profile_product_id_product",
+        ),
+        sa.UniqueConstraint("product_id", name="uq_product_profile_product_id"),
+        sa.CheckConstraint(
+            "consumer_score >= 0 AND consumer_score <= 100",
+            name="consumer_score_range",
+        ),
+        sa.CheckConstraint(
+            "buyer_score >= 0 AND buyer_score <= 100", name="buyer_score_range"
+        ),
+        sa.CheckConstraint(
+            f"approval_status IN ({_in_list(PROFILE_APPROVAL_STATUSES)})",
+            name="approval_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "supply_capability",
+        _uuid("supply_capability_id", primary_key=True),
+        _uuid("exhibitor_id"),
+        _uuid("product_id", nullable=True),
+        sa.Column("monthly_capacity", sa.Integer(), nullable=True),
+        sa.Column("available_capacity", sa.Integer(), nullable=True),
+        sa.Column("lead_time_days", sa.Integer(), nullable=True),
+        sa.Column("supply_regions", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "logistics_methods", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column("valid_from", sa.Date(), nullable=True),
+        sa.Column("valid_until", sa.Date(), nullable=True),
+        sa.Column(
+            "verification_status",
+            sa.String(20),
+            nullable=False,
+            server_default="SELF_DECLARED",
+        ),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["exhibitor_id"],
+            ["exhibition.exhibitor.exhibitor_id"],
+            name="fk_supply_capability_exhibitor_id_exhibitor",
+        ),
+        sa.ForeignKeyConstraint(
+            ["product_id"],
+            ["exhibition.product.product_id"],
+            name="fk_supply_capability_product_id_product",
+        ),
+        sa.CheckConstraint(
+            "monthly_capacity IS NULL OR monthly_capacity >= 0",
+            name="monthly_capacity_nonneg",
+        ),
+        sa.CheckConstraint(
+            "available_capacity IS NULL OR available_capacity >= 0",
+            name="available_capacity_nonneg",
+        ),
+        sa.CheckConstraint(
+            "lead_time_days IS NULL OR lead_time_days >= 0",
+            name="lead_time_days_nonneg",
+        ),
+        sa.CheckConstraint(
+            "valid_from IS NULL OR valid_until IS NULL OR valid_from <= valid_until",
+            name="valid_period_order",
+        ),
+        sa.CheckConstraint(
+            f"verification_status IN ({_in_list(VERIFICATION_STATUSES)})",
+            name="verification_status_allowed",
+        ),
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "buyer_preference",
+        _uuid("exhibitor_buyer_preference_id", primary_key=True),
+        _uuid("exhibitor_id"),
+        _uuid("taxonomy_version_id"),
+        _uuid("buyer_type_concept_id", nullable=True),
+        _uuid("channel_concept_id", nullable=True),
+        _uuid("region_concept_id", nullable=True),
+        sa.Column("volume_min", sa.Integer(), nullable=True),
+        sa.Column("volume_max", sa.Integer(), nullable=True),
+        sa.Column(
+            "preference_level",
+            sa.String(20),
+            nullable=False,
+            server_default="PREFERRED",
+        ),
+        sa.Column(
+            "active", sa.Boolean(), nullable=False, server_default=sa.text("true")
+        ),
+        _created_at(),
+        _updated_at(),
+        sa.ForeignKeyConstraint(
+            ["exhibitor_id"],
+            ["exhibition.exhibitor.exhibitor_id"],
+            name="fk_buyer_preference_exhibitor_id_exhibitor",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "buyer_type_concept_id"],
+            "fk_buyer_preference_buyer_type_ontology_revision",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "channel_concept_id"],
+            "fk_buyer_preference_channel_ontology_revision",
+        ),
+        _ontology_fk(
+            ["taxonomy_version_id", "region_concept_id"],
+            "fk_buyer_preference_region_ontology_revision",
+        ),
+        sa.CheckConstraint(
+            "num_nonnulls(buyer_type_concept_id, channel_concept_id, region_concept_id) >= 1",
+            name="at_least_one_dimension",
+        ),
+        sa.CheckConstraint(
+            "volume_min IS NULL OR volume_min >= 0", name="volume_min_nonneg"
+        ),
+        sa.CheckConstraint(
+            "volume_max IS NULL OR volume_max >= 0", name="volume_max_nonneg"
+        ),
+        sa.CheckConstraint(
+            "volume_min IS NULL OR volume_max IS NULL OR volume_min <= volume_max",
+            name="volume_order",
+        ),
+        sa.CheckConstraint(
+            f"preference_level IN ({_in_list(BUYER_PREFERENCE_LEVELS)})",
+            name="preference_level_allowed",
+        ),
+        schema=SCHEMA,
+    )
+
+    op.create_table(
+        "profile_attribute",
+        _uuid("supply_attribute_id", primary_key=True),
+        sa.Column("object_type", sa.String(20), nullable=False),
+        _uuid("object_id"),
+        _uuid("taxonomy_version_id"),
+        _uuid("concept_id"),
+        sa.Column("attribute_code", sa.String(100), nullable=False),
+        sa.Column("value_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("source_type", sa.String(30), nullable=False),
+        sa.Column(
+            "verification_status",
+            sa.String(20),
+            nullable=False,
+            server_default="SELF_DECLARED",
+        ),
+        sa.Column(
+            "confidence", sa.Numeric(4, 3), nullable=False, server_default="1"
+        ),
+        sa.Column("visibility", sa.String(30), nullable=False, server_default="PUBLIC"),
+        sa.Column("valid_from", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("valid_until", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "active", sa.Boolean(), nullable=False, server_default=sa.text("true")
+        ),
+        _created_at(),
+        _ontology_fk(
+            ["taxonomy_version_id", "concept_id"],
+            "fk_supply_profile_attribute_ontology_revision",
+        ),
+        sa.CheckConstraint(
+            f"object_type IN ({_in_list(SUPPLY_ATTRIBUTE_OBJECT_TYPES)})",
+            name="object_type_allowed",
+        ),
+        sa.CheckConstraint(
+            f"source_type IN ({_in_list(SUPPLY_SOURCE_TYPES)})",
+            name="source_type_allowed",
+        ),
+        sa.CheckConstraint(
+            f"verification_status IN ({_in_list(VERIFICATION_STATUSES)})",
+            name="verification_status_allowed",
+        ),
+        sa.CheckConstraint(
+            "confidence >= 0 AND confidence <= 1", name="confidence_range"
+        ),
+        sa.CheckConstraint(
+            f"visibility IN ({_in_list(VISIBILITY_LEVELS)})", name="visibility_allowed"
+        ),
+        sa.CheckConstraint(
+            "valid_from IS NULL OR valid_until IS NULL OR valid_from <= valid_until",
+            name="valid_period_order",
+        ),
+        schema=SCHEMA,
+    )
+    op.create_index(
+        "ix_supply_profile_attribute_lookup",
+        "profile_attribute",
+        ["object_type", "object_id", "taxonomy_version_id", "concept_id", "active"],
+        schema=SCHEMA,
+    )
+
+
+def downgrade() -> None:
+    for table in (
+        "profile_attribute",
+        "buyer_preference",
+        "supply_capability",
+        "product_profile",
+        "exhibitor_profile",
+        "program",
+        "booth_qr",
+        "booth_status_history",
+        "booth",
+        "trade_condition_term",
+        "trade_condition",
+        "product_image",
+        "product_attribute",
+        "event_product",
+        "product",
+        "staff_topic",
+        "exhibitor_staff",
+        "participation_category",
+        "exhibitor_participation",
+        "exhibitor_business_type",
+        "exhibitor",
+    ):
+        op.drop_table(table, schema=SCHEMA)

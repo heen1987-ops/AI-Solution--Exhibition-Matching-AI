@@ -1,0 +1,296 @@
+"""원천 사이트(backju.kr) 배치 import 수신 라우터.
+
+경로 근거와 우선순위
+--------------------
+docs/2026-backju-ai-matching-service-design.md 8.3절은 `/v1/events/{eventId}/imports/...`
+형태를 보여 주지만, 문서 우선순위 규칙(작업 지시: 인터페이스 명세 > db-erd > 개별 단계
+문서)에 따라 docs/frontend-backend-ai-interface-spec.md 18.1절의 실제 경로를 그대로 쓴다:
+
+    POST /admin/imports/visitors
+    POST /admin/imports/exhibitors
+    POST /admin/imports/products
+    GET  /admin/imports/{import_id}
+    GET  /admin/imports/{import_id}/errors
+
+이 라우터는 자체 prefix를 갖지 않는다. app/api/v1/api.py(공용 aggregator, 이 작업 범위 밖)가
+이 router를 추가 prefix 없이 include해야 위 경로가 최종적으로 `<API_V1_PREFIX>/admin/imports/...`
+가 된다.
+
+인증에 대한 TODO
+-----------------
+인터페이스 명세 5절: "운영정보 변경: OPERATOR + 이벤트 스코프". 세션/인증 미들웨어는 아직
+다른 단계(개발 순서 1번, 인터페이스 명세 24절)의 책임이라 이 라우터는 실제 OPERATOR 권한
+검사를 하지 않는다. 통합 단계에서 이 파일의 엔드포인트에 OPERATOR 인증 Depends를 추가해야
+한다.
+
+멱등·오류격리 구현
+-------------------
+행 단위 upsert는 app/services/ingestion.py가 담당한다. 이 라우터는 배치 오케스트레이션
+(integration.sync_job 생성/집계, 행별 SAVEPOINT 격리, integration.sync_row_error 기록)만
+책임진다 - 설계문서 8.1절 "잘못된 행은 전체 배치를 중단하지 않고 오류 격리 목록으로
+보낸다"를 SQLAlchemy SAVEPOINT(begin_nested)로 구현한다: 한 행이 예외를 던지면 그 행의
+변경만 롤백되고 나머지 행들의 이미 커밋 대기 중인 변경은 그대로 세션에 남는다.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Sequence
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_db
+from app.models.integration import SyncJob, SyncRowError
+from app.schemas.imports import (
+    ExhibitorImportRequest,
+    ExhibitorImportRow,
+    ImportBatchResult,
+    ImportErrorListResponse,
+    ImportRowError,
+    ImportStatusResponse,
+    ProductImportRequest,
+    ProductImportRow,
+    VisitorImportRequest,
+    VisitorImportRow,
+)
+from app.services.ingestion import (
+    IngestionError,
+    get_or_create_source_system,
+    upsert_exhibitor,
+    upsert_product,
+    upsert_visitor,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+async def _run_batch(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    event_id: UUID,
+    source_system_code: str,
+    job_type: str,
+    rows: Sequence[VisitorImportRow | ExhibitorImportRow | ProductImportRow],
+    upsert_one,
+) -> ImportBatchResult:
+    source_system = await get_or_create_source_system(
+        db, tenant_id=tenant_id, system_code=source_system_code
+    )
+
+    job = SyncJob(
+        tenant_id=tenant_id,
+        event_id=event_id,
+        source_system_id=source_system.source_system_id,
+        job_type=job_type,
+        status="RUNNING",
+        total_rows=len(rows),
+    )
+    job.started_at = datetime.now(timezone.utc)
+    db.add(job)
+    await db.flush()
+
+    errors: list[ImportRowError] = []
+    success_rows = 0
+
+    for row_index, row in enumerate(rows):
+        try:
+            async with db.begin_nested():
+                await upsert_one(
+                    db,
+                    tenant_id=tenant_id,
+                    event_id=event_id,
+                    source_system_id=source_system.source_system_id,
+                    row=row,
+                )
+        except IngestionError as exc:
+            errors.append(
+                ImportRowError(
+                    row_index=row_index,
+                    source_record_id=row.source_record_id,
+                    error_code=exc.code,
+                    message=exc.message,
+                )
+            )
+            db.add(
+                SyncRowError(
+                    sync_job_id=job.sync_job_id,
+                    row_number=row_index,
+                    external_id=row.source_record_id,
+                    error_code=exc.code,
+                    error_message=exc.message,
+                    raw_row_json=row.model_dump(mode="json"),
+                )
+            )
+        except Exception:  # noqa: BLE001 - 행 하나의 예상 못한 실패를 배치 전체로 번지지 않게 격리
+            logger.exception(
+                "import row failed unexpectedly: job=%s row=%s", job.sync_job_id, row_index
+            )
+            errors.append(
+                ImportRowError(
+                    row_index=row_index,
+                    source_record_id=row.source_record_id,
+                    error_code="INTERNAL_ERROR",
+                    message="행 처리 중 알 수 없는 오류가 발생했습니다.",
+                )
+            )
+            db.add(
+                SyncRowError(
+                    sync_job_id=job.sync_job_id,
+                    row_number=row_index,
+                    external_id=row.source_record_id,
+                    error_code="INTERNAL_ERROR",
+                    error_message="행 처리 중 알 수 없는 오류가 발생했습니다.",
+                    raw_row_json=row.model_dump(mode="json"),
+                )
+            )
+        else:
+            success_rows += 1
+
+    failed_rows = len(errors)
+    if failed_rows == 0:
+        job.status = "COMPLETED"
+    elif success_rows == 0:
+        job.status = "FAILED"
+    else:
+        job.status = "COMPLETED_WITH_ERRORS"
+    job.success_rows = success_rows
+    job.failed_rows = failed_rows
+    job.completed_at = datetime.now(timezone.utc)
+
+    await db.commit()
+
+    return ImportBatchResult(
+        import_id=job.sync_job_id,
+        status=job.status,  # type: ignore[arg-type]
+        total_rows=job.total_rows,
+        success_rows=success_rows,
+        failed_rows=failed_rows,
+        errors=errors,
+    )
+
+
+@router.post("/admin/imports/visitors", response_model=ImportBatchResult)
+async def import_visitors(
+    request: VisitorImportRequest, db: AsyncSession = Depends(get_db)
+) -> ImportBatchResult:
+    """방문객(관람객) 사전등록 배치 upsert. 설계문서 8.3절, 인터페이스 명세 18.1절."""
+
+    return await _run_batch(
+        db,
+        tenant_id=request.tenant_id,
+        event_id=request.event_id,
+        source_system_code=request.source_system_code,
+        job_type="VISITOR_IMPORT",
+        rows=request.rows,
+        upsert_one=upsert_visitor,
+    )
+
+
+@router.post("/admin/imports/exhibitors", response_model=ImportBatchResult)
+async def import_exhibitors(
+    request: ExhibitorImportRequest, db: AsyncSession = Depends(get_db)
+) -> ImportBatchResult:
+    """참가업체 신청 배치 upsert."""
+
+    return await _run_batch(
+        db,
+        tenant_id=request.tenant_id,
+        event_id=request.event_id,
+        source_system_code=request.source_system_code,
+        job_type="EXHIBITOR_IMPORT",
+        rows=request.rows,
+        upsert_one=upsert_exhibitor,
+    )
+
+
+@router.post("/admin/imports/products", response_model=ImportBatchResult)
+async def import_products(
+    request: ProductImportRequest, db: AsyncSession = Depends(get_db)
+) -> ImportBatchResult:
+    """제품 배치 upsert. 부모 업체는 먼저 import_exhibitors로 연계되어 있어야 한다."""
+
+    return await _run_batch(
+        db,
+        tenant_id=request.tenant_id,
+        event_id=request.event_id,
+        source_system_code=request.source_system_code,
+        job_type="PRODUCT_IMPORT",
+        rows=request.rows,
+        upsert_one=upsert_product,
+    )
+
+
+@router.get("/admin/imports/{import_id}", response_model=ImportStatusResponse)
+async def get_import_status(
+    import_id: UUID, db: AsyncSession = Depends(get_db)
+) -> ImportStatusResponse:
+    job = await db.get(SyncJob, import_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="IMPORT_NOT_FOUND")
+    return ImportStatusResponse(
+        import_id=job.sync_job_id,
+        job_type=job.job_type,
+        status=job.status,
+        total_rows=job.total_rows,
+        success_rows=job.success_rows,
+        failed_rows=job.failed_rows,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        created_at=job.created_at,
+    )
+
+
+@router.get("/admin/imports/{import_id}/errors", response_model=ImportErrorListResponse)
+async def get_import_errors(
+    import_id: UUID,
+    cursor: str | None = Query(default=None, description="이전 응답의 next_cursor 값"),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+) -> ImportErrorListResponse:
+    """인터페이스 명세 4.1절 "불투명 Cursor Pagination"을 만족하는 최소 구현.
+
+    TODO: 지금은 offset을 base64 없이 그대로 문자열로 노출하는 단순 구현이다(진짜 "불투명"
+    커서는 아니다). 다른 목록 API들의 커서 구현이 정해지면 그 방식으로 통일해야 한다.
+    """
+
+    job = await db.get(SyncJob, import_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="IMPORT_NOT_FOUND")
+
+    offset = 0
+    if cursor:
+        try:
+            offset = int(cursor)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="INVALID_CURSOR") from None
+
+    stmt = (
+        select(SyncRowError)
+        .where(SyncRowError.sync_job_id == import_id)
+        .order_by(SyncRowError.row_number)
+        .offset(offset)
+        .limit(limit + 1)
+    )
+    rows = list((await db.execute(stmt)).scalars().all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    items = [
+        ImportRowError(
+            row_index=row.row_number,
+            source_record_id=row.external_id,
+            error_code=row.error_code,
+            message=row.error_message,
+        )
+        for row in rows
+    ]
+    next_cursor = str(offset + limit) if has_more else None
+
+    return ImportErrorListResponse(import_id=import_id, items=items, next_cursor=next_cursor)

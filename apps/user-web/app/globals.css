@@ -1,0 +1,155 @@
+/**
+ * 전역 스타일.
+ *
+ * 근거: docs/user-ia-wireframes.md 13절(반응형·접근성).
+ * - 13.2절 접근성 완료 조건: 기본 본문 16px 이상 및 200% 확대에서도 기능 손실 없음,
+ *   터치 영역 44x44px 이상, 일반 텍스트 대비 4.5:1 이상, 키보드만으로 모든 기능 사용 가능,
+ *   색상만으로 상태 구분 금지, 애니메이션 감소 설정 지원.
+ * - 13.1절 고정 CTA는 iOS/Android 안전영역(`env(safe-area-inset-*)`)을 침범하지 않는다.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+
+  --color-bg: #fffaf4;
+  --color-surface: #ffffff;
+  --color-text: #201a12;
+  --color-text-muted: #5c5344;
+  --color-border: #e7ddce;
+  --color-brand: #a65f1e;
+  --color-brand-contrast: #ffffff;
+  --color-focus-ring: #1a56db;
+  --color-danger: #b3261e;
+  --color-success: #146c2e;
+
+  /* TopBar/BottomNav 레이아웃 계산에 함께 쓰는 높이 값. 두 컴포넌트와 루트 레이아웃이
+   * 같은 값을 참조해야 콘텐츠가 고정 영역에 가리지 않는다. */
+  --top-bar-height: 56px;
+  --bottom-nav-height: 64px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --color-bg: #171310;
+    --color-surface: #221c16;
+    --color-text: #f5efe6;
+    --color-text-muted: #c9bfae;
+    --color-border: #3a3226;
+    --color-brand: #e8ad70;
+    --color-brand-contrast: #201a12;
+    --color-focus-ring: #7cacf8;
+    --color-danger: #ff8a80;
+    --color-success: #7fd99a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* 13.2절: 기본 본문 16px 이상, 200% 확대에서도 기능 손실 없음 - rem 기반 크기를 쓰고
+   * 사용자가 브라우저 글자 크기를 키워도 그대로 반영되도록 절대 px로 고정하지 않는다. */
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1rem;
+  line-height: 1.6;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Apple SD Gothic Neo",
+    "Pretendard",
+    "Malgun Gothic",
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 13.2절: 키보드만으로 모든 기능 사용 가능 - 포커스 표시를 색상 대비가 충분한 링으로
+ * 명확히 남긴다. 마우스 클릭 시 불필요한 링이 보이지 않도록 :focus-visible만 사용한다. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* 13.2절: 키보드 사용자를 위한 본문 바로가기 링크. 포커스를 받기 전까지 시각적으로
+ * 숨겨진다(Tailwind sr-only와 달리 포커스 시 다시 보여야 하므로 별도 유틸리티로 둔다). */
+.skip-link {
+  position: fixed;
+  top: -100%;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background-color: var(--color-brand);
+  color: var(--color-brand-contrast);
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: top 0.15s ease-out;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* 13.2절: 터치 영역 최소 44x44px. 아이콘 버튼·탭 등 작은 컨트롤에 적용한다. */
+.tap-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 13.1절: 고정 CTA는 안전영역을 침범하지 않는다. */
+.pb-safe-bottom {
+  padding-bottom: var(--safe-bottom);
+}
+
+.pt-safe-top {
+  padding-top: var(--safe-top);
+}
+
+/* 13.2절: 애니메이션 감소 설정 지원. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

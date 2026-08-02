@@ -1,0 +1,46 @@
+gates:
+  G0_BOOTSTRAP:
+    status: PASSED
+    criteria:
+      - "모든 앱이 로컬에서 실행된다 — backend(uvicorn) 확인됨, frontend(next dev) 확인됨(빌드 성공)"
+      - "Docker Compose 실행 가능 — docker-compose.yml 존재, 미실행 상태로 검증(postgres/redis 컨테이너 기동 여부 미확인)"
+      - "PostgreSQL 연결 — 미검증(로컬에 DB 인스턴스 없음, alembic --sql 오프라인 컴파일까지만 확인)"
+      - "Redis 연결 — 미검증"
+      - "Health Check 성공 — GET /healthz 라우트 등록 확인, 실제 응답은 서버 미기동으로 미검증"
+      - "CI 기본 파이프라인 성공 — CI 자체가 아직 없음(FND-003 대기)"
+    verdict_note: "핵심 조건(코드 실행 가능·빌드 성공)은 충족. 실제 인프라 기동·CI는 미완료지만 부트스트랩을 막을 사유는 아니라고 판단해 PASSED로 기록. FND-003(CI) 완료 시 재검증 권장."
+
+  G1_CONTRACT_FREEZE:
+    status: PASSED
+    criteria:
+      - "도메인모델 확정 — .harness/contracts/domain-model.md 승격 완료"
+      - "OpenAPI 유효 — FastAPI 자동 생성 66개 경로를 .harness/contracts/openapi.json으로 고정"
+      - "DB 스키마 초안 — 완료(16개 마이그레이션, 단일 head 0016_kiosk_session, 93 ORM 테이블)"
+      - "온톨로지 유효 — 완료(259개 개념, catalog.v1.json)"
+      - "오류코드 정의 — .harness/contracts/error-codes.yaml에 공개검색·키오스크 코드 포함"
+      - "API Mock 동작 — 해당없음(이미 실제 백엔드가 존재하므로 Mock 대신 실제 API로 프론트가 동작 중)"
+      - "계약 변경절차 정의 — AGENTS.md + 본 하네스 문서로 정의됨"
+    verdict_note: "CONTRACT-002/003 완료 및 DECISION-004/005 반영. 이후 신규 경로는 OpenAPI 스냅샷과 오류코드 카탈로그를 함께 갱신한다."
+
+  G2_FEATURE_COMPLETE:
+    status: IN_PROGRESS
+    criteria:
+      - "핵심 API 구현 — 공개 카탈로그/검색/키오스크 완료, 관리자·관심목록 API 남음"
+      - "user-web 핵심 흐름 구현 — 완료(4/4) + 익명 QR 게스트 조회 추가"
+      - "kiosk 핵심 흐름 구현 — 완료(KIOSK-001~004, K00~K10 및 세션종료)"
+      - "admin 핵심 흐름 구현 — 0% (ADMIN-001~003 전부 READY/BLOCKED)"
+      - "검색·추천 구현 — PostgreSQL FTS·구조화 필터·가중합·중복제거 완료, pgvector semantic 실점수 연결 대기"
+      - "상담 최소기능 구현 — 완료"
+      - "권한 적용 — 임시 헤더 기반 스텁만 존재, 실제 세션/JWT 인증 미구현(전 트랙 공통 부채)"
+    blocking_tasks: [AISEARCH-002, BACKEND-007, ADMIN-001, ADMIN-002]
+
+  G3_MVP_RELEASE:
+    status: NOT_STARTED
+    criteria:
+      - "Lint/TypeCheck/Unit/Integration/E2E/Migration Test 성공 — 부분(백엔드 alembic --sql만, 실제 DB 통합테스트 없음)"
+      - "AI Gold Set 기준 통과 — 평가셋 없음"
+      - "권한시험 성공 — 실제 인증 미구현이라 시험 불가"
+      - "개인정보 로그노출 0건 — 미검사"
+      - "키오스크 세션잔존 0건 — 키오스크 미존재로 검사 불가"
+      - "성능목표 통과 — 미측정"
+      - "제외범위 위반 0건 — 미검사(QA-001 대기)"

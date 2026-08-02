@@ -16,6 +16,9 @@ eggs/
 .eggs/
 lib/
 lib64/
+# The Python template rule above must not hide monorepo application source.
+!apps/*/lib/
+!apps/*/lib/**
 parts/
 sdist/
 var/
@@ -222,3 +225,6 @@ node_modules/
 .netlify/
 npm-debug.log*
 pnpm-debug.log*
+
+# Local agent worktrees and orchestration scratch data
+.claude/

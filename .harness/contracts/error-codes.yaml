@@ -1,0 +1,133 @@
+# Error code catalog — extracted from backend/app/**/*.py by grep, 2026-08-02.
+# NOT exhaustive. Growing catalog: add codes here as new routers introduce them.
+# HTTP status mapping is best-effort from surrounding code; verify against source before relying
+# on it for client-side branching logic.
+
+codes:
+  # --- Auth / authorization ---
+  - code: AUTH_REQUIRED
+    http_status: 401
+    meaning: "요청 주체를 식별할 수 없음 (임시 헤더 기반 인증 스텁 — 실제 세션/JWT 미구현, RISK-003 참고)"
+  - code: RESOURCE_FORBIDDEN
+    http_status: 403
+    meaning: "인증된 주체가 해당 리소스에 접근할 권한이 없음"
+
+  # --- Generic validation ---
+  - code: VALIDATION_FAILED
+    http_status: 422
+    meaning: "요청 바디가 스키마 또는 비즈니스 규칙을 위반함"
+  - code: INVALID_CURSOR
+    http_status: 400
+    meaning: "페이지네이션 커서 파싱 실패"
+  - code: INTERNAL_ERROR
+    http_status: 500
+    meaning: "처리되지 않은 서버 내부 오류"
+
+  # --- Profile ---
+  - code: PROFILE_INCOMPLETE
+    http_status: 422
+    meaning: "필수 프로파일 항목 누락 — blocking_issues 배열과 함께 반환"
+
+  # --- Meetings (backend/app/api/v1/routers/meetings.py) ---
+  - code: IDEMPOTENCY_KEY_REUSED
+    http_status: 409
+    meaning: "동일 Idempotency-Key로 다른 페이로드 재요청"
+  - code: MEETING_CONFLICT
+    http_status: 409
+    meaning: "슬롯 이중예약 또는 EXCLUDE 제약 위반 (동시성 충돌)"
+  - code: MEETING_VERSION_CONFLICT
+    http_status: 409
+    meaning: "낙관적 잠금 실패 — row_version이 요청 시점과 다름"
+  - code: NO_CANDIDATE
+    http_status: 404
+    meaning: "요청한 상담 후보(슬롯/담당자)가 존재하지 않음"
+  - code: PARTNER_BUYER_CONTACT_VIEW
+    http_status: 200
+    meaning: "감사로그 이벤트 코드(오류 아님) — 파트너가 바이어 연락처를 열람했을 때 기록"
+  - code: OUTCOME_RECORDED
+    http_status: 200
+    meaning: "감사로그 이벤트 코드(오류 아님) — 상담결과 기록 완료"
+
+  # --- Exhibitor / partner (apps/api/app/api/v1/routers/partner.py) ---
+  - code: EXHIBITOR_NOT_FOUND
+    http_status: 404
+  - code: PRODUCT_NOT_FOUND
+    http_status: 404
+  - code: EVENT_NOT_FOUND
+    http_status: 404
+  - code: BOOTH_NOT_FOUND
+    http_status: 404
+  - code: NO_PARTICIPATION_FOR_EVENT
+    http_status: 422
+    meaning: "해당 행사에 대한 참가신청 레코드가 없는 업체가 제품/거래조건을 등록하려 함"
+  - code: BUYER_PREFERENCE_TAXONOMY_VERSION_MISMATCH
+    http_status: 400
+  - code: BUYER_PREFERENCE_EMPTY_DIMENSION
+    http_status: 400
+
+  # --- Public search (apps/api/app/api/v1/routers/search.py) ---
+  - code: SEARCH_UNAVAILABLE
+    http_status: 503
+  - code: SEARCH_SESSION_STORE_UNAVAILABLE
+    http_status: 503
+  - code: SEARCH_SESSION_NOT_FOUND
+    http_status: 404
+
+  # --- Anonymous kiosk / QR handoff ---
+  - code: KIOSK_LANGUAGE_NOT_SUPPORTED
+    http_status: 422
+  - code: KIOSK_SESSION_EXPIRED
+    http_status: 410
+  - code: KIOSK_SESSION_STORE_UNAVAILABLE
+    http_status: 503
+  - code: KIOSK_SEARCH_UNAVAILABLE
+    http_status: 503
+  - code: KIOSK_HANDOFF_SELECTION_INVALID
+    http_status: 422
+  - code: KIOSK_HANDOFF_INVALID
+    http_status: 400
+  - code: KIOSK_HANDOFF_EXPIRED
+    http_status: 410
+  - code: KIOSK_HANDOFF_UNAVAILABLE
+    http_status: 503
+  - code: KIOSK_HANDOFF_CATALOG_UNAVAILABLE
+    http_status: 503
+
+  # --- Imports (apps/api/app/api/v1/routers/imports.py) ---
+  - code: IMPORT_NOT_FOUND
+    http_status: 404
+
+  # --- Webhooks (apps/api/app/api/v1/routers/webhooks.py) ---
+  - code: WEBHOOK_PAYLOAD_INVALID
+    http_status: 400
+  - code: WEBHOOK_SIGNATURE_INVALID
+    http_status: 401
+  - code: WEBHOOK_TIMESTAMP_INVALID
+    http_status: 401
+    meaning: "재전송 공격 방지 — 타임스탬프 허용범위 초과"
+  - code: UNSUPPORTED_EVENT_TYPE
+    http_status: 400
+  - code: WEBHOOK_DATA_INVALID
+    http_status: 400
+  - code: WEBHOOK_PROCESSING_FAILED
+    http_status: 500
+
+  # --- Ontology (apps/api/app/api/v1/endpoints/ontology.py) ---
+  - code: ONTOLOGY_CODE_NOT_FOUND
+    http_status: 404
+  - code: ONTOLOGY_VALUE_OUT_OF_RANGE
+    http_status: 422
+
+  # --- Profile attribute inference (apps/api/app/services/learning_policy.py) ---
+  - code: EXPLICIT_INPUT_CONFLICT
+    http_status: 409
+    meaning: "행동 추론값이 사용자 명시적 입력과 충돌 — 명시값 우선 원칙에 따라 거부"
+
+  # --- Recommendations (apps/api/app/api/v1/routers/recommendations.py) ---
+  # Uses a dedicated ErrorBody/mapped-exception pattern (see source) rather than bare string
+  # codes — read app/api/v1/routers/recommendations.py directly for the current mapping table
+  # before relying on a fixed list here.
+
+not_yet_cataloged:
+  - "recommendations.py's ErrorBody-based codes (dynamic mapping, not simple grep-able strings)"
+  - "admin router (BACKEND-007 대기)"

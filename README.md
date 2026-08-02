@@ -19,4 +19,9 @@ python -m unittest discover -s tests -v
 meet-ai-ontology validate
 ```
 
-FastAPI 실행과 DB 적용 방법은 [`backend/README.md`](./backend/README.md), 전체 진행상태는 [`docs/00-roadmap.md`](./docs/00-roadmap.md)를 참조한다.
+FastAPI 실행과 DB 적용 방법은 [`apps/api/README.md`](./apps/api/README.md), 사용자 웹은
+[`apps/user-web/README.md`](./apps/user-web/README.md), 현장 키오스크는
+[`apps/kiosk/README.md`](./apps/kiosk/README.md), 전체 진행상태는
+[`docs/00-roadmap.md`](./docs/00-roadmap.md)와 [`.harness/state.json`](./.harness/state.json)을
+참조한다. 이 저장소는 pnpm workspace(`apps/*`, `packages/*`) 모노레포다 — `pnpm install`로
+전체 JS/TS 패키지를 설치한다.

@@ -1,10 +1,17 @@
 {
-  "name": "meet-ai-netlify-boundary",
+  "name": "backju-ai-matching",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "dev:user-web": "pnpm --filter backju-ai-sherpa-frontend dev",
+    "dev:kiosk": "pnpm --filter backju-kiosk dev",
+    "dev:admin": "pnpm --filter backju-admin dev",
+    "lint": "pnpm -r --if-present run lint",
+    "typecheck": "pnpm -r --if-present run typecheck && tsc --noEmit",
+    "test": "pnpm -r --if-present run test",
+    "build": "pnpm -r --if-present run build"
   },
   "dependencies": {
     "@netlify/functions": "4.3.0",

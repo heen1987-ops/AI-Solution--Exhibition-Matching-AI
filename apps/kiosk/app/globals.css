@@ -1,0 +1,121 @@
+/**
+ * 전역 스타일.
+ *
+ * 근거: PROJECT_SCOPE.md / docs/vibe-coding-master-spec-v1.md 19~26절.
+ * - 대형 터치스크린 키오스크 전제 - 본문 글자 크게, 터치 영역 44x44px 이상.
+ * - 로그인/회원가입 UI가 없으므로 폼 관련 전역 스타일을 최소화한다.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+
+  --color-bg: #fdf6ec;
+  --color-surface: #ffffff;
+  --color-text: #201a12;
+  --color-text-muted: #5c5344;
+  --color-border: #e7ddce;
+  --color-brand: #a65f1e;
+  --color-brand-contrast: #ffffff;
+  --color-focus-ring: #1a56db;
+
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --color-bg: #17130f;
+    --color-surface: #221c16;
+    --color-text: #f5efe6;
+    --color-text-muted: #c9bfae;
+    --color-border: #3a3226;
+    --color-brand: #e8ad70;
+    --color-brand-contrast: #201a12;
+    --color-focus-ring: #7cacf8;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1.125rem;
+  line-height: 1.6;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Apple SD Gothic Neo",
+    "Pretendard",
+    "Malgun Gothic",
+    "Noto Sans JP",
+    "Noto Sans SC",
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* 키오스크는 브라우저 UI 없이 종일 서 있는 터치 화면이다 - 실수로 페이지가 스크롤되어
+   * 늘어지는 것을 막고, 더블탭 확대/드래그 선택으로 인한 오작동을 방지한다. */
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 4px solid var(--color-focus-ring);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pb-safe-bottom {
+  padding-bottom: var(--safe-bottom);
+}
+
+.pt-safe-top {
+  padding-top: var(--safe-top);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

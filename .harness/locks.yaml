@@ -1,0 +1,54 @@
+# Track ownership. A path may belong to exactly one track.
+# 2026-08-02: backend/ -> apps/api, frontend/ -> apps/user-web physically migrated
+# (DECISION-006). ASSUMPTION-001 is superseded; see .harness/assumptions.md.
+
+ownership:
+  FOUNDATION:
+    - ".harness/**"
+    - "AGENTS.md"
+    - "PROJECT_SCOPE.md"
+    - "ARCHITECTURE.md"
+    - "docker-compose.yml"
+    - "pnpm-workspace.yaml"
+    - "package.json"
+    - "pyproject.toml"
+
+  CONTRACTS:
+    - "packages/shared-types/**"
+    - "packages/ontology/**"
+    - "database/migrations/**"
+    - ".harness/contracts/**"
+    # Informal current equivalents (pending formalization under CONTRACT-002, done):
+    - "apps/api/app/models/**"
+    - "apps/api/alembic/**"
+    - "db/migrations/**"
+    - "docs/db-erd-table-spec.md"
+    - "docs/frontend-backend-ai-interface-spec.md"
+
+  BACKEND:
+    - "apps/api/app/api/**"
+    - "apps/api/app/schemas/**"
+    - "apps/api/app/services/**"
+    - "apps/api/app/core/**"
+    - "apps/api/app/db/**"
+    - "apps/api/app/main.py"
+    - "apps/api/pyproject.toml"
+    - "apps/worker/**"   # net-new, not yet created
+
+  USER_WEB:
+    - "apps/user-web/**"
+
+  KIOSK:
+    - "apps/kiosk/**"    # net-new
+
+  ADMIN:
+    - "apps/admin/**"    # net-new
+
+  AI_SEARCH:
+    - "ai/**"                 # net-new canonical location
+    - "packages/search/**"    # net-new canonical location
+    - "src/meet_ai/ontology/**"   # informal current equivalent, pending migration
+
+  QA:
+    - "tests/**"
+    - ".harness/reports/**"
