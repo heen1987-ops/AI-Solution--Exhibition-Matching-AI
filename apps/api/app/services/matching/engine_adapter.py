@@ -43,7 +43,10 @@ def _execute_one(
 
 
 def execute_catalog_search_score(
-    signals: CatalogSearchSignals, *, model_version: str | None = None
+    signals: CatalogSearchSignals,
+    *,
+    reason_evidence: Mapping[str, Sequence[str]] | None = None,
+    model_version: str | None = None,
 ) -> RankedCandidateResult:
     return _execute_one(
         MatchingMode.CATALOG_SEARCH,
@@ -52,6 +55,7 @@ def execute_catalog_search_score(
             exhibitor_id="catalog-search-exhibitor",
             eligibility=EligibilityDecision(True, "catalog-search-eligibility-v1"),
             search_signals=signals,
+            reason_evidence=reason_evidence or {},
         ),
         model_version=model_version,
     )
@@ -66,6 +70,7 @@ def execute_directional_score(
     eligibility: EligibilityDecision,
     confidence: Number | None,
     caps: Sequence[ScoreCap] = (),
+    reason_evidence: Mapping[str, Sequence[str]] | None = None,
     model_version: str | None = None,
 ) -> RankedCandidateResult:
     if mode not in (MatchingMode.GENERAL_VISITOR, MatchingMode.BUYER_TO_EXHIBITOR):
@@ -79,6 +84,7 @@ def execute_directional_score(
             components=components,
             confidence=confidence,
             score_caps=tuple(caps),
+            reason_evidence=reason_evidence or {},
         ),
         model_version=model_version,
     )
@@ -98,6 +104,7 @@ def execute_reciprocal_score(
     exhibitor_caps: Sequence[ScoreCap] = (),
     score_caps: Sequence[ScoreCap] = (),
     policy_adjustment: Number = 0,
+    reason_evidence: Mapping[str, Sequence[str]] | None = None,
     model_version: str | None = None,
 ) -> RankedCandidateResult:
     return _execute_one(
@@ -115,6 +122,7 @@ def execute_reciprocal_score(
             buyer_caps=tuple(buyer_caps),
             exhibitor_caps=tuple(exhibitor_caps),
             score_caps=tuple(score_caps),
+            reason_evidence=reason_evidence or {},
         ),
         model_version=model_version,
     )

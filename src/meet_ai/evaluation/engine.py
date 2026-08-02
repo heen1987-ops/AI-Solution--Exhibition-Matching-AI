@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 from meet_ai.engine import (
-    MATCHING_ENGINE_RESULT_V1,
+    MATCHING_ENGINE_RESULT_V1_1,
     MatchingCandidateCommand,
     MatchingEngineCommand,
     MatchingMode,
+    ReasonClaim,
     execute_matching,
 )
 from meet_ai.ontology import load_catalog
@@ -36,7 +37,7 @@ from meet_ai.scoring import (
 )
 
 GOLDEN_SET_SCHEMA_VERSION = "matching-golden-set-v1"
-EVALUATOR_VERSION = "matching-evaluator-v1.1"
+EVALUATOR_VERSION = "matching-evaluator-v1.2"
 
 EvaluationMode = Literal[
     "GENERAL_VISITOR",
@@ -497,6 +498,7 @@ class _ScoredCandidate:
     score: Decimal
     score_fingerprint: str
     explanation_fingerprint: str
+    reason_claims: tuple[ReasonClaim, ...]
 
 
 def _scoring_eligibility(
@@ -532,6 +534,11 @@ def _engine_candidate(
         ),
         policy_adjustment=candidate.policy_adjustment,
         score_caps=candidate.score_caps,
+        reason_evidence={
+            explanation.code: explanation.evidence_refs
+            for explanation in candidate.explanations
+            if explanation.evidence_refs
+        },
     )
 
 
@@ -583,13 +590,17 @@ def _filter_decision_mismatch(candidate: GoldenCandidate) -> bool:
     return not expected.passed and expected.reason_codes != observed.reason_codes
 
 
-def _explanation_violations(candidate: GoldenCandidate) -> int:
-    if not candidate.explanations:
-        return 1
+def _explanation_violations(
+    candidate: GoldenCandidate, claims: Sequence[ReasonClaim]
+) -> int:
     allowed = set(candidate.allowed_reason_codes)
-    return sum(
-        not explanation.evidence_refs or explanation.code not in allowed
-        for explanation in candidate.explanations
+    observed = {claim.code for claim in claims}
+    return len(allowed - observed) + sum(
+        not claim.evidence_refs
+        or claim.code not in allowed
+        or not claim.source_components
+        or len(claim.claim_fingerprint) != 64
+        for claim in claims
     )
 
 
@@ -626,14 +637,9 @@ def evaluate_scenario(
             candidate=candidates_by_id[result.candidate_id],
             score=result.score_100,
             score_fingerprint=result.calculation_fingerprint,
-            explanation_fingerprint=_fingerprint(
-                [
-                    asdict(explanation)
-                    for explanation in candidates_by_id[
-                        result.candidate_id
-                    ].explanations
-                ]
-            ),
+            explanation_fingerprint=result.reason_fingerprint
+            or _fingerprint([]),
+            reason_claims=result.reason_claims,
         )
         for result in engine_result.ranked_candidates
     ]
@@ -667,7 +673,7 @@ def evaluate_scenario(
         _filter_decision_mismatch(candidate) for candidate in scenario.candidates
     )
     explanation_violations = sum(
-        _explanation_violations(item.candidate) for item in ranked
+        _explanation_violations(item.candidate, item.reason_claims) for item in ranked
     )
     fallback_drop = max(0.0, recall - fallback_recall)
 
@@ -753,7 +759,7 @@ def evaluate_scenario(
         exhibitor_hhi_at_k=_rounded(hhi),
         ranked_candidates=ranked_candidates,
         failures=tuple(failures),
-        engine_contract_version=MATCHING_ENGINE_RESULT_V1,
+        engine_contract_version=MATCHING_ENGINE_RESULT_V1_1,
         engine_input_fingerprint=engine_result.input_fingerprint,
         engine_result_fingerprint=engine_result.result_fingerprint,
         result_fingerprint=_fingerprint(result_payload),

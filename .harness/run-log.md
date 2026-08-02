@@ -230,3 +230,19 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   result changed.
 - Added `AIENGINE-004` as the next engine-first task: deterministic generated reason claims and
   evidence grounding in the common facade, followed by facade-generated explanation evaluation.
+
+## 2026-08-02 — AIENGINE-004 deterministic reason/evidence contract
+
+- Applied the supplied exhibition-personalization benchmark at the common-engine boundary: the
+  engine, not an LLM or UI template, now admits reason claims from allowlisted score contributions,
+  catalog signals, reciprocal state, and Hard Filter results.
+- Published backward-compatible `matching-engine-command/result-v1.1` and
+  `reason-claim-v1.0`. Claims require adapter evidence and carry source components plus canonical
+  fingerprints; v1.0 rejects v1.1 evidence rather than silently changing.
+- Runtime explanation templates project facade claims. Golden evaluator v1.2 now treats fixture
+  explanations as evidence bindings and validates generated claims; deleting evidence fails the
+  grounding gate.
+- Verification: root `45 passed`; backend `184 passed, 2 skipped`; focused Ruff, `pip check`, and
+  diff check PASS; Golden Set 3/3 PASS with zero explanation violations.
+- AIENGINE-005 is next for shadow-only RRF hybrid fusion and explicit UNKNOWN/missing-signal
+  evaluation. No published score formula, public API, database schema, or online learning changed.

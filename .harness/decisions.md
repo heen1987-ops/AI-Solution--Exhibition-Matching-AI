@@ -106,3 +106,16 @@ transaction에서 수행한다. 입력 한도 안에서는 업체명과 모든 �
 
 상세 근거는
 `.harness/reports/integration/personalization-score-policy-assessment-20260802.md`에 기록한다.
+
+## DECISION-010 (2026-08-02) — 추천 이유의 사실 판정은 공통 facade가 소유
+
+추천 이유는 LLM이나 화면 템플릿이 원시 feature를 보고 독자적으로 만들지 않는다. 공통 엔진이
+게시된 점수 기여도, 카탈로그 검색 신호, Hard Filter 결과, 양면 적합 상태를 allowlist와 대조하고,
+어댑터가 제공한 비어 있지 않은 `evidence_ref`가 있을 때만 `reason-claim-v1.0`을 확정한다.
+템플릿 또는 향후 LLM은 확정 claim의 표현만 바꿀 수 있고 코드·사실·근거를 추가할 수 없다.
+
+기존 `matching-engine-command/result-v1.0`은 수정하지 않고 v1.1을 신규 게시한다. v1.0 명령에
+근거 입력이 섞이면 실패 처리하며, 점수 계산지문과 reason 지문은 분리한다. Golden Set의 기존
+`explanations` 필드는 호환상 유지하되 평가기에서는 기대 출력으로 신뢰하지 않고 어댑터 근거
+binding으로만 사용하며 실제 facade 생성 claim을 검증한다. 상세 증거는
+`.harness/reports/integration/reason-evidence-contract-20260802.md`를 따른다.

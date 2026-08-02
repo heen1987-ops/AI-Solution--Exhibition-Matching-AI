@@ -3,8 +3,11 @@
 from .facade import (
     CATALOG_SEARCH_POLICY_VERSION,
     MATCHING_ENGINE_COMMAND_V1,
+    MATCHING_ENGINE_COMMAND_V1_1,
     MATCHING_ENGINE_RESULT_V1,
+    MATCHING_ENGINE_RESULT_V1_1,
     MATCHING_ENGINE_VERSION,
+    REASON_CLAIM_POLICY_VERSION,
     CatalogSearchScoreResult,
     CatalogSearchSignals,
     ExcludedCandidateResult,
@@ -14,6 +17,9 @@ from .facade import (
     MatchingEngineValidationError,
     MatchingMode,
     RankedCandidateResult,
+    ReasonClaim,
+    derive_directional_reason_claims,
+    derive_reciprocal_reason_claims,
     execute_matching,
     score_catalog_search,
 )
@@ -21,8 +27,11 @@ from .facade import (
 __all__ = [
     "CATALOG_SEARCH_POLICY_VERSION",
     "MATCHING_ENGINE_COMMAND_V1",
+    "MATCHING_ENGINE_COMMAND_V1_1",
     "MATCHING_ENGINE_RESULT_V1",
+    "MATCHING_ENGINE_RESULT_V1_1",
     "MATCHING_ENGINE_VERSION",
+    "REASON_CLAIM_POLICY_VERSION",
     "CatalogSearchScoreResult",
     "CatalogSearchSignals",
     "ExcludedCandidateResult",
@@ -32,6 +41,9 @@ __all__ = [
     "MatchingEngineValidationError",
     "MatchingMode",
     "RankedCandidateResult",
+    "ReasonClaim",
+    "derive_directional_reason_claims",
+    "derive_reciprocal_reason_claims",
     "execute_matching",
     "score_catalog_search",
 ]

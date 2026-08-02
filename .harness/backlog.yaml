@@ -519,7 +519,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-003, AISEARCH-003]
     owned_paths:
       - "src/meet_ai/engine/**"
@@ -535,6 +535,28 @@ tasks:
       - "순수 facade는 FastAPI·SQLAlchemy·외부 AI 공급자에 의존하지 않고 근거 계약과 지문을 반환"
       - "일반 추천·바이어·양면·카탈로그 검색 어댑터가 동일 근거 계약을 사용"
       - "AIENGINE-002 골든셋이 입력된 설명이 아니라 facade가 생성한 설명을 검증"
+    evidence: "matching-engine-command/result-v1.1 and reason-claim-v1.0 published; score/catalog/reciprocal/filter claims require adapter evidence, runtime templates project facade claims, evaluator-v1.2 validates generated claims. Root 45 passed; backend 184 passed/2 skipped; Golden Set 3/3 PASS."
+
+  - id: AIENGINE-005
+    title: 하이브리드 후보결합 RRF shadow 평가·UNKNOWN 경계
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-004]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "BM25/구조화·VECTOR 후보순위를 결정론적 RRF shadow 결과로 결합하고 현재 게시 점수는 변경하지 않음"
+      - "VECTOR 장애·미호출 시 keyword/structured 결과와 순위가 재현 가능하게 유지"
+      - "UNKNOWN·미관측 신호를 불일치 0이나 거짓으로 바꾸지 않고 평가 결과에 별도 보존"
+      - "라벨된 검색 fixture에서 weighted-v1 대비 Recall@K/NDCG@K 비열등성과 지문 재현성을 보고"
+      - "승격은 별도 versioned contract 결정 전까지 금지"
 
   - id: QA-003
     title: Wave 2 계약·범위·보안 기준선 감사
