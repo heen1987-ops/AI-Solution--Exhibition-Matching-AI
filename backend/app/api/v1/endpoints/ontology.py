@@ -12,9 +12,8 @@ from functools import lru_cache
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
-
 from meet_ai.ontology import Catalog, load_catalog
+from pydantic import BaseModel, Field
 
 router = APIRouter()
 
