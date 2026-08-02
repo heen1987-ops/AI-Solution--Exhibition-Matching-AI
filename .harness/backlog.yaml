@@ -483,13 +483,38 @@ tasks:
     wave: 1
     track: QA_SECURITY
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["CTR-002", "CTR-003", "CTR-004", "CTR-005", "CTR-008"]
     owned_paths:
       - "tests/api/**"
     acceptance:
       - "WAVE-1 §12.1 항목 자동화: OpenAPI Syntax, operationId 중복, Schema 참조, 오류응답 구조, 온톨로지 YAML, 이벤트 Catalog, 오류코드 중복, DB Migration Upgrade/Downgrade"
       - "infra/scripts/validate-harness와 중복되지 않게 역할 분리(validate-harness는 하네스 자체, 이 태스크는 계약 내용)"
+    completed_note: >
+      의존 작업 CTR-002/003/004/005/008이 이 실행 시점에 전부 READY(미착수, DRAFT
+      placeholder) 상태였음을 착수 전에 확인 - 지시에 따라 완전 차단하지 않고 현재
+      DRAFT 콘텐츠(.harness/contracts/*.yaml) 기준으로 검증 하네스 자체를 `tests/api/`
+      하위에 구현하고 실제로 실행했다. pytest 13개 테스트: 6 passed / 7 skipped / 0
+      failed(실제 실행 결과, 조작 아님). 6개 pass는 "문법적으로 유효한 placeholder
+      YAML/OpenAPI 문서"처럼 지금도 실제로 검증 가능한 항목(YAML 파싱, openapi.yaml
+      기본 구조, openapi-spec-validator 통과)이고, 나머지 7개는 CTR-002/003/004/005가
+      아직 콘텐츠를 채우지 않아 검사 대상이 없는 상태(paths: {}, categories: [],
+      events: [], codes: [])라 거짓 PASS 대신 명시적 pytest.skip으로 처리했다(사유
+      메시지에 어느 CTR 태스크가 완료되면 재실행해야 하는지 명시). 각 체커가 실제로
+      위반을 잡아내는지도 임시 fixture로 검증 완료(operationId 중복/미해결 $ref/
+      envelope 필드 누락 3종 모두 정상 탐지 확인, 정상 케이스는 정상 PASS 확인 -
+      스모크 테스트 코드 자체는 저장소에 남기지 않음). DB 마이그레이션 왕복 테스트는
+      `backend/tests/conftest.py`와 동일한 TEST_DATABASE_URL env-gating 관례를 그대로
+      재구현(파일은 tests/api/ 밖으로 나가지 않음) - 이 환경에 TEST_DATABASE_URL이
+      없어 SKIP(정상, 조작 아님). **CTR-002/003/004/005/008이 실제로 DONE 처리되면
+      QA_SECURITY(또는 담당자)가 `cd tests/api && pytest -v` 재실행 필수 - 지금 SKIP인
+      7개가 그때부터 실제 PASS/FAIL을 낸다.** 온톨로지 코드 스키마 가정(label_ko/
+      label_en/description/status/version + categories[].codes[] 중첩 구조)은
+      CTR-003 acceptance 문구에서 역산한 추정치이므로 CTR-003이 실제로 다른 구조를
+      채택하면 `tests/api/test_ontology_contract.py`의 `_iter_category_codes`도 함께
+      갱신 필요. 생성 타입 일치성 검사(openapi.yaml → TS 코드젠)는 코드젠 파이프라인
+      자체가 없어(Wave 2, packages/api-client) 이번 범위에서 제외 - 가짜 테스트를
+      만들지 않았다. 핸드오프: .harness/handoffs/qa/QAS-003.md.
 
   - id: QAS-006
     title: BAC-001 헬스체크 API 테스트 반영 (backend/tests/test_health_api.py)

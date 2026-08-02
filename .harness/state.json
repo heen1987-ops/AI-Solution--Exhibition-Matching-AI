@@ -12,8 +12,7 @@
     "CTR-008",
     "AIS-001",
     "AIS-005",
-    "AIS-006",
-    "QAS-003"
+    "AIS-006"
   ],
   "completed_tasks": [
     "FND-001",
@@ -26,7 +25,8 @@
     "ADM-001",
     "KSK-001",
     "WEB-001",
-    "BAC-001"
+    "BAC-001",
+    "QAS-003"
   ],
   "blocked_tasks": [
     "FND-004 (Docker unavailable in this execution environment)"
