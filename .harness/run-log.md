@@ -278,3 +278,20 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
 - Focused import/export tests pass `13/13`. The example workbook formula scan returned zero errors,
   all three sheets were rendered and visually inspected, full backend passed `197` with `2` skipped,
   and root deterministic engine/ontology tests passed `45`.
+
+## 2026-08-02 — AIENGINE-005 hybrid RRF shadow and UNKNOWN boundary
+
+- Added pure `hybrid-rrf-shadow-command/result-v1.0` execution, isolated from the published
+  matching facade. Equal-weight RRF uses deterministic candidate-ID tie breaking and canonical
+  input/result fingerprints.
+- VECTOR `UNAVAILABLE` and `NOT_INVOKED` fail back to the exact weighted-v1 published order with
+  null RRF scores; no remaining-channel renormalization or public rank mutation occurs.
+- Candidate absence in a recall channel remains a null rank. Named UNKNOWN and MISSING business
+  signals remain distinct diagnostics and are covered by reproducibility tests.
+- Added evaluator-v1.0 and a three-scenario labeled fixture. Average Recall@K improved from
+  `0.777778` to `0.888889`; average NDCG@K improved from `0.795522` to `0.947609`; fallback order,
+  state preservation, and promotion-prohibited gates all pass.
+- Verification: focused `30 passed`; root `54 passed`; backend `197 passed, 2 skipped`; existing
+  golden set 3/3 PASS; Ruff, compileall, pip check, and diff check PASS.
+- AIENGINE-006 is next for a shared deterministic intent contract across natural-language queries
+  and canonical Excel profiles. RRF production promotion remains change-controlled.

@@ -12,11 +12,17 @@ from meet_ai.engine import (
     MATCHING_ENGINE_COMMAND_V1_1,
     MATCHING_ENGINE_RESULT_V1_1,
     REASON_CLAIM_POLICY_VERSION,
+    CandidateSignalDiagnostics,
     CatalogSearchSignals,
+    HybridRrfShadowCommand,
+    HybridShadowValidationError,
     MatchingCandidateCommand,
     MatchingEngineCommand,
     MatchingEngineValidationError,
     MatchingMode,
+    RecallChannelRanking,
+    RecallChannelState,
+    execute_hybrid_rrf_shadow,
     execute_matching,
 )
 from meet_ai.scoring import EligibilityDecision
@@ -309,3 +315,117 @@ def test_hard_filter_reason_claim_is_emitted_only_with_filter_evidence() -> None
         "eligibility:EXHIBITOR_NOT_APPROVED",
     )
     assert without_evidence.reason_claims == ()
+
+
+def _hybrid_shadow_command(
+    vector_state: RecallChannelState = RecallChannelState.AVAILABLE,
+) -> HybridRrfShadowCommand:
+    return HybridRrfShadowCommand(
+        candidate_ids=("candidate-c", "candidate-a", "candidate-b"),
+        published_ranking=("candidate-b", "candidate-c", "candidate-a"),
+        channels=(
+            RecallChannelRanking(
+                "VECTOR",
+                vector_state,
+                ("candidate-a", "candidate-b", "candidate-c")
+                if vector_state is RecallChannelState.AVAILABLE
+                else (),
+            ),
+            RecallChannelRanking(
+                "KEYWORD", "AVAILABLE", ("candidate-b", "candidate-c")
+            ),
+            RecallChannelRanking(
+                "STRUCTURED", "AVAILABLE", ("candidate-b", "candidate-a")
+            ),
+        ),
+        candidate_signals=(
+            CandidateSignalDiagnostics(
+                "candidate-a",
+                unknown_signals=("minimum_order_quantity",),
+            ),
+            CandidateSignalDiagnostics(
+                "candidate-c",
+                missing_signals=("export_market",),
+            ),
+        ),
+    )
+
+
+def test_hybrid_rrf_is_shadow_only_and_preserves_unknown_boundaries() -> None:
+    result = execute_hybrid_rrf_shadow(_hybrid_shadow_command())
+
+    assert result.shadow_only is True
+    assert result.promotion_allowed is False
+    assert result.published_ranking == (
+        "candidate-b",
+        "candidate-c",
+        "candidate-a",
+    )
+    assert [item.candidate_id for item in result.shadow_ranking] == [
+        "candidate-b",
+        "candidate-a",
+        "candidate-c",
+    ]
+    assert all(item.rrf_score is not None for item in result.shadow_ranking)
+    candidate_a = next(
+        item for item in result.shadow_ranking if item.candidate_id == "candidate-a"
+    )
+    candidate_c = next(
+        item for item in result.shadow_ranking if item.candidate_id == "candidate-c"
+    )
+    assert candidate_a.unknown_signals == ("minimum_order_quantity",)
+    assert candidate_a.channel_ranks["KEYWORD"] is None
+    assert candidate_c.missing_signals == ("export_market",)
+    assert candidate_c.channel_ranks["STRUCTURED"] is None
+    assert result.unknown_signal_count == 1
+    assert result.missing_signal_count == 1
+    assert len(result.input_fingerprint) == 64
+    assert len(result.result_fingerprint) == 64
+
+
+@pytest.mark.parametrize(
+    "vector_state",
+    [RecallChannelState.UNAVAILABLE, RecallChannelState.NOT_INVOKED],
+)
+def test_vector_failure_preserves_published_weighted_order_without_zero_scores(
+    vector_state: RecallChannelState,
+) -> None:
+    result = execute_hybrid_rrf_shadow(_hybrid_shadow_command(vector_state))
+
+    assert result.fallback_applied is True
+    assert result.fallback_reason == vector_state.value
+    assert tuple(item.candidate_id for item in result.shadow_ranking) == (
+        "candidate-b",
+        "candidate-c",
+        "candidate-a",
+    )
+    assert all(item.rrf_score is None for item in result.shadow_ranking)
+
+
+def test_hybrid_shadow_fingerprint_ignores_set_like_input_order() -> None:
+    command = _hybrid_shadow_command()
+    reordered = HybridRrfShadowCommand(
+        candidate_ids=tuple(reversed(command.candidate_ids)),
+        published_ranking=command.published_ranking,
+        channels=tuple(reversed(command.channels)),
+        candidate_signals=tuple(reversed(command.candidate_signals)),
+    )
+
+    first = execute_hybrid_rrf_shadow(command)
+    second = execute_hybrid_rrf_shadow(reordered)
+
+    assert first.input_fingerprint == second.input_fingerprint
+    assert first.result_fingerprint == second.result_fingerprint
+    assert first.to_dict() == second.to_dict()
+
+
+def test_hybrid_shadow_rejects_ambiguous_unknown_and_unavailable_inputs() -> None:
+    with pytest.raises(HybridShadowValidationError, match="both UNKNOWN and MISSING"):
+        CandidateSignalDiagnostics(
+            "candidate-a",
+            unknown_signals=("moq",),
+            missing_signals=("moq",),
+        )
+
+    with pytest.raises(HybridShadowValidationError, match="cannot contain a ranking"):
+        RecallChannelRanking("VECTOR", "UNAVAILABLE", ("candidate-a",))

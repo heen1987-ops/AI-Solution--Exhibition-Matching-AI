@@ -141,3 +141,16 @@ binding으로만 사용하며 실제 facade 생성 claim을 검증한다. 상세
 XLSX에는 불투명 원천 ID와 공개 업체정보, 점수, 근거, 정책 버전, eligibility ID와 지문만 포함하며
 이름·전화·이메일·원문 프로파일 속성은 포함하지 않는다. 동기 요청은 100명×Top 10으로 제한하고,
 그보다 큰 작업은 인증·worker 운영계약이 준비된 후 별도 비동기 작업으로 확장한다.
+
+## DECISION-013 (2026-08-02) — RRF remains shadow-only
+
+The deterministic `hybrid-rrf-shadow-v1.0` policy combines STRUCTURED, KEYWORD/BM25, and
+VECTOR ranks only in offline shadow evaluation. It does not change `execute_matching`, the
+published weighted-v1 catalog score, any API response, or stored recommendation rank.
+
+If VECTOR is unavailable or was not invoked, the existing published order is retained exactly;
+the engine does not renormalize remaining channels or emit a synthetic zero vector score.
+Candidate-level UNKNOWN and MISSING business signals are separate diagnostics and never become
+false, zero, or mismatch. Production promotion requires a separate versioned Change Request and
+larger labeled plus runtime-shadow evidence. See
+`.harness/reports/integration/hybrid-rrf-shadow-20260802.md`.

@@ -542,7 +542,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-004]
     owned_paths:
       - "src/meet_ai/engine/**"
@@ -557,6 +557,28 @@ tasks:
       - "UNKNOWN·미관측 신호를 불일치 0이나 거짓으로 바꾸지 않고 평가 결과에 별도 보존"
       - "라벨된 검색 fixture에서 weighted-v1 대비 Recall@K/NDCG@K 비열등성과 지문 재현성을 보고"
       - "승격은 별도 versioned contract 결정 전까지 금지"
+    evidence: "hybrid-rrf-shadow-command/result-v1.0 and evaluator-v1.0 published. Labeled fixture covers VECTOR AVAILABLE/UNAVAILABLE/NOT_INVOKED, preserves UNKNOWN/MISSING diagnostics without numeric coercion, and keeps weighted-v1 fallback order exact. Average Recall@K 0.777778->0.888889 and NDCG@K 0.795522->0.947609; root 54 passed, backend 197 passed/2 skipped. Promotion remains prohibited."
+
+  - id: AIENGINE-006
+    title: 자연어·엑셀 프로파일 공통 의도 정규화 계약
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-005, BACKEND-011]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "자연어 질의와 canonical Excel profile을 동일한 versioned intent 구조로 정규화"
+      - "MUST/PREFER/EXCLUDE와 UNKNOWN/UNRESOLVED를 분리하고 미확인 값을 false 또는 0으로 변환하지 않음"
+      - "온톨로지 코드·동의어는 게시 버전에만 매핑하며 모호한 용어를 임의 추정하지 않음"
+      - "PII 없이 입력·결과 fingerprint가 재현되고 한국어/영문/약어/부정어 fixture가 회귀 계약으로 동작"
+      - "LLM은 선택적 proposal adapter로만 허용하고 schema 검증 전 결과를 Hard Filter나 점수에 사용하지 않음"
 
   - id: BACKEND-011
     title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿

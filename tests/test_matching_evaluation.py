@@ -9,13 +9,23 @@ import pytest
 
 from meet_ai.evaluation import (
     GoldenSetValidationError,
+    HybridShadowFixtureValidationError,
     evaluate_golden_set,
+    evaluate_hybrid_shadow_fixture,
     load_golden_set,
     load_golden_set_payload,
+    load_hybrid_shadow_fixture,
+    load_hybrid_shadow_fixture_payload,
 )
 from meet_ai.evaluation.__main__ import main
 
 FIXTURE = Path(__file__).parent / "fixtures" / "matching" / "golden-set.v1.json"
+HYBRID_FIXTURE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "matching"
+    / "hybrid-rrf-shadow.v1.json"
+)
 
 
 def _payload() -> dict:
@@ -180,3 +190,77 @@ def test_cli_returns_structured_error_for_invalid_artifact(
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ERROR"
     assert output["error_code"] == "GOLDEN_SET_INVALID"
+
+
+def _hybrid_payload() -> dict:
+    return json.loads(HYBRID_FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_hybrid_shadow_fixture_passes_non_inferiority_and_fallback_gates() -> None:
+    report = evaluate_hybrid_shadow_fixture(
+        load_hybrid_shadow_fixture(HYBRID_FIXTURE)
+    )
+
+    assert report.status == "PASS"
+    assert report.scenario_count == 3
+    assert report.average_shadow_recall_at_k >= report.average_published_recall_at_k
+    assert report.average_shadow_ndcg_at_k >= report.average_published_ndcg_at_k
+    assert {item.vector_state for item in report.scenarios} == {
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "NOT_INVOKED",
+    }
+    assert all(item.fallback_order_preserved for item in report.scenarios)
+    assert all(item.unknown_signals_preserved for item in report.scenarios)
+    assert all(item.missing_signals_preserved for item in report.scenarios)
+    assert all(item.shadow_only and not item.promotion_allowed for item in report.scenarios)
+    assert len(report.input_fingerprint) == 64
+    assert len(report.result_fingerprint) == 64
+
+
+def test_hybrid_shadow_evaluation_is_reproducible_for_set_like_order() -> None:
+    payload = _hybrid_payload()
+    first = evaluate_hybrid_shadow_fixture(load_hybrid_shadow_fixture_payload(payload))
+
+    reordered = copy.deepcopy(payload)
+    reordered["scenarios"].reverse()
+    for scenario in reordered["scenarios"]:
+        scenario["command"]["candidate_ids"].reverse()
+        scenario["command"]["channels"].reverse()
+        scenario["command"]["candidate_signals"].reverse()
+    second = evaluate_hybrid_shadow_fixture(
+        load_hybrid_shadow_fixture_payload(reordered)
+    )
+
+    assert first.input_fingerprint == second.input_fingerprint
+    assert first.result_fingerprint == second.result_fingerprint
+    assert first.to_dict() == second.to_dict()
+
+
+def test_hybrid_shadow_detects_ndcg_regression_against_weighted_v1() -> None:
+    payload = _hybrid_payload()
+    payload["scenarios"][0]["command"]["published_ranking"] = [
+        "candidate-a",
+        "candidate-b",
+        "candidate-c",
+        "candidate-d",
+        "candidate-e",
+    ]
+
+    report = evaluate_hybrid_shadow_fixture(
+        load_hybrid_shadow_fixture_payload(payload)
+    )
+
+    assert report.status == "FAIL"
+    assert (
+        "natural-language-vector-available:NDCG_AT_K_NON_INFERIORITY_FAILED"
+        in report.failures
+    )
+
+
+def test_hybrid_shadow_fixture_rejects_unknown_relevance_boundary() -> None:
+    payload = _hybrid_payload()
+    del payload["scenarios"][0]["gold_relevance"]["candidate-e"]
+
+    with pytest.raises(HybridShadowFixtureValidationError, match="must cover every"):
+        load_hybrid_shadow_fixture_payload(payload)

@@ -11,15 +11,35 @@ from .engine import (
     load_golden_set,
     load_golden_set_payload,
 )
+from .hybrid_shadow import (
+    HYBRID_SHADOW_EVALUATOR_VERSION,
+    HYBRID_SHADOW_FIXTURE_SCHEMA_V1,
+    HybridShadowEvaluationReport,
+    HybridShadowFixture,
+    HybridShadowFixtureValidationError,
+    evaluate_hybrid_shadow_fixture,
+    evaluate_hybrid_shadow_scenario,
+    load_hybrid_shadow_fixture,
+    load_hybrid_shadow_fixture_payload,
+)
 
 __all__ = [
     "EVALUATOR_VERSION",
     "GOLDEN_SET_SCHEMA_VERSION",
+    "HYBRID_SHADOW_EVALUATOR_VERSION",
+    "HYBRID_SHADOW_FIXTURE_SCHEMA_V1",
     "EvaluationReport",
     "GoldenSet",
     "GoldenSetValidationError",
+    "HybridShadowEvaluationReport",
+    "HybridShadowFixture",
+    "HybridShadowFixtureValidationError",
     "evaluate_golden_set",
+    "evaluate_hybrid_shadow_fixture",
+    "evaluate_hybrid_shadow_scenario",
     "evaluate_scenario",
     "load_golden_set",
     "load_golden_set_payload",
+    "load_hybrid_shadow_fixture",
+    "load_hybrid_shadow_fixture_payload",
 ]
