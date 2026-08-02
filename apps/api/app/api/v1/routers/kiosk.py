@@ -47,6 +47,7 @@ from app.services.kiosk import (
     touch_session_activity,
     verify_handoff_token,
 )
+from app.services.matching.semantic_search import get_semantic_scorer
 
 router = APIRouter(prefix="/kiosk")
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -55,7 +56,9 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 RequestIdDep = Annotated[str, Depends(get_request_id)]
 
 
-def _error(status_code: int, code: str, message: str, *, retryable: bool = False) -> HTTPException:
+def _error(
+    status_code: int, code: str, message: str, *, retryable: bool = False
+) -> HTTPException:
     return HTTPException(
         status_code=status_code,
         detail={
@@ -95,13 +98,17 @@ async def _resolve_tenant_id(db: AsyncSession, event_id: uuid.UUID) -> uuid.UUID
     """
 
     try:
-        result = await db.execute(select(Event.tenant_id).where(Event.event_id == event_id))
+        result = await db.execute(
+            select(Event.tenant_id).where(Event.event_id == event_id)
+        )
         return result.scalar_one_or_none()
     except SQLAlchemyError:
         return None
 
 
-async def _active_session(store: KioskStore, session_id: uuid.UUID) -> KioskSessionRecord:
+async def _active_session(
+    store: KioskStore, session_id: uuid.UUID
+) -> KioskSessionRecord:
     try:
         session = await store.get_session(session_id)
     except RedisError as exc:
@@ -206,6 +213,8 @@ async def search_kiosk_catalog(
             query=payload.query,
             category_codes=payload.category_codes,
             limit=payload.limit,
+            language=session.language,
+            semantic_scorer=get_semantic_scorer(settings),
         )
     except SQLAlchemyError as exc:
         raise _error(
@@ -277,7 +286,6 @@ async def create_kiosk_handoff(
         secret=settings.site_context_secret,
         guest_web_base_url=settings.GUEST_WEB_BASE_URL,
     )
-
 
     try:
         await store.save_handoff(record, settings.KIOSK_QR_EXPIRATION_MINUTES * 60)

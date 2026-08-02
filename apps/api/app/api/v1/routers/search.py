@@ -22,6 +22,7 @@ from app.schemas.search import (
     SearchResponse,
 )
 from app.services.catalog_search import search_approved_catalog
+from app.services.matching.semantic_search import get_semantic_scorer
 from app.services.search_query_interpreter import interpret_query
 from app.services.search_sessions import (
     SearchSessionRecord,
@@ -81,6 +82,8 @@ async def create_search(
             query=payload.query,
             category_codes=concept_codes,
             limit=payload.limit,
+            language="ko",
+            semantic_scorer=get_semantic_scorer(settings),
         )
     except SQLAlchemyError as exc:
         raise _error(

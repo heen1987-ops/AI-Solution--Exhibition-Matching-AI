@@ -15,12 +15,12 @@ gates:
     criteria:
       - "도메인모델 확정 — .harness/contracts/domain-model.md 승격 완료"
       - "OpenAPI 유효 — FastAPI 자동 생성 66개 경로를 .harness/contracts/openapi.json으로 고정"
-      - "DB 스키마 초안 — 완료(16개 마이그레이션, 단일 head 0016_kiosk_session, 93 ORM 테이블)"
+      - "DB 스키마 초안 — 완료(17개 마이그레이션, 단일 head 0017_object_embedding, 94 ORM 테이블)"
       - "온톨로지 유효 — 완료(259개 개념, catalog.v1.json)"
       - "오류코드 정의 — .harness/contracts/error-codes.yaml에 공개검색·키오스크 코드 포함"
       - "API Mock 동작 — 해당없음(이미 실제 백엔드가 존재하므로 Mock 대신 실제 API로 프론트가 동작 중)"
       - "계약 변경절차 정의 — AGENTS.md + 본 하네스 문서로 정의됨"
-    verdict_note: "CONTRACT-002/003 완료 및 DECISION-004/005 반영. 이후 신규 경로는 OpenAPI 스냅샷과 오류코드 카탈로그를 함께 갱신한다."
+    verdict_note: "CONTRACT-002/003과 CR-004/CONTRACT-004 완료, DECISION-004/005/007 반영 후 재동결. 이후 신규 경로는 OpenAPI 스냅샷과 오류코드 카탈로그를 함께 갱신한다."
 
   G2_FEATURE_COMPLETE:
     status: IN_PROGRESS
@@ -28,19 +28,20 @@ gates:
       - "핵심 API 구현 — 공개 카탈로그/검색/키오스크 완료, 관리자·관심목록 API 남음"
       - "user-web 핵심 흐름 구현 — 완료(4/4) + 익명 QR 게스트 조회 추가"
       - "kiosk 핵심 흐름 구현 — 완료(KIOSK-001~004, K00~K10 및 세션종료)"
-      - "admin 핵심 흐름 구현 — 0% (ADMIN-001~003 전부 READY/BLOCKED)"
-      - "검색·추천 구현 — PostgreSQL FTS·구조화 필터·가중합·중복제거 완료, pgvector semantic 실점수 연결 대기"
+      - "admin 핵심 흐름 구현 — 화면은 부분 구현, 실제 인증·관리자 API 의존으로 ADMIN-001~003 대기"
+      - "검색·추천 구현 — PostgreSQL FTS·구조화 필터·SUMMARY-only filtered-HNSW semantic top-K·가중합·중복제거·fallback 완료, 운영 벡터 백필/평가는 G3에서 수행"
       - "상담 최소기능 구현 — 완료"
       - "권한 적용 — 임시 헤더 기반 스텁만 존재, 실제 세션/JWT 인증 미구현(전 트랙 공통 부채)"
-    blocking_tasks: [AISEARCH-002, BACKEND-007, ADMIN-001, ADMIN-002]
+    blocking_tasks: [CONTRACT-005, CONTRACT-006, BACKEND-007, BACKEND-009, BACKEND-010, ADMIN-001, ADMIN-002, ADMIN-003]
 
   G3_MVP_RELEASE:
     status: NOT_STARTED
     criteria:
-      - "Lint/TypeCheck/Unit/Integration/E2E/Migration Test 성공 — 부분(백엔드 alembic --sql만, 실제 DB 통합테스트 없음)"
-      - "AI Gold Set 기준 통과 — 평가셋 없음"
+      - "Lint/TypeCheck/Unit/Integration/E2E/Migration Test 성공 — 부분(0017 포함 Alembic upgrade/downgrade SQL 컴파일, 실제 DB HNSW EXPLAIN·exact-vs-ANN 회수율·원본변경 invalidation trigger 통합테스트 없음)"
+      - "AI Gold Set 기준 통과 — query-interpreter 평가셋은 존재, semantic relevance 평가셋은 없음"
       - "권한시험 성공 — 실제 인증 미구현이라 시험 불가"
       - "개인정보 로그노출 0건 — 미검사"
-      - "키오스크 세션잔존 0건 — 키오스크 미존재로 검사 불가"
+      - "키오스크 세션잔존 0건 — 구현·컴포넌트 privacy test 완료, 실제 장치 E2E 미검사"
       - "성능목표 통과 — 미측정"
+      - "외부 의미검색 비용보호 — 기본 OFF, 활성화 전 공개 검색 gateway/WAF rate limit 필요"
       - "제외범위 위반 0건 — 미검사(QA-001 대기)"

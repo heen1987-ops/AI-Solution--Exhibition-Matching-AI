@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 
 import pytest
+from app.core.config import SEARCH_EMBEDDING_MODEL_CONFIG_HASH_V1
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -89,13 +90,99 @@ async def test_live_postgres_recommendation_guarantees() -> None:
                     )
                 )
             ).scalar_one()
+            vector_contract = (
+                await connection.execute(
+                    text(
+                        "SELECT to_regclass('ai.object_embedding')::text, "
+                        "(SELECT extversion FROM pg_extension WHERE extname = 'vector'), "
+                        "format_type(a.atttypid, a.atttypmod) "
+                        "FROM pg_attribute a "
+                        "WHERE a.attrelid = 'ai.object_embedding'::regclass "
+                        "AND a.attname = 'embedding'"
+                    )
+                )
+            ).one()
+            embedding_model = (
+                await connection.execute(
+                    text(
+                        "SELECT model_type, provider, model_name, gateway_adapter, "
+                        "config_hash, status, config_json ->> 'dimensions', "
+                        "config_json ->> 'distance' "
+                        "FROM ai.model_version "
+                        "WHERE model_version_id = "
+                        "'5f2fe7ac-74d7-59c9-85d3-6b5faf2f7a4e'::uuid"
+                    )
+                )
+            ).one()
+            hnsw_index = (
+                await connection.execute(
+                    text(
+                        "SELECT indexdef FROM pg_indexes "
+                        "WHERE schemaname = 'ai' "
+                        "AND indexname = 'ix_object_embedding_active_hnsw_cosine'"
+                    )
+                )
+            ).scalar_one()
+            source_invalidation_triggers = (
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT tgname FROM pg_trigger "
+                            "WHERE tgname IN ("
+                            "'trg_embedding_source_lock_event_product', "
+                            "'trg_embedding_source_lock_product', "
+                            "'trg_embedding_source_lock_participation', "
+                            "'trg_embedding_source_lock_exhibitor', "
+                            "'trg_embedding_source_lock_recommendable', "
+                            "'trg_embedding_invalidate_event_product_summary', "
+                            "'trg_embedding_invalidate_product_summary', "
+                            "'trg_embedding_invalidate_participation_summary', "
+                            "'trg_embedding_invalidate_exhibitor_summary', "
+                            "'trg_embedding_invalidate_recommendable') "
+                            "AND NOT tgisinternal"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
     finally:
         await engine.dispose()
 
-    assert head == "0016_kiosk_session"
+    assert head == "0017_object_embedding"
     assert dedupe_table == "interaction.client_event_dedupe"
     assert "event_date, interaction_event_id" in foreign_key
     assert append_only_trigger is True
     assert context_details_column is True
     assert tuple(context_policy) == ("CONTEXT_RERANK", "PUBLISHED")
     assert context_provenance_columns == 6
+    assert vector_contract[0] == "ai.object_embedding"
+    assert vector_contract[1] is not None
+    assert tuple(int(part) for part in vector_contract[1].split(".")) >= (0, 8, 0)
+    assert vector_contract[2] == "vector(512)"
+    assert tuple(embedding_model) == (
+        "EMBEDDING",
+        "OPENAI",
+        "text-embedding-3-small",
+        "OPENAI_DIRECT",
+        SEARCH_EMBEDDING_MODEL_CONFIG_HASH_V1,
+        "DEPLOYED",
+        "512",
+        "COSINE",
+    )
+    assert "USING hnsw" in hnsw_index
+    assert "vector_cosine_ops" in hnsw_index
+    assert "ACTIVE IS TRUE" in hnsw_index.upper()
+    assert "CONTENT_TYPE = 'SUMMARY'" in hnsw_index.upper()
+    assert set(source_invalidation_triggers) == {
+        "trg_embedding_source_lock_event_product",
+        "trg_embedding_source_lock_product",
+        "trg_embedding_source_lock_participation",
+        "trg_embedding_source_lock_exhibitor",
+        "trg_embedding_source_lock_recommendable",
+        "trg_embedding_invalidate_event_product_summary",
+        "trg_embedding_invalidate_product_summary",
+        "trg_embedding_invalidate_participation_summary",
+        "trg_embedding_invalidate_exhibitor_summary",
+        "trg_embedding_invalidate_recommendable",
+    }

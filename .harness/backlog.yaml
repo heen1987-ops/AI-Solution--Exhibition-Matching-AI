@@ -86,6 +86,60 @@ tasks:
       "그대로 구현해야 할 명세"인지 "원본 프롬프트 템플릿의 예시일 뿐"인지 사용자 확인 필요
       (Blocker Score 7점 이상 후보 — 도메인 자체가 바뀌는 문제라 되돌리기 어려움).
 
+  - id: CONTRACT-004
+    title: 검색 임베딩 모델·차원·pgvector 활성 계약 게시 (CR-004)
+    wave: 2
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-004-object-embedding.md"
+      - "apps/api/app/models/ai.py"
+      - "apps/api/alembic/**"
+      - "docs/db-erd-table-spec.md"
+      - ".harness/contracts/domain-model.md"
+    acceptance:
+      - "모델 버전·고정 차원·거리척도·활성 포인터·fallback이 승인된 CR에 기록된다"
+      - "ai.object_embedding이 tenant/event/recommendable 경계와 HNSW cosine 인덱스를 갖는다"
+      - "Alembic이 단일 head를 유지하고 upgrade/downgrade SQL이 컴파일된다"
+    evidence: "CR-004/DECISION-007, 0017_object_embedding, VECTOR(512), active SUMMARY partial-HNSW cosine, 원본변경 fail-closed trigger, ORM 94 tables, offline upgrade/downgrade SQL compile 통과"
+
+  - id: CONTRACT-005
+    title: 관심목록 영속 모델·API 계약 게시
+    wave: 2
+    track: CONTRACTS
+    priority: P1
+    status: READY
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-005-favorites.md"
+      - "apps/api/app/models/favorite.py"
+      - "apps/api/alembic/**"
+      - ".harness/contracts/domain-model.md"
+    acceptance:
+      - "즐겨찾기 소유자·행사·recommendable 경계와 중복·삭제 정책이 CR에 기록된다"
+      - "모델과 Alembic 마이그레이션 소유권을 CONTRACTS가 게시한 뒤 BACKEND-009에 인계한다"
+      - "Alembic 단일 head와 upgrade/downgrade SQL 컴파일을 유지한다"
+    note: "G1 동결 후 새 테이블이 필요하므로 BACKEND-009보다 먼저 처리한다."
+
+  - id: CONTRACT-006
+    title: 인증·세션·RBAC·관리자 MFA 계약 게시
+    wave: 2
+    track: CONTRACTS
+    priority: P1
+    status: READY
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-006-auth-rbac.md"
+      - ".harness/contracts/openapi.json"
+      - ".harness/contracts/error-codes.yaml"
+    acceptance:
+      - "검증된 principal의 tenant/event/user/role claim과 세션·JWT 수명주기를 계약한다"
+      - "EVENT_ADMIN/EXHIBITOR_ADMIN/DATA_REVIEWER 권한표와 관리자 MFA·복구 정책을 계약한다"
+      - "임시 호출자 제공 식별 헤더의 제거·호환 전환과 401/403 오류 계약을 정의한다"
+    note: "RISK-003의 구현 선행 계약이며, BACKEND-010 게시 전 관리자·보호 API를 완료 처리하지 않는다."
+
   # ---------- WAVE 2: BACKEND (substantially done) ----------
   - id: BACKEND-001
     title: FastAPI 코어 골격 + DB 세션 + Alembic
@@ -152,20 +206,23 @@ tasks:
       - "POST /search, GET /search/{search_session_id} — 구조화 필터 + 키워드(PostgreSQL FTS) + (있으면) pgvector 결합, 로그인·프로파일 없이 동작"
       - "search_session에 channel(WEB/KIOSK) 구분 필드 저장"
     note: "KIOSK-002가 이 작업에 의존한다 — 순서상 최우선"
-    evidence: "공개 행사/업체/제품/부스/지도 7개 GET + 익명 검색 POST/GET 통합. 승인·활성 필터, 온톨로지 구조화 필터, PostgreSQL FTS와 키워드 fallback, 채널별 Redis search_session을 tests/test_exhibition_public_api.py·test_search_api.py로 검증. pgvector 테이블은 현재 미게시라 semantic 채널은 명시적으로 0 처리."
+    evidence: "완료 당시 공개 행사/업체/제품/부스/지도 7개 GET + 익명 검색 POST/GET, 승인·활성 필터, FTS/keyword fallback, Redis search_session을 검증했다. 당시 semantic=0 기록은 CR-004/AISEARCH-002의 pgvector 채널로 superseded."
 
   - id: BACKEND-009
     title: 관심목록(즐겨찾기) API
     wave: 2
     track: BACKEND
     priority: P1
-    status: READY
-    depends_on: [CONTRACT-003]
-    owned_paths: ["apps/api/app/api/v1/routers/favorites.py", "apps/api/app/models/favorite.py"]
+    status: BLOCKED
+    depends_on: [CONTRACT-003, CONTRACT-005]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/favorites.py"
+      - "apps/api/app/schemas/favorite.py"
     acceptance:
       - "GET/POST/DELETE /me/favorites[/{favorite_id}]"
       - "대상 유형: 업체/제품/부스/프로그램"
       - "USERWEB-003이 참조하는 저장 버튼과 연결 가능한 스키마"
+    note: "모델·마이그레이션은 CONTRACT-005가 게시하며, 이 작업은 API와 서비스 연결만 소유한다."
 
   - id: BACKEND-006
     title: 키오스크 세션·QR API (신규 — 재설계에만 있고 기존 apps/api/에는 없음)
@@ -188,13 +245,31 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P1
-    status: READY
-    depends_on: [CONTRACT-003]
+    status: BLOCKED
+    depends_on: [CONTRACT-003, BACKEND-010]
     owned_paths: ["apps/api/app/api/v1/routers/admin.py"]
     acceptance:
       - "업체 승인/반려, 부스 상태 변경, 검색통계, 무결과 검색어 조회 엔드포인트"
       - "RBAC 적용 (EVENT_ADMIN, DATA_REVIEWER)"
-    note: "partner.py의 일부(POST /admin/exhibitors/{id}/approve)와 겹칠 수 있음 — 통합 시 중복 제거"
+    note: "partner.py의 일부와 겹칠 수 있어 통합 시 중복 제거가 필요하며, BACKEND-010의 검증된 principal/RBAC가 없어 현재 차단됨."
+
+  - id: BACKEND-010
+    title: 세션/JWT principal·RBAC·관리자 MFA 백엔드 기반
+    wave: 2
+    track: BACKEND
+    priority: P1
+    status: BLOCKED
+    depends_on: [CONTRACT-006]
+    owned_paths:
+      - "apps/api/app/core/auth.py"
+      - "apps/api/app/api/v1/routers/auth.py"
+      - "apps/api/app/schemas/auth.py"
+    acceptance:
+      - "CONTRACT-006의 세션/JWT 검증 결과만 request principal로 사용한다"
+      - "tenant/event 경계와 역할 기반 401/403 정책을 공통 dependency로 적용한다"
+      - "관리자 MFA 등록·검증·복구 흐름과 감사 이벤트를 구현한다"
+      - "보호 API의 호출자 제공 식별 헤더 스텁을 호환 계획에 따라 제거한다"
+    note: "CONTRACT-006 게시 전에는 인증 방식과 토큰 수명주기를 임의 구현하지 않는다."
 
   # ---------- WAVE 2: USER_WEB (substantially done) ----------
   - id: USERWEB-001
@@ -239,12 +314,12 @@ tasks:
     wave: 2
     track: USER_WEB
     priority: P1
-    status: BLOCKED
+    status: READY
     depends_on: [CONTRACT-003]
     owned_paths: ["apps/user-web/lib/api-client.ts", "apps/user-web/lib/types.ts"]
-    note: "CONTRACT-003의 경로조정 결과가 나와야 수정 범위가 확정된다"
+    note: "CONTRACT-003 완료 결과를 기준으로 현재 API client 경로를 재감사할 수 있다."
 
-  # ---------- WAVE 2: KIOSK (not started — biggest gap) ----------
+  # ---------- WAVE 2: KIOSK (completed) ----------
   - id: KIOSK-001
     title: apps/kiosk Next.js 골격 (대기화면·언어선택·레이아웃)
     wave: 2
@@ -303,18 +378,19 @@ tasks:
       - "기본화면/카테고리/업체 최소정보/정적지도가 로컬 캐시로 오프라인에도 표시된다"
     evidence: "K09/K10 구현. 기본/카테고리는 정적 번들, 최근 결과·업체·지도 좌표는 휘발성 sessionStorage에만 캐시하고 세션 종료 시 완전 삭제."
 
-  # ---------- WAVE 2: ADMIN (not started) ----------
+  # ---------- WAVE 2: ADMIN (partially materialized; blocked on auth/backend) ----------
   - id: ADMIN-001
     title: apps/admin Next.js 골격 + 인증(MFA)
     wave: 2
     track: ADMIN
     priority: P1
-    status: READY
-    depends_on: [CONTRACT-003]
+    status: BLOCKED
+    depends_on: [CONTRACT-003, BACKEND-010]
     owned_paths: ["apps/admin/**"]
     acceptance:
       - "역할별(EVENT_ADMIN/EXHIBITOR_ADMIN/DATA_REVIEWER) 로그인 및 메뉴 분기"
       - "A00 관리자 홈"
+    note: "화면 골격은 일부 존재하지만 BACKEND-010의 실제 인증/MFA 기반이 없어 완료할 수 없다."
 
   - id: ADMIN-002
     title: 업체·제품 검수 + AI 추출 검수 화면
@@ -353,23 +429,40 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
-    depends_on: [KIOSK-002, AISEARCH-001-INFORMAL]
-    owned_paths: ["apps/api/app/services/matching/**"]
+    status: DONE
+    depends_on: [KIOSK-002, AISEARCH-001-INFORMAL, CONTRACT-004]
+    owned_paths:
+      - "apps/api/app/services/matching/**"
+      - "apps/api/app/services/catalog_search.py"
+      - "apps/api/app/services/object_embeddings.py"
+      - "apps/api/scripts/backfill_catalog_embeddings.py"
+      - "apps/api/app/api/v1/routers/search.py"
+      - "apps/api/app/api/v1/routers/kiosk.py"
     acceptance:
       - "0.45×Semantic + 0.30×Keyword + 0.15×Category + 0.05×DataQuality + 0.05×BoothAvailability 산식 구현"
       - "운영종료·미승인 업체 제외, 동일업체 반복 제한"
-    note: "가중합·승인/운영 필터·동일업체 중복제거·PostgreSQL FTS는 catalog_search에 반영됨. ai.object_embedding/pgvector가 아직 미게시라 Semantic Relevance 실점수 연결이 남아 있다."
+    note: "CR-004에 따라 text-embedding-3-small dimensions=512, cosine, pgvector SUMMARY partial-HNSW를 게시했다. 외부 provider는 명시적 활성화 전까지 꺼져 있으며 장애 시 semantic만 0으로 낮추고 기존 검색을 유지한다."
+    evidence: "SUMMARY semantic top-K→승인 candidate union→정확한 0.45/0.30/0.15/0.05/0.05 점수, semantic-only/CJK 결과, provider/pgvector/structured fallback, 동일업체 제한 테스트 통과. 제품명 우선·설명 공정예산, 원본변경 즉시 비활성화, global-lock snapshot 재검증·원자적 backfill 포함."
 
   - id: AISEARCH-003
     title: 웹 초개인화 점수(§34) 재설계판으로 교체 여부 결정 및 반영
     wave: 2
     track: AI_SEARCH
     priority: P1
-    status: BLOCKED
+    status: READY
     depends_on: [CONTRACT-003]
     owned_paths: ["apps/api/app/services/matching/**"]
-    note: "기존 05단계 문서의 12단계 파이프라인(11/12단계 가중치 미확정)과 재설계 §34의 단순화 산식 중 결정 필요 — CONTRACT-003에서 함께 결정"
+    note: "CONTRACT-003은 API 경로만 결정했으므로, 기존 12단계와 §34 산식 중 선택할 별도 CR 필요 여부부터 판단한다."
+
+  - id: QA-003
+    title: Wave 2 계약·범위·보안 기준선 감사
+    wave: 2
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths: [".harness/reports/wave2/**"]
+    evidence: "contract-compliance, scope-compliance, security-baseline 보고서 완료. 보고서의 과거 AISEARCH-002 명칭은 현재 semantic 작업 ID로 재사용되기 전 시점의 기록이다."
 
   # ---------- WAVE 3: QA_SECURITY ----------
   - id: QA-001
@@ -377,9 +470,10 @@ tasks:
     wave: 3
     track: QA
     priority: P1
-    status: READY
+    status: BLOCKED
     depends_on: [FND-002]
     owned_paths: ["tests/**", ".harness/reports/**"]
     acceptance:
       - "PROJECT_SCOPE.md 제외목록 위반이 없는지 현재 apps/api/apps/user-web 코드 스캔"
       - "결과를 .harness/reports/integration/scope-audit.md로 저장"
+    note: "현재 리포 구조 스냅샷인 FND-002가 게시된 뒤 범위 감사를 수행한다."

@@ -88,3 +88,60 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   passes supply-chain verification.
 - Remaining external checks: live PostgreSQL/Redis and pgvector semantic retrieval. Full-repo Ruff
   also retains pre-existing style/FastAPI-rule debt and is not a G3-green signal yet.
+
+## 2026-08-02 — AISEARCH-002 pgvector semantic catalog search
+
+- Approved CR-004 / DECISION-007 for the frozen embedding contract: OpenAI
+  `text-embedding-3-small`, 512 dimensions, cosine similarity, and an active-row HNSW index.
+- Added migration `0017_object_embedding`, immutable model-version lineage, approved-public-only
+  backfill, validated provider responses, semantic top-K candidate union, and the shared kiosk/web
+  deterministic scorer with fail-soft keyword/FTS/category fallback.
+- Verification: backend `163 passed, 2 skipped`; aggregate `340 passed, 2 skipped` plus 12
+  subtests; Alembic upgrade/downgrade SQL compile; one head; 94 ORM tables; OpenAPI exact at 66
+  paths/171 schemas; targeted Ruff F/I and dependency checks green.
+- Live PostgreSQL/pgvector and provider smoke tests remain G3 operational checks because the local
+  Docker service is stopped. Semantic search remains opt-in and disabled by default.
+
+## 2026-08-02 — AISEARCH-002 final hardening and verification
+
+- Closed the final fail-soft boundaries: event OPEN validation now precedes paid provider I/O;
+  structured, vector, and semantic-hydration queries use savepoints; CJK free text retains the
+  semantic channel.
+- Changed ANN recall to a literal-predicate SUMMARY-only partial HNSW index. Participation SUMMARY
+  vectors include approved product text, and hydration samples fan-out round-robin while preserving
+  an independent FTS window.
+- Backfill now enforces conservative per-input/request byte limits, commits inactive provider
+  batches for retry reuse, validates immutable model lineage, and rechecks the source snapshot
+  before atomic activation.
+- Final evidence: backend `172 passed, 2 skipped`; root/AI/API aggregate `349 passed, 2 skipped`
+  plus `12 subtests`; Alembic upgrade/downgrade SQL compile; one head; 94 ORM tables; OpenAPI exact
+  at 66 paths/171 schemas; targeted Ruff F/I/format and `pip check` green.
+- Live PostgreSQL/pgvector, real-provider backfill, exact-vs-ANN relevance, latency/cost, and public
+  search gateway/WAF rate limiting remain G3 checks. The semantic channel stays disabled by default.
+
+## 2026-08-02 — AISEARCH-002 harness closeout audit
+
+- Preserved the original append-only risk entries and recorded dated updates instead of replacing
+  their historical text. RISK-005 is now consistently resolved in both the risk register and domain
+  contract.
+- Added explicit CONTRACT-006 → BACKEND-010 authentication/RBAC/MFA delivery steps and connected
+  BACKEND-007/ADMIN-001 to that unblock path. QA-001 is blocked until its FND-002 architecture
+  snapshot dependency is complete.
+- Corrected stale KIOSK/ADMIN section labels and kept the completed Wave 2 QA-003 audit inside the
+  Wave 2 section. CONTRACT-005 remains the next recommended task.
+
+## 2026-08-02 — AISEARCH-002 source-freshness closeout
+
+- Closed aggregate-SUMMARY freshness fail-open behavior: changes to embedded source fields,
+  approval boundaries, and recommendable membership now deactivate the participation's active
+  catalog vectors. `BEFORE STATEMENT` triggers acquire a short global catalog advisory lock before
+  row changes and FK cascades; final backfill shares that lock and rechecks its exact source snapshot
+  before activation, so qualifying-row phantoms cannot be reactivated stale and managed source-write
+  lock order remains consistent.
+- Product/company names are embedded before descriptions, and the remaining byte budget is shared
+  fairly across descriptions so an oversized first product cannot erase later product names.
+- Final evidence: backend `174 passed, 2 skipped`; root/AI/API aggregate `351 passed, 2 skipped`
+  plus `12 subtests`; targeted Ruff F/I/format, Alembic upgrade/downgrade SQL, OpenAPI 66/171,
+  ORM 94 tables, dependency and harness checks pass.
+- Live PostgreSQL trigger/concurrency behavior remains part of the already-open G3 isolated-stack
+  validation; semantic search is still disabled by default.

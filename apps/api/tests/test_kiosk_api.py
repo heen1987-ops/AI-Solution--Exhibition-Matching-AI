@@ -74,7 +74,9 @@ def test_kiosk_db_tables_have_no_personal_data_columns() -> None:
 
     for column_name in session_columns | handoff_columns:
         lowered = column_name.lower()
-        assert not any(bad in lowered for bad in _FORBIDDEN_COLUMN_SUBSTRINGS), column_name
+        assert not any(bad in lowered for bad in _FORBIDDEN_COLUMN_SUBSTRINGS), (
+            column_name
+        )
 
     # The fields this task explicitly requires (last_activity_at + TTL) actually exist.
     assert {"last_activity_at", "expires_at", "status"} <= session_columns
@@ -107,7 +109,9 @@ def test_session_expiry_check_is_an_inclusive_boundary_comparison() -> None:
     expires_at = datetime(2026, 8, 2, 10, 1, 30, tzinfo=UTC)
 
     assert is_session_expired(expires_at, now=expires_at) is True
-    assert is_session_expired(expires_at, now=expires_at - timedelta(seconds=1)) is False
+    assert (
+        is_session_expired(expires_at, now=expires_at - timedelta(seconds=1)) is False
+    )
     assert is_session_expired(expires_at, now=expires_at + timedelta(seconds=1)) is True
 
 
@@ -136,7 +140,9 @@ def test_handoff_token_is_signed_through_core_security_hmac(
         secret="test-secret",
     )
 
-    assert calls, "issue_handoff_token must sign through core.security.compute_webhook_signature"
+    assert calls, (
+        "issue_handoff_token must sign through core.security.compute_webhook_signature"
+    )
 
 
 def test_handoff_token_is_signed_expires_and_keeps_selection_server_side() -> None:
@@ -165,8 +171,11 @@ def test_handoff_token_is_signed_expires_and_keeps_selection_server_side() -> No
     assert payload["handoff_id"] == str(record.handoff_id)
     assert set(payload) == {"handoff_id", "event_id", "expires_at"}
 
+    version, encoded, signature = token.split(".", 2)
+    replacement = "0" if signature[0] != "0" else "1"
+    tampered = f"{version}.{encoded}.{replacement}{signature[1:]}"
     with pytest.raises(ValueError, match="signature"):
-        verify_handoff_token(f"{token[:-1]}0", secret="test-secret", now=now)
+        verify_handoff_token(tampered, secret="test-secret", now=now)
     with pytest.raises(ValueError, match="expired"):
         verify_handoff_token(token, secret="test-secret", now=record.expires_at)
 
@@ -248,9 +257,17 @@ class _FakeDb:
 
 
 async def _fake_search_approved_catalog(
-    db: Any, *, event_id: uuid.UUID, query: str, category_codes: list[str], limit: int
+    db: Any,
+    *,
+    event_id: uuid.UUID,
+    query: str,
+    category_codes: list[str],
+    limit: int,
+    language: str,
+    semantic_scorer: Any,
 ) -> list[SearchResult]:
-    del db, event_id, query, category_codes, limit
+    del db, event_id, query, category_codes, limit, semantic_scorer
+    assert language == "ko"
     return [
         SearchResult(
             result_id=_CANNED_RESULT_ID,
@@ -315,7 +332,9 @@ def test_create_session_search_and_handoff_flow_persists_a_no_pii_audit_trail(
 ) -> None:
     store = _FakeKioskStore()
     db = _FakeDb(tenant_id=uuid.uuid4())
-    monkeypatch.setattr(kiosk_router, "search_approved_catalog", _fake_search_approved_catalog)
+    monkeypatch.setattr(
+        kiosk_router, "search_approved_catalog", _fake_search_approved_catalog
+    )
 
     async def _fake_booth_detail(db: Any, **kwargs: Any) -> PublicBoothDetail:
         del db
@@ -363,7 +382,9 @@ def test_create_session_search_and_handoff_flow_persists_a_no_pii_audit_trail(
         assert db.rows[(KioskSession, session_id)].status == "HANDED_OFF"
         handoff_id = uuid.UUID(handoff_data["handoff_id"])
         assert db.rows[(KioskQrHandoff, handoff_id)].kiosk_session_id == session_id
-        assert db.rows[(KioskQrHandoff, handoff_id)].selected_result_ids == [_CANNED_RESULT_ID]
+        assert db.rows[(KioskQrHandoff, handoff_id)].selected_result_ids == [
+            _CANNED_RESULT_ID
+        ]
 
         resolve_response = client.post(
             "/api/v1/kiosk/handoffs/resolve",

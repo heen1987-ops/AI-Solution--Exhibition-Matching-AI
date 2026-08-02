@@ -977,18 +977,51 @@ APPROVED만 추천 필터·근거로 사용한다.
 | 컬럼 | 형식 | 설명 |
 |---|---|---|
 | embedding_id | UUID PK | 벡터 |
+| tenant_id | UUID FK | 테넌트 경계 |
+| event_id | UUID FK | 행사 경계 |
 | recommendable_id | UUID FK | 대상 |
 | content_type | VARCHAR(30) | SUMMARY, TRADE, PRODUCT |
 | content_hash | BYTEA | 변경검사 |
-| embedding | VECTOR(n) | 고정 차원 |
+| embedding | VECTOR(512) | 검색 임베딩 v1 고정 차원 |
 | model_version_id | UUID FK | 임베딩 모델 |
 | language | VARCHAR(10) | 언어 |
 | active | BOOLEAN | 활성 |
 | created_at | TIMESTAMPTZ | 생성 |
 
-pgvector 인덱스는 고정 차원을 요구하므로 n은 모델 선정 후 확정한다. 차원이 다른 모델은 별도 테이블·컬럼 또는 인덱스 집합으로 분리한다.
+검색 임베딩 v1의 차원은 CR-004에서 512로 확정했다. 차원이 다른 모델은 새 계약과 마이그레이션으로
+별도 테이블·컬럼 또는 인덱스 집합을 게시한다.
 
 활성 모델이 하나일 때 HNSW cosine 인덱스를 사용한다. 모델 전환은 새 벡터 백필, 품질검증, 활성 포인터 교체, 구버전 지연삭제 순서로 진행한다.
+
+#### 검색 임베딩 v1 게시 계약 (CR-004)
+
+- 모델 버전: `openai-text-embedding-3-small-512-v1`
+- 모델: `text-embedding-3-small`, 공급자 어댑터: `OPENAI_DIRECT`
+- 차원: `VECTOR(512)` — 공급자의 `dimensions=512` 출력만 저장하며 애플리케이션에서 임의 절단하지 않는다.
+- 거리/점수: cosine distance, `Semantic Relevance = clamp(1 - distance, 0, 1)`
+- 인덱스: 활성 `SUMMARY` 행에 한정한 HNSW `vector_cosine_ops`. 검색 SQL은 partial-index
+  predicate와 일치하도록 `SUMMARY` 판별자를 SQL literal로 고정한다.
+- 실행 요구사항: 데이터베이스 pgvector 0.8.0 이상과 filtered HNSW iterative scan 사용
+- 격리: 표의 기본 컬럼에 `tenant_id`, `event_id`를 추가하고
+  `(tenant_id, event_id, recommendable_id)` 복합 FK로 공개 추천대상 경계를 강제한다.
+- 활성 포인터: `(tenant_id, event_id, recommendable_id, content_type, language)`마다 활성 행 하나
+- 언어: 현재 비지역화 카탈로그 스냅샷은 `und`로 백필하고, 검색 시 세션 언어와 `und`를 함께
+  조회한다. 언어별 승인 원문이 생긴 경우에만 해당 언어 코드를 별도 활성화한다.
+- 입력 범위: 승인된 공개 업체·참가·제품의 공개 설명만 허용하며 사용자 프로파일·연락처·키오스크
+  질의 원문은 객체 임베딩 테이블에 저장하지 않는다. 참가 SUMMARY에는 해당 참가사의 승인 제품
+  공개 텍스트를 함께 넣어 업체당 언어별 한 행으로 후보 다양성을 보장한다. 업체명·제품명 식별자는
+  설명보다 먼저 배치하고, 남은 8,000-byte 예산은 설명 소스별로 공정 배분한다.
+- 원본 변경 격리: 업체·참가·제품·행사제품의 임베딩 입력·승인 경계 또는 recommendable membership이
+  INSERT/UPDATE/DELETE로 바뀌면 0017의 DB trigger가 같은 참가사의 활성 catalog vector를 즉시
+  비활성화한다. 원본 테이블의 `BEFORE STATEMENT` trigger가 행 변경·FK cascade보다 먼저 짧은 전역
+  catalog advisory lock을 획득하고, 백필도 같은 lock 안에서 최신 snapshot을 재검증한 뒤 활성화한다.
+  승인 전환 phantom이 검증 뒤 발생해도 trigger가 포인터 교체 뒤에 직렬화되어 변경된 원문을 다음
+  백필 전까지 fail-closed로 제외한다.
+- 장애 정책: 공급자, pgvector 또는 활성 모델이 없으면 semantic만 0으로 두고 FTS·keyword·category
+  검색을 계속한다. 벡터 점수는 승인/운영 필터나 최종 결정적 가중식을 우회하지 않는다.
+
+다른 모델 또는 차원으로 전환할 때 기존 벡터를 덮어쓰지 않는다. 새 `model_version`과 저장 계약을
+게시하고 비활성 상태로 백필·검증한 뒤 활성 포인터를 원자적으로 교체한다.
 
 ## 19. 연계·멱등성·Outbox
 

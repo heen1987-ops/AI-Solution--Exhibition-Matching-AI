@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from app.api.v1.routers import search as search_router
@@ -19,6 +19,10 @@ from app.db.session import get_db
 from app.main import app
 from app.schemas.search import SearchResult
 from app.services import catalog_search
+from app.services.matching.semantic_search import (
+    PreparedSemanticQuery,
+    SemanticScoreBatch,
+)
 from app.services.search_query_interpreter import interpret_query
 from app.services.search_sessions import (
     SearchSessionRecord,
@@ -112,13 +116,40 @@ def test_candidate_pool_scopes_to_the_requested_event() -> None:
 
 def test_candidate_pool_uses_postgres_full_text_rank_for_a_query() -> None:
     sql = str(
-        catalog_search._candidate_pool_stmt(EVENT_ID, "막걸리")
-        .compile(compile_kwargs={"literal_binds": True})
+        catalog_search._candidate_pool_stmt(EVENT_ID, "막걸리").compile(
+            compile_kwargs={"literal_binds": True}
+        )
     )
 
     assert "to_tsvector" in sql
     assert "plainto_tsquery" in sql
     assert "ts_rank_cd" in sql
+
+
+def test_semantic_candidate_hydration_is_not_subject_to_the_keyword_row_cap() -> None:
+    participation_id = uuid.uuid4()
+    sql = str(
+        catalog_search._candidate_pool_stmt(
+            EVENT_ID,
+            "부드러운 전통주",
+            [participation_id],
+            semantic_only=True,
+        ).compile(compile_kwargs={"literal_binds": True})
+    )
+
+    assert participation_id.hex in sql.replace("-", "")
+    assert "LIMIT 5000" in sql
+    assert "row_number() OVER" in sql
+
+    keyword_sql = str(
+        catalog_search._candidate_pool_stmt(
+            EVENT_ID,
+            "부드러운 전통주",
+            [participation_id],
+        ).compile(compile_kwargs={"literal_binds": True})
+    )
+    assert "NOT IN" not in keyword_sql
+    assert "LIMIT 300" in keyword_sql
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +173,7 @@ class _FakeCatalogSession:
     def __init__(self, *, event: Any, rows: list[Any]) -> None:
         self._event = event
         self._rows = rows
+        self.commits = 0
 
     async def get(self, entity: Any, key: Any) -> Any:
         del entity, key
@@ -151,9 +183,73 @@ class _FakeCatalogSession:
         del statement
         return _FakeResult(self._rows)
 
+    async def commit(self) -> None:
+        self.commits += 1
+
+    def begin_nested(self) -> _NestedTransaction:
+        return _NestedTransaction()
+
+
+class _NestedTransaction:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        del args
+
+
+class _FixedSemanticScorer:
+    def __init__(self, scores: dict[uuid.UUID, float]) -> None:
+        self._scores = scores
+        self.prepare_calls = 0
+
+    async def prepare(self, *, query: str) -> PreparedSemanticQuery:
+        del query
+        self.prepare_calls += 1
+        return PreparedSemanticQuery((1.0,), "AVAILABLE", uuid.uuid4())
+
+    async def score(self, db: Any, **kwargs: Any) -> SemanticScoreBatch:
+        del db, kwargs
+        return SemanticScoreBatch(self._scores, "AVAILABLE", uuid.uuid4())
+
+
+class _HydrationFailureSession(_FakeCatalogSession):
+    def __init__(self, *, event: Any, rows: list[Any]) -> None:
+        super().__init__(event=event, rows=rows)
+        self.execute_calls = 0
+
+    async def execute(self, statement: Any) -> _FakeResult:
+        del statement
+        self.execute_calls += 1
+        if self.execute_calls == 1:
+            raise SQLAlchemyError("simulated semantic hydration failure")
+        return _FakeResult(self._rows)
+
+
+class _StructuredResolutionFailureSession(_FakeCatalogSession):
+    def __init__(self, *, event: Any, rows: list[Any]) -> None:
+        super().__init__(event=event, rows=rows)
+        self.execute_calls = 0
+        self.nested_calls = 0
+
+    async def execute(self, statement: Any) -> _FakeResult:
+        del statement
+        self.execute_calls += 1
+        if self.execute_calls == 1:
+            raise SQLAlchemyError("simulated structured resolution failure")
+        return _FakeResult(self._rows)
+
+    def begin_nested(self) -> _NestedTransaction:
+        self.nested_calls += 1
+        return _NestedTransaction()
+
 
 def _open_event() -> SimpleNamespace:
-    return SimpleNamespace(event_status="OPEN", current_taxonomy_version_id=None)
+    return SimpleNamespace(
+        tenant_id=uuid.uuid4(),
+        event_status="OPEN",
+        current_taxonomy_version_id=None,
+    )
 
 
 def _catalog_row(
@@ -226,6 +322,25 @@ async def test_search_returns_no_results_when_nothing_matches() -> None:
 
 
 @pytest.mark.asyncio
+async def test_search_uses_a_savepoint_before_structured_fallback() -> None:
+    event = _open_event()
+    event.current_taxonomy_version_id = uuid.uuid4()
+    session = _StructuredResolutionFailureSession(event=event, rows=[_catalog_row()])
+
+    results = await catalog_search.search_approved_catalog(
+        session,  # type: ignore[arg-type]
+        event_id=EVENT_ID,
+        query="막걸리",
+        category_codes=["ALCOHOL.TAKJU"],
+        limit=12,
+    )
+
+    assert len(results) == 1
+    assert session.nested_calls == 1
+    assert session.execute_calls == 2
+
+
+@pytest.mark.asyncio
 async def test_search_dedupes_multiple_products_from_the_same_exhibitor() -> None:
     exhibitor_id = uuid.uuid4()
     booth_id = uuid.uuid4()
@@ -252,6 +367,133 @@ async def test_search_dedupes_multiple_products_from_the_same_exhibitor() -> Non
 
 
 @pytest.mark.asyncio
+async def test_search_keeps_a_semantic_only_candidate() -> None:
+    row = _catalog_row(
+        company_name="달빛 양조 연구소",
+        company_summary="숙성 기술을 소개합니다",
+        product_name="달빛 원주",
+    )
+    session = _FakeCatalogSession(event=_open_event(), rows=[row])
+    scorer = _FixedSemanticScorer({row[1].participation_id: 0.91})
+
+    results = await catalog_search.search_approved_catalog(
+        session,  # type: ignore[arg-type]
+        event_id=EVENT_ID,
+        query="기념일에 어울리는 부드러운 전통주",
+        category_codes=[],
+        limit=12,
+        semantic_scorer=scorer,
+    )
+
+    assert [result.name for result in results] == ["달빛 양조 연구소"]
+    assert "의미상 관련" in results[0].reason
+
+
+@pytest.mark.asyncio
+async def test_search_falls_back_to_keywords_when_semantic_hydration_fails() -> None:
+    row = _catalog_row()
+    session = _HydrationFailureSession(event=_open_event(), rows=[row])
+    scorer = _FixedSemanticScorer({row[1].participation_id: 0.91})
+
+    results = await catalog_search.search_approved_catalog(
+        session,  # type: ignore[arg-type]
+        event_id=EVENT_ID,
+        query="막걸리",
+        category_codes=[],
+        limit=12,
+        semantic_scorer=scorer,
+    )
+
+    assert len(results) == 1
+    assert results[0].name == row[0].company_name
+    assert session.execute_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_search_keeps_a_japanese_semantic_only_candidate() -> None:
+    row = _catalog_row(
+        company_name="月光醸造所",
+        company_summary="熟成技術を紹介します",
+        product_name="月光原酒",
+    )
+    session = _FakeCatalogSession(event=_open_event(), rows=[row])
+    scorer = _FixedSemanticScorer({row[1].participation_id: 0.91})
+
+    results = await catalog_search.search_approved_catalog(
+        session,  # type: ignore[arg-type]
+        event_id=EVENT_ID,
+        query="記念日に合う伝統酒",
+        category_codes=[],
+        limit=12,
+        language="ja",
+        semantic_scorer=scorer,
+    )
+
+    assert [result.name for result in results] == ["月光醸造所"]
+
+
+@pytest.mark.asyncio
+async def test_semantic_weight_can_outrank_a_keyword_only_candidate() -> None:
+    keyword_row = _catalog_row(
+        company_name="막걸리 직매장",
+        company_summary="막걸리 판매",
+        product_name="막걸리",
+        booth_number="A-01",
+    )
+    semantic_row = _catalog_row(
+        company_name="달빛 양조 연구소",
+        company_summary="숙성 기술 전시",
+        product_name="달빛 원주",
+        booth_number="A-02",
+    )
+    session = _FakeCatalogSession(event=_open_event(), rows=[keyword_row, semantic_row])
+    scorer = _FixedSemanticScorer({semantic_row[1].participation_id: 1.0})
+
+    results = await catalog_search.search_approved_catalog(
+        session,  # type: ignore[arg-type]
+        event_id=EVENT_ID,
+        query="막걸리",
+        category_codes=[],
+        limit=12,
+        semantic_scorer=scorer,
+    )
+
+    assert [result.name for result in results] == [
+        "달빛 양조 연구소",
+        "막걸리 직매장",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_limits_the_same_exhibitor_to_one_booth() -> None:
+    exhibitor_id = uuid.uuid4()
+    rows = [
+        _catalog_row(
+            exhibitor_id=exhibitor_id,
+            booth_id=uuid.uuid4(),
+            booth_number="A-01",
+        ),
+        _catalog_row(
+            exhibitor_id=exhibitor_id,
+            booth_id=uuid.uuid4(),
+            booth_number="B-02",
+        ),
+    ]
+    session = _FakeCatalogSession(event=_open_event(), rows=rows)
+
+    results = await catalog_search.search_approved_catalog(
+        session,  # type: ignore[arg-type]
+        event_id=EVENT_ID,
+        query="막걸리",
+        category_codes=[],
+        limit=12,
+    )
+
+    assert len(results) == 1
+    assert results[0].exhibitor_id == exhibitor_id
+
+
+@pytest.mark.asyncio
 async def test_search_returns_nothing_when_the_event_is_not_open() -> None:
     for event in (
         None,
@@ -259,6 +501,7 @@ async def test_search_returns_nothing_when_the_event_is_not_open() -> None:
         SimpleNamespace(event_status="CLOSED", current_taxonomy_version_id=None),
     ):
         session = _FakeCatalogSession(event=event, rows=[_catalog_row()])
+        scorer = _FixedSemanticScorer({})
 
         results = await catalog_search.search_approved_catalog(
             session,  # type: ignore[arg-type]
@@ -266,9 +509,12 @@ async def test_search_returns_nothing_when_the_event_is_not_open() -> None:
             query="막걸리",
             category_codes=[],
             limit=12,
+            semantic_scorer=scorer,
         )
 
         assert results == []
+        assert scorer.prepare_calls == 0
+        assert session.commits == 1
 
 
 # ---------------------------------------------------------------------------

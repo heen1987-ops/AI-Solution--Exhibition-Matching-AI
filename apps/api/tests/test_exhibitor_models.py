@@ -9,8 +9,13 @@ from app.db.base import Base
 from app.models import exhibitor  # noqa: F401
 
 APP_ROOT = Path(__file__).resolve().parents[1]  # apps/api
-REPO_ROOT = Path(__file__).resolve().parents[3]  # repo root: <root>/apps/api/tests/this_file.py
+REPO_ROOT = (
+    Path(__file__).resolve().parents[3]
+)  # repo root: <root>/apps/api/tests/this_file.py
 DDL_PATH = REPO_ROOT / "db" / "migrations" / "0002_exhibition.sql"
+OBJECT_EMBEDDING_MIGRATION = (
+    APP_ROOT / "alembic" / "versions" / "20260802_0017_object_embedding.py"
+)
 EXPECTED_DDL_DIGEST = "18aaaa3d8f6a72e7ab548b3ddec0b7be0d56b1c219c6e856144ffaed16609a96"
 
 
@@ -48,12 +53,13 @@ def test_metadata_contains_published_supply_and_filter_tables() -> None:
         "conversation.entity_extraction",
         "ai.model_version",
         "ai.ai_run",
+        "ai.object_embedding",
         "kiosk.kiosk_session",
         "kiosk.kiosk_qr_handoff",
     }
 
     assert expected <= set(Base.metadata.tables)
-    assert len(Base.metadata.sorted_tables) == 93
+    assert len(Base.metadata.sorted_tables) == 94
     assert "context_details" in Base.metadata.tables["matching.match_result"].c
     assert (
         "context_policy_version_id" in Base.metadata.tables["matching.match_result"].c
@@ -115,6 +121,11 @@ def test_matching_records_preserve_tenant_and_event_boundaries() -> None:
         "matching.slate_item.slate_result_id",
         "matching.slate_item.slate_item_id",
     ) in _foreign_key_targets("interaction.recommendation_impression")
+    assert (
+        "exhibition.recommendable.tenant_id",
+        "exhibition.recommendable.event_id",
+        "exhibition.recommendable.recommendable_id",
+    ) in _foreign_key_targets("ai.object_embedding")
 
 
 def test_supply_attribute_code_is_bound_to_canonical_concept() -> None:
@@ -153,4 +164,31 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(APP_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0016_kiosk_session"]
+    assert script.get_heads() == ["0017_object_embedding"]
+
+
+def test_object_embedding_migration_fail_closes_stale_catalog_summaries() -> None:
+    migration = OBJECT_EMBEDDING_MIGRATION.read_text(encoding="utf-8")
+
+    assert "DECLARE target_type text;\n        DECLARE" not in migration
+    assert "deactivate_participation_catalog_embeddings" in migration
+    assert "lock_catalog_embedding_sources" in migration
+    assert "hashtextextended('catalog-embedding-source'" in migration
+    assert "trg_embedding_source_lock_event_product" in migration
+    assert "trg_embedding_source_lock_product" in migration
+    assert "trg_embedding_source_lock_participation" in migration
+    assert "trg_embedding_source_lock_exhibitor" in migration
+    assert "trg_embedding_source_lock_recommendable" in migration
+    assert (
+        migration.count(
+            "FOR EACH STATEMENT EXECUTE FUNCTION ai.lock_catalog_embedding_sources()"
+        )
+        == 5
+    )
+    assert "trg_embedding_invalidate_event_product_summary" in migration
+    assert "trg_embedding_invalidate_product_summary" in migration
+    assert "trg_embedding_invalidate_participation_summary" in migration
+    assert "trg_embedding_invalidate_exhibitor_summary" in migration
+    assert "trg_embedding_invalidate_recommendable" in migration
+    assert "embedding.recommendable_id = OLD.recommendable_id" in migration
+    assert "embedding.recommendable_id = NEW.recommendable_id" in migration

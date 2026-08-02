@@ -1,6 +1,6 @@
-"""Approved public catalog queries and deterministic keyword+structured ranking.
+"""Approved public catalog queries and deterministic hybrid ranking.
 
-Combines two independent recall signals per BACKEND-008's MVP search strategy:
+Combines three independent recall signals per the frozen MVP search strategy:
 
 1. Structured filter — ontology concept codes (explicit ``category_codes`` from
    the request, plus whatever :mod:`app.services.search_query_interpreter`
@@ -14,6 +14,8 @@ Combines two independent recall signals per BACKEND-008's MVP search strategy:
    DB hiccup, catalog unavailable), results still surface for anything the
    keyword pass finds. Search must never hard-fail just because the
    structured half is unavailable.
+3. Optional semantic recall — versioned pgvector SUMMARY hits hydrated through
+   the same mandatory event, approval, deletion, and booth filters.
 """
 
 from __future__ import annotations
@@ -38,8 +40,16 @@ from app.models.exhibitor import (
 )
 from app.models.ontology_refs import concept, concept_revision
 from app.schemas.search import SearchResult
+from app.services.matching.kiosk_search_score import (
+    KioskSearchSignals,
+    score_kiosk_search,
+)
+from app.services.matching.semantic_search import NullSemanticScorer, SemanticScorer
 
-_TOKEN_PATTERN = re.compile(r"[^0-9A-Za-z가-힣]+")
+_TOKEN_PATTERN = re.compile(
+    r"[^0-9A-Za-z가-힣\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+"
+)
+_SEMANTIC_HYDRATION_MAX_ROWS = 5_000
 
 
 def _tokens(value: str) -> list[str]:
@@ -55,13 +65,19 @@ def _score_text(query_tokens: list[str], text: str) -> tuple[float, list[str]]:
 
 
 def _result_reason(
-    matched: Iterable[str], *, structured_hit: bool, open_now: bool
+    matched: Iterable[str],
+    *,
+    structured_hit: bool,
+    semantic_hit: bool,
+    open_now: bool,
 ) -> str:
     words = list(dict.fromkeys(matched))[:3]
     if words:
         reason = f"검색하신 '{' · '.join(words)}'와 관련된 승인 업체예요."
     elif structured_hit:
         reason = "선택한 관심 분야와 일치하는 승인 업체예요."
+    elif semantic_hit:
+        reason = "검색 의도와 의미상 관련된 승인 업체예요."
     else:
         reason = "선택한 관심 분야와 관련된 승인 업체예요."
     return f"{reason} 지금 부스를 운영 중이에요." if open_now else reason
@@ -129,7 +145,13 @@ async def _structured_matches(
     return participation_ids, product_ids
 
 
-def _candidate_pool_stmt(event_id: uuid.UUID, query: str = ""):
+def _candidate_pool_stmt(
+    event_id: uuid.UUID,
+    query: str = "",
+    semantic_participation_ids: Iterable[uuid.UUID] = (),
+    *,
+    semantic_only: bool = False,
+):
     """Build (without executing) the approved exhibitor/booth/product candidate
     query for ``event_id``.
 
@@ -157,8 +179,9 @@ def _candidate_pool_stmt(event_id: uuid.UUID, query: str = ""):
         if query.strip()
         else literal(0.0)
     ).label("fts_rank")
+    semantic_ids = list(dict.fromkeys(semantic_participation_ids))
 
-    return (
+    statement = (
         select(
             Exhibitor,
             ExhibitorParticipation,
@@ -170,6 +193,13 @@ def _candidate_pool_stmt(event_id: uuid.UUID, query: str = ""):
         .join(
             ExhibitorParticipation,
             ExhibitorParticipation.exhibitor_id == Exhibitor.exhibitor_id,
+        )
+        .join(
+            Event,
+            and_(
+                Event.tenant_id == ExhibitorParticipation.tenant_id,
+                Event.event_id == ExhibitorParticipation.event_id,
+            ),
         )
         .join(
             Booth,
@@ -191,6 +221,7 @@ def _candidate_pool_stmt(event_id: uuid.UUID, query: str = ""):
             Product,
             and_(
                 Product.product_id == EventProduct.product_id,
+                Product.exhibitor_id == Exhibitor.exhibitor_id,
                 Product.master_approval_status == "APPROVED",
                 Product.deleted_at.is_(None),
             ),
@@ -198,13 +229,33 @@ def _candidate_pool_stmt(event_id: uuid.UUID, query: str = ""):
         .outerjoin(EventZone, EventZone.event_zone_id == Booth.zone_id)
         .where(
             ExhibitorParticipation.event_id == event_id,
+            Event.event_status == "OPEN",
             ExhibitorParticipation.participation_status == "APPROVED",
             Exhibitor.master_approval_status == "APPROVED",
             Exhibitor.deleted_at.is_(None),
             Booth.operating_status.in_(("OPEN", "PAUSED")),
         )
-        .limit(300)
     )
+    if semantic_only:
+        round_robin_rank = func.row_number().over(
+            partition_by=ExhibitorParticipation.participation_id,
+            order_by=(fts_rank.desc(), Booth.booth_id, Product.product_id),
+        )
+        return (
+            statement.where(ExhibitorParticipation.participation_id.in_(semantic_ids))
+            # Fair fan-out sampling: every eligible semantic participation gets
+            # one row before any participation gets its second row.
+            .order_by(
+                round_robin_rank,
+                ExhibitorParticipation.participation_id,
+                Booth.booth_id,
+                Product.product_id,
+            )
+            .limit(_SEMANTIC_HYDRATION_MAX_ROWS)
+        )
+    return statement.order_by(
+        fts_rank.desc(), ExhibitorParticipation.participation_id
+    ).limit(300)
 
 
 async def search_approved_catalog(
@@ -214,28 +265,40 @@ async def search_approved_catalog(
     query: str,
     category_codes: list[str],
     limit: int,
+    language: str = "ko",
+    semantic_scorer: SemanticScorer | None = None,
 ) -> list[SearchResult]:
     """Search only approved exhibitor, participation, and product records for
     an *active* (``event_status == "OPEN"``) event.
 
-    This is the mandatory keyword fallback path. The AI_SEARCH track may add
-    vector recall ahead of this ranker, but it may not weaken these approval
-    or event-activity filters.
+    Keyword/structured recall remains the mandatory fallback. Optional vector
+    recall may add candidates, but it cannot weaken approval or event filters.
     """
 
     event = await db.get(Event, event_id)
     if event is None or event.event_status != "OPEN":
         # Unknown or inactive (PREPARING/CLOSED) event: no public results,
         # not an error — search must degrade gracefully, never hard-fail.
+        await db.commit()
         return []
+    tenant_id = event.tenant_id
+    taxonomy_version_id = event.current_taxonomy_version_id
+
+    # Finish the inexpensive event check before external provider I/O. This
+    # prevents invalid event IDs from incurring embedding cost and releases the
+    # pooled connection while the provider is in flight.
+    await db.commit()
+    scorer = semantic_scorer or NullSemanticScorer()
+    prepared_semantic = await scorer.prepare(query=query)
 
     # --- structured filter: best-effort, never fatal to the whole search ---
     resolved_pairs: set[tuple[uuid.UUID, uuid.UUID]] = set()
-    if category_codes and event.current_taxonomy_version_id is not None:
+    if category_codes and taxonomy_version_id is not None:
         try:
-            resolved_pairs = await _resolve_concept_pairs(
-                db, event.current_taxonomy_version_id, category_codes
-            )
+            async with db.begin_nested():
+                resolved_pairs = await _resolve_concept_pairs(
+                    db, taxonomy_version_id, category_codes
+                )
         except SQLAlchemyError:
             resolved_pairs = set()
 
@@ -243,14 +306,58 @@ async def search_approved_catalog(
     matched_product_ids: set[uuid.UUID] = set()
     if resolved_pairs:
         try:
-            matched_participation_ids, matched_product_ids = await _structured_matches(
-                db, resolved_pairs
-            )
+            async with db.begin_nested():
+                (
+                    matched_participation_ids,
+                    matched_product_ids,
+                ) = await _structured_matches(db, resolved_pairs)
         except SQLAlchemyError:
             matched_participation_ids, matched_product_ids = set(), set()
 
+    # --- vector recall: optional, fail-soft inside the scorer ---
+    semantic_batch = await scorer.score(
+        db,
+        tenant_id=tenant_id,
+        event_id=event_id,
+        language=language,
+        prepared=prepared_semantic,
+    )
+    semantic_scores = semantic_batch.participation_scores
+
     # --- candidate pool: approved exhibitor/participation/booth/product chain ---
-    rows = (await db.execute(_candidate_pool_stmt(event_id, query))).all()
+    # Hydrate vector top-K independently from the capped keyword pool. A high-fanout
+    # exhibitor (many products/booths) therefore cannot push another semantic-only
+    # participation out of the existing 300-row keyword recall window.
+    semantic_rows = []
+    if semantic_scores:
+        try:
+            async with db.begin_nested():
+                semantic_rows = (
+                    await db.execute(
+                        _candidate_pool_stmt(
+                            event_id,
+                            query,
+                            semantic_scores.keys(),
+                            semantic_only=True,
+                        )
+                    )
+                ).all()
+            hydrated_ids = {row[1].participation_id for row in semantic_rows}
+            semantic_scores = {
+                participation_id: score
+                for participation_id, score in semantic_scores.items()
+                if participation_id in hydrated_ids
+            }
+        except SQLAlchemyError:
+            # Optional semantic hydration must not turn a provider/vector outage
+            # into a failure of the keyword/structured fallback.
+            semantic_rows = []
+            semantic_scores = {}
+    # Keep the normal FTS window independent as a second recall channel. Duplicate
+    # rows merge below, while this can restore keyword/product evidence omitted by
+    # the bounded semantic fan-out hydration.
+    keyword_rows = (await db.execute(_candidate_pool_stmt(event_id, query))).all()
+    rows = [*semantic_rows, *keyword_rows]
 
     grouped: dict[tuple[uuid.UUID, uuid.UUID], dict[str, object]] = {}
     for row in rows:
@@ -283,6 +390,7 @@ async def search_approved_catalog(
             product_ids.add(product.product_id)
 
     query_tokens = _tokens(query)
+    has_free_text = bool(query.strip())
     has_structured_filter = bool(resolved_pairs)
     ranked: list[tuple[float, SearchResult]] = []
     for item in grouped.values():
@@ -315,27 +423,26 @@ async def search_approved_catalog(
             )
         )
         structured_score = 1.0 if structured_hit else 0.0
+        semantic_score = semantic_scores.get(participation.participation_id, 0.0)
 
-        if query_tokens:
-            # Free-text search: keep anything either signal recognizes.
-            if keyword_score == 0 and structured_score == 0:
+        if has_free_text:
+            # Free-text search: keep anything any independent signal recognizes.
+            if max(keyword_score, structured_score, semantic_score) <= 0:
                 continue
         elif not structured_hit:
             # Pure category browse (no free text): structured match required.
             continue
 
-        # pgvector/object embeddings are not yet published in this repository
-        # (matching.candidate_generator detects the same absence). Keep the semantic
-        # channel explicitly zero rather than disguising lexical similarity as semantic.
-        semantic_score = 0.0
         data_quality = min(max(float(exhibitor.data_completeness_percent) / 100, 0), 1)
         availability = 1.0 if booth.operating_status == "OPEN" else 0.35
-        final_score = (
-            0.45 * semantic_score
-            + 0.30 * keyword_score
-            + 0.15 * structured_score
-            + 0.05 * data_quality
-            + 0.05 * availability
+        final_score = score_kiosk_search(
+            KioskSearchSignals(
+                semantic=semantic_score,
+                keyword=keyword_score,
+                category=structured_score,
+                data_quality=data_quality,
+                booth_availability=availability,
+            )
         )
         ranked.append(
             (
@@ -354,6 +461,7 @@ async def search_approved_catalog(
                     reason=_result_reason(
                         matched,
                         structured_hit=structured_hit,
+                        semantic_hit=semantic_score > 0,
                         open_now=booth.operating_status == "OPEN",
                     ),
                     concepts=list(category_codes),

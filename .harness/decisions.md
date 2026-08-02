@@ -56,3 +56,25 @@ pytest 87 passed/1 skipped. 프런트 typecheck 0 에러, `next build` 21개 라
 - 관심목록(즐겨찾기) API 없음 — `/interactions/batch`로 이벤트는 기록되지만 CRUD가 없음 → **BACKEND-009**
 - 관리자 승인/반려/분석 API 없음 (`/admin/exhibitors/{id}/approve` 등) — `/partner/exhibitors/{id}/submit`(제출)까지만 있고 운영자 승인 액션이 없음 → 기존 **BACKEND-007**로 충분히 커버됨(범위 갱신)
 - 키오스크 세션 API 전체 없음 → 기존 **BACKEND-006** 그대로
+
+## DECISION-007 (2026-08-02) — CR-004 검색 임베딩 모델·차원·fallback
+
+AISEARCH-002의 의미검색 계약은 공급자 어댑터 뒤의 OpenAI `text-embedding-3-small`,
+`dimensions=512`, cosine similarity, pgvector SUMMARY-only HNSW `vector_cosine_ops`로 확정한다. 객체 임베딩은
+승인된 공개 카탈로그 텍스트만 사용하고 정확한 `ai.model_version`과 결합한다. 기능은 환경설정으로
+명시적으로 활성화하기 전까지 꺼져 있으며, 공급자·DB 선택 채널 장애 시 Semantic 신호만 0으로
+낮추고 PostgreSQL FTS·키워드·카테고리 검색을 계속한다. 공개 API 응답 계약은 바꾸지 않는다.
+
+Netlify AI Gateway의 현재 지원 모델 목록에는 embedding 모델이 없으므로 임베딩 요청은 Gateway에
+보내지 않는다. 별도 비밀키를 사용하는 직접 공급자 어댑터로 격리하며 질의 원문과 벡터는 로그에
+기록하지 않는다. 상세 변경범위와 롤백은
+`.harness/handoffs/contracts/change-request-004-object-embedding.md`를 따른다.
+
+### 2026-08-02 hardening note
+
+SUMMARY-only 후보 다양성을 유지하되 집계 원문의 승인 경계가 느슨해지지 않도록, 업체·참가·제품·
+행사제품·recommendable membership 변경은 DB trigger로 같은 참가사의 활성 vector를 즉시
+비활성화한다. `BEFORE STATEMENT` trigger가 행 변경·FK cascade보다 먼저 짧은 전역 catalog advisory
+lock을 획득하고, 최종 백필 활성화는 같은 lock 안에서 최신 snapshot 재검증과 포인터 교체를 같은
+transaction에서 수행한다. 입력 한도 안에서는 업체명과 모든 제품명을
+설명보다 우선하고 나머지 설명 예산을 소스별로 공정 배분한다.

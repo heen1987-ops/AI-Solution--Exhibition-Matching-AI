@@ -15,8 +15,14 @@ from functools import lru_cache
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+SEARCH_EMBEDDING_MODEL_VERSION_ID_V1 = UUID("5f2fe7ac-74d7-59c9-85d3-6b5faf2f7a4e")
+SEARCH_EMBEDDING_MODEL_CONFIG_HASH_V1 = (
+    "42668df981d3117c82428759a153b3abf6bb94bf6bca4affd9660b225699ffa5"
+)
+SEARCH_EMBEDDING_BASE_URL_V1 = "https://api.openai.com/v1"
 
 
 class Settings(BaseSettings):
@@ -91,6 +97,37 @@ class Settings(BaseSettings):
 
     # --- 공개 검색·익명 키오스크 ---
     SEARCH_SESSION_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
+    SEARCH_EMBEDDING_ENABLED: bool = False
+    SEARCH_EMBEDDING_PROVIDER: Literal["OPENAI"] = "OPENAI"
+    SEARCH_EMBEDDING_MODEL_VERSION_ID: UUID = SEARCH_EMBEDDING_MODEL_VERSION_ID_V1
+    SEARCH_EMBEDDING_MODEL: Literal["text-embedding-3-small"] = "text-embedding-3-small"
+    SEARCH_EMBEDDING_DIMENSIONS: Literal[512] = 512
+    SEARCH_EMBEDDING_MIN_RELEVANCE: Literal[0.35] = 0.35
+    SEARCH_EMBEDDING_TOP_K: int = Field(default=80, ge=10, le=200)
+    SEARCH_EMBEDDING_TIMEOUT_SECONDS: float = Field(default=3.0, ge=0.5, le=10.0)
+    SEARCH_EMBEDDING_BASE_URL: str = SEARCH_EMBEDDING_BASE_URL_V1
+    SEARCH_EMBEDDING_OPENAI_API_KEY: SecretStr | None = Field(
+        default=None,
+        repr=False,
+    )
+
+    @field_validator("SEARCH_EMBEDDING_MODEL_VERSION_ID")
+    @classmethod
+    def _validate_embedding_model_version_id(cls, value: UUID) -> UUID:
+        if value != SEARCH_EMBEDDING_MODEL_VERSION_ID_V1:
+            raise ValueError("search embedding model version requires a new contract")
+        return value
+
+    @field_validator("SEARCH_EMBEDDING_BASE_URL")
+    @classmethod
+    def _validate_embedding_base_url(cls, value: str) -> str:
+        normalized = value.rstrip("/")
+        if normalized != SEARCH_EMBEDDING_BASE_URL_V1:
+            raise ValueError(
+                "search embedding base URL requires a new provider contract"
+            )
+        return normalized
+
     KIOSK_EVENT_ID: UUID = UUID("11111111-1111-4111-8111-111111111111")
     KIOSK_EVENT_NAME: str = "2026 대한민국 백주대간"
     KIOSK_DEFAULT_LANGUAGE: Literal["ko", "en", "ja", "zh"] = "ko"
@@ -113,6 +150,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _production_security_must_fail_closed(self) -> Settings:
+        embedding_secret = self.SEARCH_EMBEDDING_OPENAI_API_KEY
+        if self.SEARCH_EMBEDDING_ENABLED and (
+            embedding_secret is None or not embedding_secret.get_secret_value().strip()
+        ):
+            raise ValueError(
+                "SEARCH_EMBEDDING_OPENAI_API_KEY is required when semantic search is enabled"
+            )
         if self.ENV.lower() in {"staging", "production"}:
             if self.SECRET_KEY == "CHANGE_ME_INSECURE_DEFAULT_FOR_LOCAL_DEV_ONLY":
                 raise ValueError(
