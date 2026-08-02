@@ -77,10 +77,6 @@ import type {
   PartnerDecisionRequest,
   PartnerMeetingListQuery,
   PartnerMeetingListResponse,
-  PhoneChallengeRequest,
-  PhoneChallengeResponse,
-  PhoneChallengeVerifyRequest,
-  PhoneChallengeVerifyResponse,
   PrivacyRequestCreate,
   PrivacyRequestListResponse,
   PrivacyRequestView,
@@ -95,8 +91,6 @@ import type {
   RecommendationSessionItemsResponse,
   RouteCreateRequest,
   RouteResponse,
-  SessionMergeRequest,
-  SessionMergeResponse,
   UserTypeUpdateRequest,
   UserTypeUpdateResponse,
   VisitPlanRequest,
@@ -104,6 +98,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "./types";
+import { ensureRuntimeCsrfToken } from "./auth-state";
 
 // ---------------------------------------------------------------------------
 // 기본 설정
@@ -273,6 +268,10 @@ async function apiRequest<T>(
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
   if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+  if (method !== "GET") {
+    const csrf = await ensureRuntimeCsrfToken();
+    if (csrf) headers["X-CSRF-Token"] = csrf;
+  }
 
   let response: Response;
   try {
@@ -322,6 +321,10 @@ async function apiRequest<T>(
 
   if (response.ok && isSuccessEnvelope<T>(payload)) {
     return payload.data;
+  }
+  // Authentication routers return their frozen Pydantic response directly.
+  if (response.ok) {
+    return payload as T;
   }
 
   const errorBody = extractErrorBody(payload);
@@ -384,37 +387,25 @@ export function createProfileSession(
  * 7.2절 휴대전화 인증. TODO(인증 도메인 상세설계 확정 후 대조): 요청·응답 필드는
  * `frontend/lib/types.ts`의 해당 타입 주석대로 잠정 계약이다.
  */
-export function requestPhoneChallenge(
-  request: PhoneChallengeRequest,
-  options?: RequestOptions,
-): Promise<PhoneChallengeResponse> {
-  return apiPost<PhoneChallengeResponse>("/auth/phone/challenges", request, options);
-}
-
-export function verifyPhoneChallenge(
-  challengeId: string,
-  request: PhoneChallengeVerifyRequest,
-  options?: RequestOptions,
-): Promise<PhoneChallengeVerifyResponse> {
-  return apiPost<PhoneChallengeVerifyResponse>(
-    `/auth/phone/challenges/${encodeURIComponent(challengeId)}/verify`,
-    request,
-    options,
-  );
-}
-
 /** 휴대전화 인증 성공 후 익명 저장·프로파일·일정을 계정에 합칠지 명시적으로 확인한다. */
-export function mergeCurrentSession(
-  request: SessionMergeRequest,
-  options?: RequestOptions,
-): Promise<SessionMergeResponse> {
-  return apiPost<SessionMergeResponse>("/sessions/current/merge", request, options);
-}
-
 // ===========================================================================
 // 7.4절 동의·개인정보 권리 (U-03, U-22)
 // backend/app/api/v1/routers/consent.py 실제 경로.
 // ===========================================================================
+
+export function mergeCurrentSession(_request: unknown): Promise<{ user_id: string }> {
+  return Promise.reject(
+    new ApiClientError({
+      code: "NOT_IMPLEMENTED",
+      message: "카카오 알림톡이나 이메일로 받은 ‘나의 전시회’ 링크를 열어 주세요.",
+      field_errors: [],
+      retryable: false,
+      retry_after_seconds: null,
+      http_status: 0,
+      request_id: null,
+    }),
+  );
+}
 
 export function putConsents(
   request: ConsentsPutRequest,

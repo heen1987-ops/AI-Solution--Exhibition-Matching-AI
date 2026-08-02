@@ -471,3 +471,26 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   integration tests remain skipped because POSTGRES_TEST_DATABASE_URL is not configured.
 - BACKEND-007 is now READY. Live PostgreSQL, production WebAuthn RP/origin, and deployment key
   rotation validation remain release-gate work rather than inferred success.
+
+## 2026-08-03 — Authentication remediation and web session entry
+
+- Approved CR-010 and added public `POST /api/v1/sessions`. It atomically creates a web guest
+  session, minimal general-visitor profile, and visit session; the raw credential is emitted only
+  as a Secure/HttpOnly guest cookie. Dedicated kiosk entry is rejected.
+- Added `/e/{eventSlug}/my` for Kakao/email personal-link exchange. It uses no-referrer/no-index
+  metadata, removes the opaque token from browser history, and restores CSRF only from the verified
+  HttpOnly browser session.
+- Fixed the BACKEND-010 review blockers: TOTP enrollment secrets no longer enter JSONB, future role
+  grants are inactive, EXHIBITOR_ADMIN remains available at AAL1, EVENT_ADMIN/DATA_REVIEWER remain
+  dormant until AAL2, and personal-link resend revokes prior unconsumed same-path links. Redis
+  limits exchange attempts by HMAC-derived token, account, and network dimensions and fails closed.
+- User-web unsafe authenticated requests now attach the runtime-only, session-bound CSRF token and
+  accept direct frozen auth responses as well as success envelopes.
+- Replaced the active phone-OTP controls, whose provider and abuse contract do not exist, with the
+  approved personal-link guidance. General visitors still start an anonymous matching profile or
+  enter approved-catalog search without login.
+- Verification: common engine 72 passed; API 246 passed/2 skipped; active web 7 tests total,
+  lint/typecheck, admin 15-route build, and user-web 21-route build PASS on clean NTFS. Touched
+  Ruff/format, compileall, OpenAPI 74-path reference validation, and diff check PASS. Full-repo Ruff
+  still reports pre-existing style debt outside the changed files. Live PostgreSQL tests remain the
+  same two environment-gated skips.

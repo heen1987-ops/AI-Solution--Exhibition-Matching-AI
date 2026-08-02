@@ -18,7 +18,7 @@ import jwt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import Depends, Header, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -30,6 +30,7 @@ from app.schemas.auth import AuthError, AuthPrincipal, AuthRoleGrant
 
 SESSION_COOKIE = "__Host-meet_ai_session"
 CSRF_HEADER = "X-CSRF-Token"
+PRIVILEGED_ADMIN_ROLES = frozenset({"EVENT_ADMIN", "DATA_REVIEWER"})
 
 
 class AuthException(Exception):
@@ -132,6 +133,7 @@ async def _active_role_grants(
     query = select(AuthRoleGrantRecord).where(
         AuthRoleGrantRecord.user_id == user_id,
         AuthRoleGrantRecord.tenant_id == tenant_id,
+        AuthRoleGrantRecord.valid_from <= now,
         or_(
             AuthRoleGrantRecord.valid_until.is_(None),
             AuthRoleGrantRecord.valid_until > now,
@@ -149,6 +151,16 @@ async def _active_role_grants(
         )
         for row in rows
     ]
+
+
+def visible_role_grants(
+    grants: list[AuthRoleGrant], authn_level: str
+) -> list[AuthRoleGrant]:
+    """Hide privileged operator grants until MFA while retaining exhibitor scope."""
+
+    if authn_level == "AAL2":
+        return grants
+    return [grant for grant in grants if grant.role not in PRIVILEGED_ADMIN_ROLES]
 
 
 async def _browser_principal(
@@ -186,15 +198,16 @@ async def _browser_principal(
     if enforce_mutation:
         _verify_browser_mutation(request, session, settings)
 
-    grants: list[AuthRoleGrant] = []
-    if session.authn_level == "AAL2":
-        grants = await _active_role_grants(
+    grants = visible_role_grants(
+        await _active_role_grants(
             db,
             user_id=session.user_id,
             tenant_id=session.tenant_id,
             event_id=session.event_id,
             now=now,
-        )
+        ),
+        session.authn_level,
+    )
     idle_seconds = (
         settings.AUTH_SESSION_IDLE_ADMIN_SECONDS
         if grants or session.state != "AUTHENTICATED"
@@ -270,13 +283,26 @@ async def _jwt_principal(
             request, 401, "TOKEN_INVALID", "토큰이 유효하지 않습니다."
         ) from None
 
-    grants = (
-        await _active_role_grants(
-            db, user_id=subject_id, tenant_id=tenant_id, event_id=event_id, now=_now()
+    if subject_type == "USER":
+        account = await db.get(UserAccount, subject_id)
+        if (
+            account is None
+            or account.account_status != "ACTIVE"
+            or account.deleted_at is not None
+        ):
+            raise _fail(request, 401, "TOKEN_INVALID", "User account is not active.")
+        grants = visible_role_grants(
+            await _active_role_grants(
+                db,
+                user_id=subject_id,
+                tenant_id=tenant_id,
+                event_id=event_id,
+                now=_now(),
+            ),
+            str(claims.get("aal", "AAL1")),
         )
-        if subject_type == "USER" and claims.get("aal") == "AAL2"
-        else []
-    )
+    else:
+        grants = []
     return VerifiedPrincipal(
         principal=AuthPrincipal(
             subject_type=subject_type,
@@ -393,9 +419,17 @@ def require_roles(*roles: str, fresh_mfa: bool = False):
         principal: Annotated[VerifiedPrincipal, Depends(get_verified_principal)],
         settings: Annotated[Settings, Depends(get_settings)],
     ) -> VerifiedPrincipal:
-        if principal.principal.authn_level != "AAL2":
+        matching_grants = [
+            grant for grant in principal.principal.role_grants if grant.role in roles
+        ]
+        needs_aal2 = (
+            fresh_mfa
+            or bool(principal.session and principal.session.state != "AUTHENTICATED")
+            or any(grant.role in PRIVILEGED_ADMIN_ROLES for grant in matching_grants)
+        )
+        if needs_aal2 and principal.principal.authn_level != "AAL2":
             raise _fail(request, 403, "MFA_REQUIRED", "관리자 다중 인증이 필요합니다.")
-        if not any(grant.role in roles for grant in principal.principal.role_grants):
+        if not matching_grants:
             raise _fail(
                 request, 403, "RESOURCE_FORBIDDEN", "자원에 접근할 권한이 없습니다."
             )
@@ -428,9 +462,28 @@ async def issue_personal_access_link(
 ) -> tuple[PersonalAccessLink, str]:
     """Internal adapter entrypoint for Alimtalk/email personal-link issuance."""
 
-    if not return_path.startswith("/") or return_path.startswith("//"):
+    if (
+        not return_path.startswith("/")
+        or return_path.startswith("//")
+        or "\\" in return_path
+        or any(ord(character) < 32 for character in return_path)
+    ):
         raise ValueError("return_path must be same-origin and relative")
     settings = settings or get_settings()
+    now = _now()
+    await db.execute(
+        update(PersonalAccessLink)
+        .where(
+            PersonalAccessLink.tenant_id == tenant_id,
+            PersonalAccessLink.event_id == event_id,
+            PersonalAccessLink.user_id == user_id,
+            PersonalAccessLink.return_path == return_path,
+            PersonalAccessLink.consumed_at.is_(None),
+            PersonalAccessLink.revoked_at.is_(None),
+            PersonalAccessLink.expires_at > now,
+        )
+        .values(revoked_at=now)
+    )
     raw_token = secrets.token_urlsafe(32)
     row = PersonalAccessLink(
         token_hmac=digest_secret(raw_token, purpose="personal-link", settings=settings),
@@ -440,7 +493,7 @@ async def issue_personal_access_link(
         profile_id=profile_id,
         recommendation_session_id=recommendation_session_id,
         return_path=return_path,
-        expires_at=_now() + timedelta(seconds=settings.AUTH_MAGIC_LINK_TTL_SECONDS),
+        expires_at=now + timedelta(seconds=settings.AUTH_MAGIC_LINK_TTL_SECONDS),
     )
     db.add(row)
     await db.flush()

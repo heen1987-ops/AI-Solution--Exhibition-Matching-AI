@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Annotated
 from uuid import UUID
@@ -32,7 +33,9 @@ from webauthn.helpers.structs import (
 )
 
 from app.core.auth import (
+    PRIVILEGED_ADMIN_ROLES,
     VerifiedPrincipal,
+    _active_role_grants,
     _browser_principal,
     _fail,
     _now,
@@ -45,6 +48,7 @@ from app.core.auth import (
     require_browser_session,
     require_csrf,
     set_session_cookie,
+    visible_role_grants,
 )
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
@@ -69,6 +73,12 @@ from app.schemas.auth import (
     AuthPrincipal,
     AuthSessionResponse,
 )
+from app.schemas.auth import AuthRoleGrant as AuthRoleGrantView
+from app.services.auth_rate_limit import (
+    AuthLinkRateLimiter,
+    AuthRateLimitUnavailable,
+    get_auth_link_rate_limiter,
+)
 
 router = APIRouter(prefix="/auth")
 
@@ -76,6 +86,7 @@ Database = Annotated[AsyncSession, Depends(get_db)]
 AuthSettings = Annotated[Settings, Depends(get_settings)]
 BrowserPrincipal = Annotated[VerifiedPrincipal, Depends(require_browser_session)]
 CsrfPrincipal = Annotated[VerifiedPrincipal, Depends(require_csrf)]
+LinkRateLimiter = Annotated[AuthLinkRateLimiter, Depends(get_auth_link_rate_limiter)]
 
 _AUTH_ERRORS = {
     401: {"model": AuthError},
@@ -100,7 +111,9 @@ def _session_response(
     )
 
 
-def _magic_link_principal(session: AuthSession) -> VerifiedPrincipal:
+def _magic_link_principal(
+    session: AuthSession, grants: Sequence[AuthRoleGrantView] = ()
+) -> VerifiedPrincipal:
     """Project a just-issued AAL1 session without re-entering request CSRF checks."""
 
     return VerifiedPrincipal(
@@ -109,7 +122,7 @@ def _magic_link_principal(session: AuthSession) -> VerifiedPrincipal:
             subject_id=session.user_id,
             tenant_id=session.tenant_id,
             event_id=session.event_id,
-            role_grants=[],
+            role_grants=list(grants),
             authn_level="AAL1",
             amr={"magic_link"},
             authenticated_at=session.authenticated_at,
@@ -127,6 +140,8 @@ async def _has_admin_grant(db: AsyncSession, user_id: UUID, event_id: UUID) -> b
         .where(
             AuthRoleGrant.user_id == user_id,
             AuthRoleGrant.event_id == event_id,
+            AuthRoleGrant.role.in_(PRIVILEGED_ADMIN_ROLES),
+            AuthRoleGrant.valid_from <= now,
             or_(AuthRoleGrant.valid_until.is_(None), AuthRoleGrant.valid_until > now),
         )
     )
@@ -181,11 +196,20 @@ async def exchange_magic_link(
     response: Response,
     db: Database,
     settings: AuthSettings,
+    rate_limiter: LinkRateLimiter,
 ) -> AuthSessionResponse:
     now = _now()
     token_hmac = digest_secret(
         payload.token, purpose="personal-link", settings=settings
     )
+    try:
+        initial_allowed = await rate_limiter.allow_initial(request, token_hmac)
+    except AuthRateLimitUnavailable:
+        initial_allowed = False
+    if not initial_allowed:
+        raise _fail(
+            request, 429, "AUTH_RATE_LIMITED", "Too many authentication attempts."
+        )
     link = await db.scalar(
         select(PersonalAccessLink)
         .where(PersonalAccessLink.token_hmac == token_hmac)
@@ -202,6 +226,14 @@ async def exchange_magic_link(
     if invalid:
         raise _fail(request, 401, "AUTH_LINK_INVALID", "접근 링크가 유효하지 않습니다.")
     assert link is not None
+    try:
+        account_allowed = await rate_limiter.allow_account(link.user_id)
+    except AuthRateLimitUnavailable:
+        account_allowed = False
+    if not account_allowed:
+        raise _fail(
+            request, 429, "AUTH_RATE_LIMITED", "Too many authentication attempts."
+        )
     account = await db.get(UserAccount, link.user_id)
     if (
         account is None
@@ -210,6 +242,14 @@ async def exchange_magic_link(
     ):
         raise _fail(request, 401, "AUTH_LINK_INVALID", "접근 링크가 유효하지 않습니다.")
 
+    active_grants = await _active_role_grants(
+        db,
+        user_id=link.user_id,
+        tenant_id=link.tenant_id,
+        event_id=link.event_id,
+        now=now,
+    )
+    visible_grants = visible_role_grants(active_grants, "AAL1")
     admin_grant = await _has_admin_grant(db, link.user_id, link.event_id)
     state = "AUTHENTICATED"
     if admin_grant:
@@ -255,7 +295,7 @@ async def exchange_magic_link(
         reason_code="PERSONAL_LINK_EXCHANGED",
     )
     await db.commit()
-    verified = _magic_link_principal(session)
+    verified = _magic_link_principal(session, visible_grants)
     set_session_cookie(response, raw_token, settings)
     return _session_response(verified, settings)
 
@@ -332,13 +372,40 @@ async def _active_authenticators(
     )
 
 
-def _challenge_response(challenge: MfaChallenge) -> AuthMfaChallengeResponse:
+def _challenge_response(
+    challenge: MfaChallenge,
+    *,
+    public_options: dict[str, object] | None = None,
+) -> AuthMfaChallengeResponse:
     return AuthMfaChallengeResponse(
         challenge_id=challenge.challenge_id,
         purpose=challenge.purpose,  # type: ignore[arg-type]
         method=challenge.method,  # type: ignore[arg-type]
         expires_at=challenge.expires_at,
-        public_options=challenge.public_options,
+        public_options=(
+            challenge.public_options if public_options is None else public_options
+        ),
+    )
+
+
+def _totp_enrollment_material(
+    *, user_id: UUID, display_name: str, settings: Settings
+) -> tuple[bytes, dict[str, object], dict[str, object]]:
+    """Return encrypted persistence state and one-time enrollment response state."""
+
+    secret = pyotp.random_base32()
+    persisted_options: dict[str, object] = {"display_name": display_name}
+    response_options = {
+        **persisted_options,
+        "secret": secret,
+        "otpauth_uri": pyotp.TOTP(secret).provisioning_uri(
+            name=str(user_id), issuer_name=settings.AUTH_WEBAUTHN_RP_NAME
+        ),
+    }
+    return (
+        encrypt_secret(secret, purpose="totp", settings=settings),
+        persisted_options,
+        response_options,
     )
 
 
@@ -363,6 +430,7 @@ async def start_mfa_enrollment(
     expires_at = now + timedelta(seconds=settings.AUTH_MFA_CHALLENGE_TTL_SECONDS)
     challenge_bytes: bytes | None = None
     secret_enc: bytes | None = None
+    display_name = payload.display_name or payload.method
     if payload.method == "WEBAUTHN":
         existing = await _active_authenticators(db, session.user_id, "WEBAUTHN")
         options = generate_registration_options(
@@ -383,15 +451,14 @@ async def start_mfa_enrollment(
         )
         challenge_bytes = options.challenge
         public_options = json.loads(options_to_json(options))
+        public_options["display_name"] = display_name
+        response_options = public_options
     else:
-        secret = pyotp.random_base32()
-        secret_enc = encrypt_secret(secret, purpose="totp", settings=settings)
-        public_options = {
-            "secret": secret,
-            "otpauth_uri": pyotp.TOTP(secret).provisioning_uri(
-                name=str(session.user_id), issuer_name=settings.AUTH_WEBAUTHN_RP_NAME
-            ),
-        }
+        secret_enc, public_options, response_options = _totp_enrollment_material(
+            user_id=session.user_id,
+            display_name=display_name,
+            settings=settings,
+        )
     challenge = MfaChallenge(
         session_id=session.session_id,
         user_id=session.user_id,
@@ -399,15 +466,12 @@ async def start_mfa_enrollment(
         method=payload.method,
         expected_challenge=challenge_bytes,
         secret_enc=secret_enc,
-        public_options={
-            **public_options,
-            "display_name": payload.display_name or payload.method,
-        },
+        public_options=public_options,
         expires_at=expires_at,
     )
     db.add(challenge)
     await db.commit()
-    return _challenge_response(challenge)
+    return _challenge_response(challenge, public_options=response_options)
 
 
 async def _rate_limit_challenges(

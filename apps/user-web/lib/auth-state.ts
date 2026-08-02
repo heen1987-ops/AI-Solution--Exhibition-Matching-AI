@@ -35,6 +35,19 @@ const DEFAULT_STATE: StoredAuthState = {
   updated_at: new Date(0).toISOString(),
 };
 
+type VerifiedServerSession = {
+  csrf_token: string;
+  principal: { subject_id: string };
+};
+
+let runtimeCsrfToken: string | null = null;
+let csrfRefresh: Promise<string | null> | null = null;
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "");
+
+function authApiUrl(path: string): string {
+  return `${API_ORIGIN}/api/v1${path}`;
+}
+
 export function isAuthenticationState(value: unknown): value is AuthenticationState {
   return value === "GUEST" || value === "PHONE_VERIFIED" || value === "ACCOUNT_AUTHENTICATED";
 }
@@ -71,9 +84,52 @@ export function setAuthState(state: AuthenticationState, userId?: string | null)
   window.dispatchEvent(new Event(EVENT_NAME));
 }
 
+export function getRuntimeCsrfToken(): string | null {
+  return runtimeCsrfToken;
+}
+
+export function setRuntimeCsrfToken(token: string | null): void {
+  runtimeCsrfToken = token;
+}
+
+export function applyVerifiedSession(session: VerifiedServerSession): void {
+  runtimeCsrfToken = session.csrf_token;
+  setAuthState("ACCOUNT_AUTHENTICATED", session.principal.subject_id);
+}
+
+/** Rehydrate the non-persistent CSRF token from the verified HttpOnly session. */
+export async function ensureRuntimeCsrfToken(): Promise<string | null> {
+  if (runtimeCsrfToken) return runtimeCsrfToken;
+  if (typeof window === "undefined" || getAuthState().state !== "ACCOUNT_AUTHENTICATED") {
+    return null;
+  }
+  if (!csrfRefresh) {
+    csrfRefresh = fetch(authApiUrl("/auth/session"), {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          resetAuthStateToGuest();
+          return null;
+        }
+        const session = (await response.json()) as VerifiedServerSession;
+        applyVerifiedSession(session);
+        return runtimeCsrfToken;
+      })
+      .catch(() => null)
+      .finally(() => {
+        csrfRefresh = null;
+      });
+  }
+  return csrfRefresh;
+}
+
 /** API가 `AUTH_REQUIRED`/`SESSION_EXPIRED`를 반환했을 때 로컬 힌트를 되돌리기 위한 헬퍼. */
 export function resetAuthStateToGuest(): void {
   if (typeof window === "undefined") return;
+  runtimeCsrfToken = null;
   window.localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({ state: "GUEST", user_id: null, updated_at: new Date().toISOString() }),

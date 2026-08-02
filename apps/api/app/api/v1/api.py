@@ -29,11 +29,13 @@ from app.api.v1.routers import (
     profile,
     recommendations,
     search,
+    sessions,
     webhooks,
 )
 
 api_router = APIRouter()
 api_router.include_router(auth.router, tags=["authentication"])
+api_router.include_router(sessions.router, tags=["sessions"])
 api_router.include_router(ontology.router, prefix="/ontology", tags=["ontology"])
 api_router.include_router(profile.router, tags=["profiles"])
 api_router.include_router(consent.router, tags=["consent-and-privacy"])

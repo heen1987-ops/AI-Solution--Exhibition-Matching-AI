@@ -2,11 +2,11 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Backju AI Matching Service",
-    "version": "0.2.0",
-    "description": "Frozen API snapshot. Authentication contract v1 is defined by CR-006."
+    "version": "0.2.1",
+    "description": "Frozen API snapshot. Authentication contract v1 is defined by CR-006; web session entry is defined by CR-010."
   },
   "x-meet-ai-auth-contract": {
-    "version": "1.0",
+    "version": "1.1",
     "normative_document": ".harness/handoffs/contracts/change-request-006-auth-rbac.md",
     "browser_session_cookie": "__Host-meet_ai_session",
     "guest_session_cookie": "__Host-meet_ai_guest",
@@ -27,6 +27,7 @@
       "DATA_REVIEWER"
     ],
     "public_anonymous_families": [
+      "/api/v1/sessions",
       "/healthz",
       "/api/v1/ontology/**",
       "/api/v1/events/**",
@@ -56,7 +57,8 @@
     "dedicated_machine_credential_families": [
       "/api/v1/internal/**",
       "/api/v1/webhooks/**"
-    ]
+    ],
+    "web_session_entry_contract": ".harness/handoffs/contracts/change-request-010-web-session-entry.md"
   },
   "paths": {
     "/healthz": {
@@ -6099,6 +6101,54 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/sessions": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Create Web Guest Session",
+        "operationId": "create_guest_session_api_v1_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_SessionCreateResponse_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event not found"
+          },
+          "409": {
+            "description": "Principal conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": []
       }
     }
   },
@@ -14181,6 +14231,141 @@
           "duplicate"
         ],
         "title": "WebhookAcceptedResponse"
+      },
+      "SessionCreateRequest": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "entry_channel": {
+            "type": "string",
+            "enum": [
+              "QR",
+              "WEB"
+            ],
+            "title": "Entry Channel"
+          },
+          "entry_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Code"
+          },
+          "device_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MOBILE_WEB",
+                  "DESKTOP_WEB"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Type"
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 2,
+            "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$",
+            "title": "Language",
+            "default": "ko-KR"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event_id",
+          "entry_channel"
+        ],
+        "title": "SessionCreateRequest"
+      },
+      "SessionCreateResponse": {
+        "properties": {
+          "guest_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Guest Session Id"
+          },
+          "visit_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Visit Session Id"
+          },
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "event_status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "PAUSED",
+              "CLOSED"
+            ],
+            "title": "Event Status"
+          },
+          "service_available": {
+            "type": "boolean",
+            "title": "Service Available"
+          },
+          "minimum_age": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Minimum Age"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_session_id",
+          "visit_session_id",
+          "profile_id",
+          "event_status",
+          "service_available",
+          "minimum_age",
+          "expires_at"
+        ],
+        "title": "SessionCreateResponse"
+      },
+      "Envelope_SessionCreateResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SessionCreateResponse"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[SessionCreateResponse]"
       }
     }
   }

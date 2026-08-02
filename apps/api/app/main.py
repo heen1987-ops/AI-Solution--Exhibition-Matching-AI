@@ -108,6 +108,7 @@ def verified_openapi() -> dict[str, object]:
         },
     }
     auth_security = {
+        "/api/v1/sessions": {"post": []},
         "/api/v1/auth/magic-links/exchange": {"post": []},
         "/api/v1/auth/session": {
             "get": [{"BrowserSession": []}],

@@ -167,6 +167,22 @@ tasks:
     note: "RISK-003의 구현 선행 계약이며, BACKEND-010 게시 전 관리자·보호 API를 완료 처리하지 않는다."
     evidence: "CR-006 APPROVED; OpenAPI 0.2.0에 BrowserSession/BearerJWT/GuestSession과 개인 링크·세션·MFA 5개 경로, 10개 Auth 스키마 게시. 오류코드 12개 경계 검증, 루트 72 및 API 219 passed/2 skipped."
 
+  - id: CONTRACT-010
+    title: Web guest session entry and personal My Event landing
+    wave: 2
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-006]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-010-web-session-entry.md"
+      - ".harness/contracts/openapi.json"
+    acceptance:
+      - "POST /sessions creates only web guest continuity and never returns the raw credential"
+      - "Personal links exchange into a verified session and remove the token from browser history"
+      - "Kiosk entry and uncontracted phone OTP remain outside the active contract"
+    evidence: "CR-010 APPROVED; OpenAPI 0.2.1 publishes the public /api/v1/sessions operation and its strict request/response schemas."
+
   # ---------- WAVE 2: BACKEND (substantially done) ----------
   - id: BACKEND-001
     title: FastAPI 코어 골격 + DB 세션 + Alembic
@@ -291,6 +307,7 @@ tasks:
     depends_on: [CONTRACT-006]
     owned_paths:
       - "apps/api/app/core/auth.py"
+      - "apps/api/app/services/auth_rate_limit.py"
       - "apps/api/app/core/config.py"
       - "apps/api/app/api/v1/routers/auth.py"
       - "apps/api/app/api/v1/api.py"
@@ -300,6 +317,7 @@ tasks:
       - "apps/api/alembic/env.py"
       - "apps/api/alembic/versions/20260803_0018_auth_session_mfa.py"
       - "apps/api/tests/test_auth.py"
+      - "apps/api/tests/test_auth_rate_limit.py"
       - "apps/api/pyproject.toml"
       - "apps/api/app/main.py"
       - "apps/api/app/api/v1/routers/imports.py"
@@ -318,6 +336,49 @@ tasks:
       - "보호 API의 호출자 제공 식별 헤더 스텁을 호환 계획에 따라 제거한다"
     evidence: "0018 migration과 digest-only 개인 링크/세션, AEAD 비밀 저장, RS256 서비스 JWT, 명시적 event/exhibitor RBAC, WebAuthn/TOTP/일회 복구코드, 감사 이벤트를 구현했다. 보호 라우터는 검증된 principal/guest만 사용하고 호출자 identity 헤더 spoofing을 거부한다. 쿠키 변경 요청은 allowlist Origin+세션 결합 CSRF를 공통 검증한다. API 236 passed/2 skipped, 공통 엔진 72 passed, Alembic single head/offline full upgrade PASS."
     note: "Magic-link+TOTP는 AAL2가 아니며, WebAuthn 또는 독립된 primary factor+TOTP만 AAL2로 승격한다."
+
+  - id: BACKEND-013
+    title: Web guest session entry and authentication remediation
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-010, BACKEND-010]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/sessions.py"
+      - "apps/api/app/schemas/session.py"
+      - "apps/api/app/api/v1/routers/auth.py"
+      - "apps/api/app/core/auth.py"
+      - "apps/api/tests/test_sessions.py"
+      - "apps/api/tests/test_auth.py"
+    acceptance:
+      - "Guest session, minimal profile, and visit session are committed atomically"
+      - "TOTP plaintext is absent from persisted JSON"
+      - "EXHIBITOR_ADMIN remains visible at AAL1 while privileged grants require AAL2"
+      - "Resent personal links revoke prior unconsumed same-purpose links"
+      - "Personal-link exchange is rate-limited by derived token, account, and network keys"
+    evidence: "API 246 passed/2 skipped; touched Ruff/format and OpenAPI reference validation PASS."
+
+  - id: USERWEB-007
+    title: Personal My Event landing and browser-session CSRF rehydration
+    wave: 2
+    track: USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-010, BACKEND-013]
+    owned_paths:
+      - "apps/user-web/app/e/**"
+      - "apps/user-web/app/start/**"
+      - "apps/user-web/components/InlinePhoneVerify.tsx"
+      - "apps/user-web/lib/auth-state.ts"
+      - "apps/user-web/lib/api-client.ts"
+      - "apps/user-web/lib/api-client.test.ts"
+    acceptance:
+      - "Opaque link token is removed from browser history after exchange"
+      - "Unsafe authenticated calls attach a runtime-only session-bound CSRF token"
+      - "Landing page does not index or send a referrer"
+      - "Uncontracted phone OTP controls are absent from active user flows"
+    evidence: "User web 4 tests, lint, typecheck, and 21-route production build PASS."
 
   # ---------- WAVE 2: USER_WEB (substantially done) ----------
   - id: USERWEB-001

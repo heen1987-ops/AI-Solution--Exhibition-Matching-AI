@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from app.api.v1.routers.auth import _magic_link_principal
+from app.api.v1.routers.auth import _magic_link_principal, _totp_enrollment_material
 from app.core.auth import (
     AuthException,
     _verify_browser_mutation,
@@ -17,11 +17,13 @@ from app.core.auth import (
     issue_personal_access_link,
     mfa_establishes_aal2,
     new_session_material,
+    visible_role_grants,
 )
 from app.core.config import Settings
 from app.db.session import get_db
 from app.main import app
 from app.schemas.auth import AuthMfaVerifyRequest
+from app.schemas.auth import AuthRoleGrant as AuthRoleGrantView
 from cryptography.exceptions import InvalidTag
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -31,6 +33,7 @@ from starlette.requests import Request
 class _RecordingDb:
     def __init__(self) -> None:
         self.rows: list[object] = []
+        self.executions: list[object] = []
         self.flushes = 0
 
     def add(self, row: object) -> None:
@@ -38,6 +41,9 @@ class _RecordingDb:
 
     async def flush(self) -> None:
         self.flushes += 1
+
+    async def execute(self, statement: object) -> None:
+        self.executions.append(statement)
 
 
 def _settings() -> Settings:
@@ -112,6 +118,7 @@ async def test_personal_link_persists_only_keyed_digest() -> None:
     )
     assert db.rows == [row]
     assert db.flushes == 1
+    assert len(db.executions) == 1
 
 
 @pytest.mark.asyncio
@@ -124,6 +131,21 @@ async def test_personal_link_rejects_cross_origin_return_path() -> None:
             user_id=uuid4(),
             profile_id=None,
             return_path="//attacker.example/steal",
+            settings=_settings(),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("return_path", [r"/safe\\evil", "/safe\nLocation: evil"])
+async def test_personal_link_rejects_ambiguous_return_path(return_path: str) -> None:
+    with pytest.raises(ValueError, match="same-origin"):
+        await issue_personal_access_link(
+            _RecordingDb(),  # type: ignore[arg-type]
+            tenant_id=uuid4(),
+            event_id=uuid4(),
+            user_id=uuid4(),
+            profile_id=None,
+            return_path=return_path,
             settings=_settings(),
         )
 
@@ -217,6 +239,47 @@ def test_magic_link_principal_is_aal1_without_admin_grants() -> None:
     assert verified.principal.authn_level == "AAL1"
     assert verified.principal.amr == {"magic_link"}
     assert verified.principal.role_grants == []
+
+
+def test_aal1_retains_exhibitor_grant_but_hides_privileged_grants() -> None:
+    tenant_id = uuid4()
+    event_id = uuid4()
+    grants = [
+        AuthRoleGrantView(
+            role="EVENT_ADMIN",
+            tenant_id=tenant_id,
+            event_id=event_id,
+            exhibitor_id=None,
+        ),
+        AuthRoleGrantView(
+            role="EXHIBITOR_ADMIN",
+            tenant_id=tenant_id,
+            event_id=event_id,
+            exhibitor_id=uuid4(),
+        ),
+    ]
+
+    assert [grant.role for grant in visible_role_grants(grants, "AAL1")] == [
+        "EXHIBITOR_ADMIN"
+    ]
+    assert visible_role_grants(grants, "AAL2") == grants
+
+
+def test_totp_secret_is_returned_once_but_not_persisted_in_json() -> None:
+    settings = _settings()
+    secret_enc, persisted_options, response_options = _totp_enrollment_material(
+        user_id=uuid4(), display_name="Security key", settings=settings
+    )
+
+    assert persisted_options == {"display_name": "Security key"}
+    assert "secret" not in persisted_options
+    assert "otpauth_uri" not in persisted_options
+    assert isinstance(response_options["secret"], str)
+    assert str(response_options["otpauth_uri"]).startswith("otpauth://totp/")
+    assert (
+        decrypt_secret(secret_enc, purpose="totp", settings=settings).decode()
+        == response_options["secret"]
+    )
 
 
 def test_auth_migration_backfills_only_explicit_legacy_event_scopes() -> None:

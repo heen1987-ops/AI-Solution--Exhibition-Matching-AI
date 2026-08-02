@@ -102,9 +102,14 @@ class Settings(BaseSettings):
     AUTH_ENCRYPTION_KEY_B64: SecretStr | None = Field(default=None, repr=False)
     AUTH_SESSION_COOKIE_NAME: str = "__Host-meet_ai_session"
     AUTH_SESSION_ABSOLUTE_SECONDS: int = Field(default=43_200, ge=900, le=86_400)
+    AUTH_GUEST_SESSION_TTL_SECONDS: int = Field(default=86_400, ge=900, le=604_800)
     AUTH_SESSION_IDLE_USER_SECONDS: int = Field(default=3_600, ge=300, le=14_400)
     AUTH_SESSION_IDLE_ADMIN_SECONDS: int = Field(default=1_800, ge=300, le=7_200)
     AUTH_MAGIC_LINK_TTL_SECONDS: int = Field(default=900, ge=60, le=900)
+    AUTH_LINK_RATE_WINDOW_SECONDS: int = Field(default=300, ge=60, le=3_600)
+    AUTH_LINK_RATE_TOKEN_LIMIT: int = Field(default=5, ge=1, le=100)
+    AUTH_LINK_RATE_ACCOUNT_LIMIT: int = Field(default=10, ge=1, le=100)
+    AUTH_LINK_RATE_NETWORK_LIMIT: int = Field(default=300, ge=1, le=10_000)
     AUTH_MFA_CHALLENGE_TTL_SECONDS: int = Field(default=300, ge=60, le=600)
     AUTH_MFA_FRESHNESS_SECONDS: int = Field(default=900, ge=60, le=1_800)
     AUTH_WEBAUTHN_RP_ID: str = "localhost"
@@ -114,6 +119,7 @@ class Settings(BaseSettings):
     AUTH_JWT_ISSUER: str = "meet-ai"
     AUTH_JWT_AUDIENCE: str = "meet-ai-api"
     AUTH_JWT_PUBLIC_KEY_PEM: SecretStr | None = Field(default=None, repr=False)
+    SERVICE_MINIMUM_AGE: int = Field(default=19, ge=0, le=120)
 
     @property
     def auth_token_pepper(self) -> bytes:

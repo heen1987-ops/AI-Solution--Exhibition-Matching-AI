@@ -204,14 +204,14 @@ export interface TaxonomyRef {
 // ---------------------------------------------------------------------------
 
 /** db-erd 8.3절 CHECK 제약: entry_channel은 QR/WEB/KIOSK로 고정된 구조적 값이다. */
-export type EntryChannel = "QR" | "WEB" | "KIOSK";
+export type EntryChannel = "QR" | "WEB";
 
 export interface CreateSessionRequest {
   event_id: string;
   entry_channel: EntryChannel;
   entry_code?: string | null;
   /** 예: `MOBILE_WEB`. db-erd 8.3절이 "등"으로만 예시를 들어 개방형 코드다. */
-  device_type?: OpenEnum<"MOBILE_WEB" | "DESKTOP_WEB" | "KIOSK_WEB"> | null;
+  device_type?: OpenEnum<"MOBILE_WEB" | "DESKTOP_WEB"> | null;
   language?: string;
 }
 

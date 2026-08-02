@@ -246,3 +246,15 @@ Origin and a CSRF token bound to the current session. MFA success rotates the se
 after the old session request has passed this check. Magic-link plus TOTP remains AAL1; WebAuthn or
 an independently verified different primary factor plus TOTP is required for AAL2. Frontend role
 menus are hints only and backend resource-scope checks remain authoritative.
+
+## DECISION-020 (2026-08-03) — Web entry creates continuity before personalization
+
+The active web may create an anonymous guest session without login so the common matching engine
+can receive a stable event-scoped profile. `POST /sessions` creates the guest, minimal profile, and
+visit session together. The credential is opaque, digest-stored, and available to the browser only
+through the Secure/HttpOnly guest cookie; record IDs in the response are references, not credentials.
+
+Preregistered users enter through an opaque, single-use personal link at `/e/{event_slug}/my` and
+are mapped server-side. User IDs, contact values, and roles do not appear in the URL. Phone OTP is
+not a fallback until its provider, rate-limit, merge-confirmation, and retention contract is approved.
+Dedicated kiosk entry remains outside the active web-first scope.
