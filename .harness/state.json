@@ -6,8 +6,16 @@
   "gate_status": "IN_PROGRESS",
   "active_tasks": [
     "WEB-001",
-    "KSK-001",
-    "BAC-001"
+    "BAC-001",
+    "CTR-002",
+    "CTR-003",
+    "CTR-004",
+    "CTR-005",
+    "CTR-008",
+    "AIS-001",
+    "AIS-005",
+    "AIS-006",
+    "QAS-003"
   ],
   "completed_tasks": [
     "FND-001",
@@ -17,7 +25,8 @@
     "CTR-001",
     "QAS-001",
     "AIS-002",
-    "ADM-001"
+    "ADM-001",
+    "KSK-001"
   ],
   "blocked_tasks": [
     "FND-004 (Docker unavailable in this execution environment)"

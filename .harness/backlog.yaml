@@ -294,8 +294,15 @@ tasks:
     wave: 1
     track: KIOSK
     priority: P1
-    status: READY
+    status: DONE
     depends_on: ["FND-002"]
+    completed_note: >
+      Next.js 14/React 18/TS/Tailwind 3, npm workspace @backju/kiosk. K-S1~K-S8
+      + /health 전체 구현. 세션 타임아웃 상태머신(idle/active/timeout-reset,
+      60~120초 clamp) + 자동 초기화 실 연결. 개인정보 미입력 검증 테스트(역검증
+      포함, 가짜 이메일 필드로 assertion이 실제로 실패하는지 확인)로 AGENTS.md §8
+      원칙을 자동화. typecheck/lint/test(29건)/build 전부 실행 통과.
+      핸드오프: .harness/handoffs/kiosk/KSK-001.md.
     owned_paths:
       - "apps/kiosk/**"
     acceptance:

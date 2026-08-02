@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* 키오스크는 항상 전용 터치스크린 디바이스에서 구동되므로 확대/축소, 텍스트
+     선택 등 일반 웹페이지에 필요한 상호작용을 의도적으로 제한한다. */
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
