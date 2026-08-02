@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-08-02 - WAVE-0 v2 프롬프트: 구조 확장 + 4개 앱 스캐폴드 병렬 디스패치 (FND-005, WEB-001/KSK-001/ADM-001/BAC-001)
+
+트리거: 사용자의 "WAVE 0 실행 프롬프트: 개발 하네스·모노레포 초기화" (더 상세한 두 번째 버전).
+
+수행:
+1. ASSUMPTION-005~008 기록 - 프롬프트 자신의 §2("기존 디렉터리를 새 구조에 강제로 이동하지 않는다")를 근거로 apps/api·database/ 신규 생성을 보류하고 backend/·src/meet_ai/를 정본으로 재확인. state.json 스키마를 더 구체적인 최신 예시(gate_status 문자열, next_recommended_tasks 배열)에 맞춰 조정.
+2. 신규 디렉터리 생성(README 포함, 빈 .gitkeep 아님): database/, ai/, infra/{docker,scripts,monitoring}, tests/{api,integration,e2e,security}, docs/{requirements,api,architecture,operations}, apps/api(리다이렉트 전용), apps/worker(생성만, 내용은 BAC-001 에이전트가 채움).
+3. 루트 .env.example 신설, backend/.env.example에 S3/MinIO 변수 추가, docker-compose.yml에 MinIO(+버킷 자동생성 잡) 추가, 루트 Makefile 신설(setup/dev/infra-up/infra-down/lint/typecheck/test/test-integration/smoke/check).
+4. infra/scripts/validate-harness, infra/scripts/scope-violation-check 작성 - 둘 다 실제 실행해 검증. scope-violation-check는 최초 실행에서 자기 자신의 문서화되지 않은 버그(.harness/** 제외 누락)로 인한 오탐 2건을 발견해 즉시 수정 후 재검증 통과.
+5. locks.yaml 갱신(apps/worker→BACKEND, database/·packages/ontology→CONTRACTS, infra/·Makefile·.env.example→FOUNDATION).
+6. CI 확장(harness-validate/docker-build/build-artifact 잡) - 편집 중 자체 실수(중복 `jobs:` 키로 YAML 구조 파손)를 저지르고 즉시 재검증으로 발견·수정.
+7. infra/docker/backend.Dockerfile 신규 작성(빌드 컨텍스트=저장소 루트, meet_ai+backend 이중 설치).
+8. WEB-001/KSK-001/ADM-001(이전에 FND-002 대기로 BLOCKED였으나 이제 해제) + 신규 BAC-001(헬스체크 3종 + apps/worker 골격)을 4개 병렬 Agent로 디스패치.
+
+검증: validate-harness/scope-violation-check 실제 실행 통과, docker-compose.yml/ci.yml YAML 파싱 통과. Docker 데몬이 이 환경에 없어 `docker compose up`/`docker build` 자체는 NOT_RUN(quality-gates.yaml에 이미 반영된 기존 상태 유지).
+
+다음 추천 작업: 4개 병렬 에이전트(WEB-001/KSK-001/ADM-001/BAC-001) 완료 대기 후 CTR-002/003/007, AIS-001로 진행.
+
+---
+
 ## 2026-08-02 - FND-002/FND-003 실행 + 병렬 워커 프롬프트 팩 수신, Wave 1 디스패치
 
 트리거: 사용자의 "다음" 입력, 이어서 "병렬 워커 실행 프롬프트 팩 v1.0" 수신.

@@ -3,34 +3,44 @@
   "harness_version": "1.0.0",
   "current_wave": 0,
   "current_gate": "G0_BOOTSTRAP",
-  "gate_status": {
-    "G0_BOOTSTRAP": "IN_PROGRESS",
-    "G1_CONTRACT_FREEZE": "NOT_STARTED",
-    "G2_FEATURE_COMPLETE": "NOT_STARTED",
-    "G3_MVP_RELEASE": "NOT_STARTED"
-  },
-  "active_tasks": [],
+  "gate_status": "IN_PROGRESS",
+  "active_tasks": [
+    "WEB-001",
+    "KSK-001",
+    "ADM-001",
+    "BAC-001"
+  ],
   "completed_tasks": [
     "FND-001",
     "FND-002",
     "FND-003",
+    "FND-005",
     "CTR-001",
     "QAS-001",
     "AIS-002"
   ],
   "blocked_tasks": [
-    "FND-004 (Docker unavailable in this execution environment)",
-    "WEB-001",
-    "KSK-001",
-    "ADM-001"
+    "FND-004 (Docker unavailable in this execution environment)"
   ],
-  "next_recommended_task": "CTR-002",
+  "next_recommended_tasks": [
+    "CTR-002",
+    "CTR-003",
+    "CTR-007",
+    "AIS-001"
+  ],
   "last_successful_run": "2026-08-02",
   "scope_status": "LOCKED",
   "contract_status": "DRAFT",
-  "mvp_progress_percent": 18,
+  "mvp_progress_percent": 22,
+  "gate_status_detail": {
+    "G0_BOOTSTRAP": "IN_PROGRESS (Docker health checks NOT_RUN in this environment - see FND-004)",
+    "G1_CONTRACT_FREEZE": "IN_PROGRESS (CTR-001 done, CTR-002/003/004/005/006/007 pending)",
+    "G2_FEATURE_COMPLETE": "NOT_STARTED",
+    "G3_MVP_RELEASE": "NOT_STARTED"
+  },
   "notes": {
     "pre_harness_assets": "This repo entered harness bootstrap already carrying substantial pre-harness work: the meet_ai ontology/scoring core (src/meet_ai), a FastAPI matching service layer (backend/app/services/matching/*) implementing candidate search, hard filters, feature building, context re-ranking and reason generation, and 26 narrative redesign documents (docs/redesign-v2/) covering the web/kiosk/common module split. These are treated as inputs to Wave 1 CONTRACTS work, not re-done from scratch.",
-    "known_gap": "No REST API exists yet for exhibitor/matching/profile domains (only /api/v1/ontology/* is exposed). No apps/user-web, apps/kiosk, apps/admin frontend exists. No CI pipeline exists. These are the dominant reasons mvp_progress_percent is low despite substantial backend service-layer and design work already done."
+    "known_gap": "No REST API exists yet for exhibitor/matching/profile domains beyond the new health endpoints (only /api/v1/ontology/* + /health/* is exposed). apps/user-web, apps/kiosk, apps/admin, apps/worker are being scaffolded this run (BAC-001/WEB-001/KSK-001/ADM-001).",
+    "state_schema_note": "gate_status is now a single string per the more detailed WAVE-0 prompt example (ASSUMPTION-008); per-gate detail moved to gate_status_detail (kept for continuity with quality-gates.yaml) and next_recommended_task(s) is now a plural array."
   }
 }

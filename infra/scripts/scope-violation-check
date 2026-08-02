@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""범위위반 탐지 (메타프롬프트 §20, PROJECT_SCOPE.md "범위 감시 질문").
+
+PROJECT_SCOPE.md의 명시적 제외범위에 해당하는 키워드를 코드·설정 파일에서 찾는다.
+단순 문자열 발견을 무조건 실패시키지 않고 다음을 구분한다:
+  - 문서(docs/**, *.md, .harness/**)에서의 "이건 하지 않는다"는 설명 - 허용
+  - 테스트 fixture/주석에서 금지사항 자체를 검증하는 코드 - 허용
+  - 실제 의존성 선언(pyproject.toml/package.json)이나 import/코드 사용 - 실패
+
+종료코드: 0=위반 없음, 1=실제 위반 발견(FAIL), 0이지만 경고 있으면 메시지만 출력.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+# 키워드 -> 코드/의존성에서 나타나면 실패로 볼 정규식 패턴 (대소문자 무시).
+# 문서·마크다운·이 스크립트 자신·.harness/**(정책 설명 문서)는 검사 대상에서 제외한다.
+FORBIDDEN_PATTERNS: dict[str, str] = {
+    "Kafka": r"\bkafka\b",
+    "real-time inventory": r"real[-_ ]?time\s+inventory",
+    "indoor navigation": r"indoor\s+navigation|정밀\s*실내\s*내비게이션",
+    "kiosk login": r"kiosk.{0,20}\blogin\b|키오스크.{0,10}로그인",
+    "kiosk phone/email input": r"kiosk.{0,30}(phone|email).{0,20}input",
+    "automatic model retraining": r"auto(matic)?\s+model\s+retrain",
+}
+
+EXCLUDED_DIR_PARTS = {".git", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".tmp-venv"}
+EXCLUDED_SUFFIXES = {".md"}  # 문서는 "하지 않는다"는 설명 위주라 검사하지 않음
+EXCLUDED_PATHS = {
+    Path("infra/scripts/scope-violation-check"),  # 이 스크립트 자신(키워드 목록 포함)
+}
+# 실제 코드/의존성으로 취급할 확장자만 검사한다 - 나머지(설정 예시, 스크린샷 등)는 제외.
+CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".toml", ".json", ".yml", ".yaml"}
+
+
+def iter_files() -> list[Path]:
+    files = []
+    for p in ROOT.rglob("*"):
+        if not p.is_file():
+            continue
+        if any(part in EXCLUDED_DIR_PARTS for part in p.parts):
+            continue
+        if ".harness" in p.parts:
+            continue  # 정책·계약 설명 문서 - 금지사항 자체를 서술하는 곳이라 검사 대상 아님
+        if p.suffix in EXCLUDED_SUFFIXES:
+            continue
+        if p.suffix not in CODE_SUFFIXES:
+            continue
+        rel = p.relative_to(ROOT)
+        if rel in EXCLUDED_PATHS:
+            continue
+        files.append(p)
+    return files
+
+
+def main() -> None:
+    violations: list[str] = []
+    for path in iter_files():
+        try:
+            text = path.read_text(errors="ignore")
+        except Exception:  # noqa: BLE001
+            continue
+        for label, pattern in FORBIDDEN_PATTERNS.items():
+            for m in re.finditer(pattern, text, re.IGNORECASE):
+                line_no = text.count("\n", 0, m.start()) + 1
+                violations.append(f"{path.relative_to(ROOT)}:{line_no} - '{label}' 패턴 발견")
+
+    if violations:
+        print(f"FAIL: {len(violations)}건의 범위위반 의심 항목 발견")
+        for v in violations:
+            print(f"  - {v}")
+        sys.exit(1)
+
+    print("OK: 범위위반 키워드 없음 (검사 대상: 코드·설정 파일, 문서(*.md)는 제외)")
+
+
+if __name__ == "__main__":
+    main()

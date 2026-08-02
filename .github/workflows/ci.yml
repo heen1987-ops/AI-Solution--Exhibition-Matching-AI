@@ -17,6 +17,17 @@ name: CI
 #     않는다 - 저장소에 영구 보관하려면 별도 커밋-백 잡이 필요한데, 동시 PR 간
 #     경합·봇 커밋 정책 등 부가 복잡도가 이번 범위 대비 과도하다고 판단해
 #     보류했다(핸드오프 NEXT DEPENDENCY 참고).
+#
+# WAVE-0 v2 프롬프트에서 추가:
+#   - harness-validate 잡: infra/scripts/validate-harness + scope-violation-check
+#     + .harness/contracts/**의 YAML 유효성(openapi.yaml은 OpenAPI 스펙으로서의
+#     완전한 유효성까지는 CTR-002 완료 후 검사 - 지금은 DRAFT 스텁이라 순수 YAML
+#     파싱만 확인).
+#   - docker-build 잡: backend/만 대상. apps/user-web·kiosk·admin·worker는 이번
+#     Wave에서 스캐폴딩 중이라 Dockerfile을 아직 두지 않는다(infra/docker/README.md
+#     참고) - 각 앱이 실제로 존재하게 되면 이 잡에 스텝을 추가한다.
+#   - build-artifact 잡(main 브랜치 push에만 실행): 실제 배포는 하지 않고 저장소
+#     스냅샷 아티팩트만 생성한다("실제 운영 배포는 아직 구현하지 않음").
 
 on:
   push:
@@ -24,6 +35,56 @@ on:
   pull_request:
 
 jobs:
+  harness-validate:
+    name: Harness validation + scope check + contract YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PyYAML
+        run: python -m pip install pyyaml
+      - name: Validate harness (state/backlog/locks/quality-gates consistency)
+        run: python3 infra/scripts/validate-harness
+      - name: Scope violation check
+        run: python3 infra/scripts/scope-violation-check
+      - name: Validate contract YAML/JSON files parse
+        run: |
+          python3 - <<'EOF'
+          import yaml, json, pathlib
+          for p in sorted(pathlib.Path(".harness/contracts").glob("*.yaml")):
+              yaml.safe_load(p.read_text())
+              print(f"{p}: OK")
+          state = json.loads(pathlib.Path(".harness/state.json").read_text())
+          print(".harness/state.json: OK")
+          EOF
+
+  docker-build:
+    name: Docker build (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -f infra/docker/backend.Dockerfile -t backju-backend:ci .
+
+  build-artifact:
+    name: Build artifact (main branch only, no deploy)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [backend, meet-ai-core, ts-boundary, harness-validate, docker-build, secret-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package repository snapshot
+        run: |
+          mkdir -p dist
+          git archive --format=tar.gz -o dist/backju-ai-matching-${{ github.sha }}.tar.gz HEAD
+      - name: Upload snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-snapshot
+          path: dist/backju-ai-matching-${{ github.sha }}.tar.gz
+
   secret-scan:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest

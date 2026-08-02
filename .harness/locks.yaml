@@ -20,6 +20,10 @@ ownership:
     - "netlify.toml"
     - ".gitignore"
     - ".github/**"
+    - "Makefile"
+    - ".env.example"
+    - "infra/**"
+    - "apps/api/README.md"
 
   CONTRACTS:
     - "docs/**"
@@ -27,11 +31,13 @@ ownership:
     - "backend/app/models/**"
     - "backend/app/db/**"
     - "db/migrations/**"
+    - "database/**"
     - "src/meet_ai/ontology/**"
     - "packages/shared-types/**"
     - "packages/api-client/**"
     - "packages/validation/**"
     - "packages/config/**"
+    - "packages/ontology/**"
 
   BACKEND:
     - "backend/app/api/**"
@@ -39,6 +45,8 @@ ownership:
     - "backend/app/main.py"
     - "backend/pyproject.toml"
     - "backend/scripts/**"
+    - "backend/.env.example"
+    - "apps/worker/**"
 
   USER_WEB:
     - "apps/user-web/**"
@@ -65,3 +73,11 @@ ownership:
 # writing a handoff request under .harness/handoffs/{track}/, not editing directly.
 # packages/ui/** is intentionally unassigned until Wave 2 decides which app owns
 # shared UI components first (recorded as an open question in assumptions.md).
+#
+# apps/api/ deliberately holds only a README (ASSUMPTION-005, backend/ is the real
+# API). apps/worker/ is genuinely new (ASSUMPTION-006) and owned by BACKEND, same
+# as backend/app/api - the two together are this repo's version of the prompt's
+# "Router -> Application Service -> Domain Service -> Repository -> Database"
+# BACKEND charter. Each app under USER_WEB/KIOSK/ADMIN owns its own .env.example
+# under its own path (apps/user-web/.env.example etc.) - not listed individually here
+# since "apps/user-web/**" already covers it.

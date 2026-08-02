@@ -4,6 +4,50 @@
 
 ---
 
+## ASSUMPTION-005
+
+결정: "WAVE 0 실행 프롬프트" v2가 요구하는 `apps/api/**`(FastAPI)와 `database/migrations/**`를 새로 만들지 않는다. `backend/`(FastAPI, 8개 Alembic 마이그레이션, 94개 테스트)가 이미 그 역할을 하고 있고, 이 프롬프트 자체가 §2에서 "기존 프로젝트가 있는 경우 기존 디렉터리를 새 구조에 강제로 이동하지 않는다"고 명시한다 - §3의 apps/{api,worker,...} 구조는 "빈 저장소인 경우"의 기본값이며 이 저장소는 비어있지 않다.
+
+근거: ASSUMPTION-001과 동일한 논리, 이번엔 프롬프트 자신의 §2 규칙으로 재확인됨. `apps/api`를 새로 만들면 `backend/`와 두 개의 병렬 FastAPI 앱이 생겨 어느 쪽이 정본인지 모호해진다.
+
+영향: `apps/api/`는 생성하지 않음(README로 "backend/가 API 정본"이라고 리다이렉트만 남김). `database/`는 `migrations/seeds/views` 하위에 실제 SQL을 두지 않고, `backend/alembic/versions/`가 정본이라는 리다이렉트 README만 둔다(seeds는 이미 `meet-ai-ontology` CLI의 SQL 시드 생성 기능이 대체).
+
+되돌릴 수 있는가: 그렇다.
+
+확인 필요 시점: 실제 배포 인프라(Docker 이미지 빌드 컨텍스트) 설계 시점에 `backend/`를 `apps/api`로 옮길지 재검토(ASSUMPTION-001과 동일 시점).
+
+## ASSUMPTION-006
+
+결정: `apps/worker`는 정말 신규(기존에 워커가 전혀 없음)이므로 그대로 생성한다. BACKEND 트랙 소유로 배정(`locks.yaml`을 `backend/app/**`에 더해 `apps/worker/**`도 BACKEND 소유로 추가).
+
+근거: 워커는 이번 재설계(W-6/C-7, 임베딩 재계산·알림 발송 잡)에서 처음 필요해진 신규 컴포넌트라 "기존 것을 강제 이동"하는 문제가 발생하지 않는다.
+
+되돌릴 수 있는가: 그렇다.
+
+확인 필요 시점: 없음(신규 컴포넌트라 충돌 위험 없음).
+
+## ASSUMPTION-007
+
+결정: `packages/ontology`는 Python `src/meet_ai/ontology`(온톨로지 엔진 정본)를 TS로 재구현하지 않는다 - 프런트엔드가 온톨로지 코드/유사어를 소비할 때 쓰는 얇은 TS 타입/상수 패키지로만 범위를 좁힌다(실제 판단·검증 로직은 항상 백엔드 API를 거친다).
+
+근거: 온톨로지 판단 로직(유사어 해석, 계층 매칭)을 프런트엔드에 복제하면 "AI/판단 로직은 백엔드가 갖고 프런트는 결과만 소비한다"는 기존 원칙(ARCHITECTURE.md 핵심 설계 원칙 4·7)과 충돌한다.
+
+되돌릴 수 있는가: 그렇다.
+
+확인 필요 시점: CTR-003(온톨로지 계약) 완료 후 packages/ontology의 정확한 타입 목록을 확정할 때.
+
+## ASSUMPTION-008
+
+결정: `.harness/state.json`의 필드 형태를 이번에 받은 더 구체적인 예시에 맞춰 조정한다 - `gate_status`를 게이트별 객체가 아니라 최상위 문자열로, `next_recommended_task`(단수)를 `next_recommended_tasks`(복수 배열)로 변경한다. 게이트별 세부 판정은 정보 손실 없이 `.harness/quality-gates.yaml`(이미 게이트별 세부 criteria를 담당)에 그대로 유지한다 - state.json은 "지금 어느 게이트인지"만 한 줄로, 세부는 quality-gates.yaml이 담당하는 역할 분리로 재정리.
+
+근거: 사용자가 state.json 형태를 두 번째로 아주 구체적인 예시와 함께 제시했다 - 더 최근·더 상세한 지시를 정본으로 채택.
+
+되돌릴 수 있는가: 그렇다(JSON 필드명 변경일 뿐).
+
+확인 필요 시점: 없음.
+
+---
+
 ## ASSUMPTION-001
 
 결정: 기존 `backend/`(FastAPI, SQLAlchemy, Alembic)와 `src/meet_ai/`(온톨로지·스코어링 코어)를 메타프롬프트가 예시로 든 `apps/api`, `apps/worker` 경로로 물리 이동하지 않는다. 대신 `apps/`, `packages/`는 지금부터 생성되는 신규 코드(Next.js 프런트엔드 3종, 신규 공유 TS 패키지)의 위치로만 사용한다.
