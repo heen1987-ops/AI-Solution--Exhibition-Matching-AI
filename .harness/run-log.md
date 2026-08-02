@@ -494,3 +494,22 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   Ruff/format, compileall, OpenAPI 74-path reference validation, and diff check PASS. Full-repo Ruff
   still reports pre-existing style debt outside the changed files. Live PostgreSQL tests remain the
   same two environment-gated skips.
+
+## 2026-08-03 — DELIVERY-001 persisted recommendation delivery and My Event surface
+
+- Approved CR-011 and froze the calculation-versus-delivery boundary. `POST /recommendations`
+  continues to calculate and persist; the new `GET /home` only reads the newest owned `ACTIVE`
+  snapshot and cannot invoke the orchestrator, LLM, or a notification provider.
+- Missing snapshots fail explicitly with retryable `RECOMMENDATION_NOT_READY`. Expired results are
+  exposed as stale and invalidated results remain ineligible, preserving reproducibility and making
+  refresh scheduling a separate operation.
+- Replaced the personal-link route's hidden menu landing with the shared mobile My Event dashboard.
+  It now exposes up to ten recommendation cards and grounded reason text together with saved-company,
+  meeting, schedule, search, and map entry points. Cards retain save/detail/eligible meeting actions,
+  hide numeric score, and record “관심 없음” through `RECOMMENDATION_DISMISSED`. `/home` reuses the
+  same component.
+- Kakao/email/SMS remain future access-link delivery adapters only. No provider integration and no
+  dedicated kiosk capability were added.
+- Verification: common engine 72 passed; API 248 passed/2 skipped; user web 5 passed, typecheck,
+  lint, and 21-route production build PASS on clean NTFS; touched Ruff, OpenAPI 75-path local-ref
+  validation, and diff check PASS. The two PostgreSQL integration tests remain environment-gated.

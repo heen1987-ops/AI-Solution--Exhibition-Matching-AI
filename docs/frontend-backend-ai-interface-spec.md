@@ -545,14 +545,14 @@ Idempotency-Key: 1ca4bbca-7acf-42e5-82e2-d8a07d2461ef
 GET /api/v1/home
 ```
 
-유효한 추천 세션이 있고 프로파일·위치·운영상태 변경이 작으면 재사용한다. 다음 조건에서는 새 추천 또는 재정렬을 수행한다.
+`GET /home`은 CR-011에 따라 계산과 분리된 전달 전용 조회다. 서버 세션에서 파생한
+tenant·event·profile에 속한 최신 `ACTIVE recommendation_session`과 저장된 결과를 반환하며,
+매칭 오케스트레이터·LLM·외부 AI 공급자를 호출하지 않는다. 만료 결과는 `stale=true`로
+표시할 수 있지만 `INVALIDATED` 결과는 반환하지 않는다.
 
-- 프로파일 버전 변경
-- 현재 구역 변경
-- 남은시간 임계 변경
-- 부스 종료·품절·상담마감
-- 확정 상담 추가·변경
-- 사용자의 명시적 새로고침
+추천 생성과 재계산은 `POST /recommendations` 또는 동일한 명령 계약을 사용하는 승인된
+배치 Worker가 담당한다. 전달 가능한 Snapshot이 없으면 `404 RECOMMENDATION_NOT_READY`를
+반환하며 조회 요청이 암묵적으로 계산이나 조건 완화를 시작하지 않는다.
 
 ### 9.4 추천 목록
 

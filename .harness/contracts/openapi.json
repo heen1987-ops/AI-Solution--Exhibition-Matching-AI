@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Backju AI Matching Service",
-    "version": "0.2.1",
-    "description": "Frozen API snapshot. Authentication contract v1 is defined by CR-006; web session entry is defined by CR-010."
+    "version": "0.2.2",
+    "description": "Frozen API snapshot. Authentication contract v1 is defined by CR-006; web session entry by CR-010; read-only My Event snapshot delivery by CR-011."
   },
   "x-meet-ai-auth-contract": {
     "version": "1.1",
@@ -45,7 +45,8 @@
       "/api/v1/conversations/**",
       "/api/v1/recommendations/**",
       "/api/v1/recommendation-sessions/**",
-      "/api/v1/interactions/**"
+      "/api/v1/interactions/**",
+      "/api/v1/home"
     ],
     "protected_families": [
       "/api/v1/profiles/{profile_id}/**",
@@ -6149,6 +6150,28 @@
           }
         },
         "security": []
+      }
+    },
+    "/api/v1/home": {
+      "get": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Get Home Recommendations",
+        "description": "Return the newest owned recommendation Snapshot without calculating a new one.\n\nCR-011 intentionally keeps this query separate from ``POST /recommendations``. Reading My\nEvent must not invoke the orchestrator, an LLM, or any external provider. Expired snapshots\nremain visible with ``stale=true`` so the UI can explain that a refresh is pending;\ninvalidated snapshots are never eligible for delivery.",
+        "operationId": "get_home_recommendations_api_v1_home_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RecommendationResponse_"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

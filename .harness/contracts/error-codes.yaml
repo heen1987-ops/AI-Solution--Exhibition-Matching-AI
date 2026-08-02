@@ -58,6 +58,9 @@ codes:
   - code: PROFILE_INCOMPLETE
     http_status: 422
     meaning: "필수 프로파일 항목 누락 — blocking_issues 배열과 함께 반환"
+  - code: RECOMMENDATION_NOT_READY
+    http_status: 404
+    meaning: "사용자·행사에 속한 전달 가능한 추천 Snapshot이 아직 없음; 조회가 계산을 암묵적으로 시작하지 않음"
 
   # --- Meetings (backend/app/api/v1/routers/meetings.py) ---
   - code: IDEMPOTENCY_KEY_REUSED

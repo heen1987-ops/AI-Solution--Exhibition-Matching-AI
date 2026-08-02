@@ -43,7 +43,9 @@ class RecommendationError(Exception):
         self.retry_after_seconds = retry_after_seconds
 
 
-def validation_failed(message: str, *, field_errors: list[FieldErrorDetail] | None = None) -> RecommendationError:
+def validation_failed(
+    message: str, *, field_errors: list[FieldErrorDetail] | None = None
+) -> RecommendationError:
     """19절: 400 VALIDATION_FAILED."""
 
     return RecommendationError(
@@ -51,7 +53,9 @@ def validation_failed(message: str, *, field_errors: list[FieldErrorDetail] | No
     )
 
 
-def auth_required(message: str = "인증 또는 세션 정보가 필요합니다.") -> RecommendationError:
+def auth_required(
+    message: str = "인증 또는 세션 정보가 필요합니다.",
+) -> RecommendationError:
     """19절: 401 AUTH_REQUIRED."""
 
     return RecommendationError("AUTH_REQUIRED", message, http_status=401)
@@ -83,13 +87,31 @@ def profile_incomplete(
     )
 
 
-def no_candidate(message: str = "조건에 맞는 추천 후보가 없습니다.") -> RecommendationError:
+def no_candidate(
+    message: str = "조건에 맞는 추천 후보가 없습니다.",
+) -> RecommendationError:
     """19절: 422 NO_CANDIDATE."""
 
     return RecommendationError("NO_CANDIDATE", message, http_status=422, retryable=True)
 
 
-def resource_forbidden(message: str = "이 리소스에 접근할 권한이 없습니다.") -> RecommendationError:
+def recommendation_not_ready(
+    message: str = "아직 준비된 추천 결과가 없습니다.",
+) -> RecommendationError:
+    """CR-011: 404 RECOMMENDATION_NOT_READY.
+
+    Snapshot delivery must not start an implicit matching run. The caller can show a pending
+    state while an authorized batch or explicit calculation command prepares the first result.
+    """
+
+    return RecommendationError(
+        "RECOMMENDATION_NOT_READY", message, http_status=404, retryable=True
+    )
+
+
+def resource_forbidden(
+    message: str = "이 리소스에 접근할 권한이 없습니다.",
+) -> RecommendationError:
     """19절: 403 RESOURCE_FORBIDDEN."""
 
     return RecommendationError("RESOURCE_FORBIDDEN", message, http_status=403)

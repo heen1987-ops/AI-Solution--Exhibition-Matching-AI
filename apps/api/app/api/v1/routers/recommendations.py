@@ -4,6 +4,7 @@
 한다 - 05번 문서의 내부 모듈 이름은 파이프라인 구성요소 경계 설명일 뿐 공개 라우트가 아니다):
 
     POST /api/v1/recommendations                              - 9.1 추천 생성
+    GET  /api/v1/home                                         - 9.3 최신 Snapshot 전달
     GET  /api/v1/recommendation-sessions/{id}/items            - 9.4 추천 목록(조회)
     POST /api/v1/interactions/batch                            - 16.1 행동 이벤트 등록
          (노출/조회/저장/제외 등 - RECOMMENDATION_IMPRESSION/OPENED/SAVED/DISMISSED 포함)
@@ -48,6 +49,7 @@ from app.core.auth import VerifiedGuest, VerifiedPrincipal, get_verified_subject
 from app.core.config import get_settings
 from app.core.site_context import verify_site_context
 from app.db.session import get_db
+from app.models.ai import ModelVersion
 from app.models.common import new_uuid7
 from app.models.exhibitor import Booth, EventProduct, ExhibitorParticipation
 from app.models.matching import (
@@ -61,7 +63,8 @@ from app.models.matching import (
     SlateItem,
     SlateResult,
 )
-from app.models.profile import UserProfile, VisitSession
+from app.models.policy import MatchPolicyVersion
+from app.models.profile import ProfileVersion, UserProfile, VisitSession
 from app.schemas.recommendation import (
     AvailabilityView,
     Envelope,
@@ -82,6 +85,7 @@ from app.schemas.recommendation import (
 from app.services.matching.errors import (
     RecommendationError,
     auth_required,
+    recommendation_not_ready,
     resource_forbidden,
     service_temporarily_unavailable,
     validation_failed,
@@ -269,7 +273,9 @@ async def resolve_subject_context(
     ):
         supplied = _optional_uuid_header(request, header_name)
         if supplied is not None and supplied != expected:
-            _raise_http(resource_forbidden("서버 세션 경계와 요청 컨텍스트가 다릅니다."))
+            _raise_http(
+                resource_forbidden("서버 세션 경계와 요청 컨텍스트가 다릅니다.")
+            )
     visit_session_id = _optional_uuid_header(request, "X-Visit-Session-Id")
     if visit_session_id is not None:
         owned_visit = await db.scalar(
@@ -285,7 +291,9 @@ async def resolve_subject_context(
             )
         )
         if owned_visit is None:
-            _raise_http(resource_forbidden("본인 소유의 방문 세션만 사용할 수 있습니다."))
+            _raise_http(
+                resource_forbidden("본인 소유의 방문 세션만 사용할 수 있습니다.")
+            )
     request_id = request.headers.get("X-Request-ID") or str(new_uuid7())
     idempotency_key = request.headers.get("Idempotency-Key")
     return SubjectContext(
@@ -597,6 +605,109 @@ async def list_recommendation_session_items(
     return Envelope(
         data=RecommendationSessionItemsResponse(
             items=items, next_cursor=next_cursor, stale=stale
+        ),
+        meta=_meta(subject.request_id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9.3 My Event 홈 — persisted Snapshot delivery only
+# ---------------------------------------------------------------------------
+
+
+@router.get("/home", response_model=Envelope[RecommendationResponse])
+async def get_home_recommendations(
+    request: Request,
+    db: DbSession,
+    verified: VerifiedSubject,
+) -> Envelope[RecommendationResponse]:
+    """Return the newest owned recommendation Snapshot without calculating a new one.
+
+    CR-011 intentionally keeps this query separate from ``POST /recommendations``. Reading My
+    Event must not invoke the orchestrator, an LLM, or any external provider. Expired snapshots
+    remain visible with ``stale=true`` so the UI can explain that a refresh is pending;
+    invalidated snapshots are never eligible for delivery.
+    """
+
+    subject = await resolve_subject_context(request, db, verified)
+    match_run = await db.scalar(
+        select(MatchRun)
+        .where(
+            MatchRun.tenant_id == subject.tenant_id,
+            MatchRun.event_id == subject.event_id,
+            MatchRun.profile_id == subject.profile_id,
+            MatchRun.status == "ACTIVE",
+        )
+        .order_by(
+            MatchRun.generated_at.desc(),
+            MatchRun.recommendation_session_id.desc(),
+        )
+        .limit(1)
+    )
+    if match_run is None:
+        _raise_http(recommendation_not_ready())
+
+    # Reuse the ownership-checked persisted-item projection. This performs database reads only;
+    # it does not enter RecommendationOrchestrator.
+    page = await list_recommendation_session_items(
+        recommendation_session_id=match_run.recommendation_session_id,
+        request=request,
+        db=db,
+        verified=verified,
+        object_type=None,
+        sort="RECOMMENDED",
+        cursor=None,
+        limit=10,
+    )
+
+    version_row = (
+        await db.execute(
+            select(
+                ProfileVersion.version_number,
+                MatchPolicyVersion.version,
+                ModelVersion.version,
+            ).where(
+                ProfileVersion.profile_version_id == match_run.profile_version_id,
+                MatchPolicyVersion.match_policy_version_id
+                == match_run.policy_version_id,
+                ModelVersion.model_version_id == match_run.ranking_model_version_id,
+            )
+        )
+    ).one_or_none()
+    if (
+        version_row is None
+        or match_run.generated_at is None
+        or match_run.expires_at is None
+    ):
+        _raise_http(
+            service_temporarily_unavailable(
+                "저장된 추천 결과의 버전 정보를 확인할 수 없습니다."
+            )
+        )
+
+    explanation_version = await db.scalar(
+        select(MatchReason.explanation_policy_version)
+        .join(MatchResult, MatchResult.match_result_id == MatchReason.match_result_id)
+        .where(
+            MatchResult.recommendation_session_id
+            == match_run.recommendation_session_id,
+            MatchReason.validation_status == "VALID",
+        )
+        .order_by(MatchReason.display_order.asc().nulls_last())
+        .limit(1)
+    )
+
+    return Envelope(
+        data=RecommendationResponse(
+            recommendation_session_id=match_run.recommendation_session_id,
+            generated_at=match_run.generated_at,
+            expires_at=match_run.expires_at,
+            profile_version=version_row.version_number,
+            ranking_version=version_row[2],
+            explanation_version=explanation_version or "NO_EXPLANATION",
+            policy_version=version_row[1],
+            items=page.data.items,
+            stale=page.data.stale,
         ),
         meta=_meta(subject.request_id),
     )

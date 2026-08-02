@@ -258,3 +258,18 @@ Preregistered users enter through an opaque, single-use personal link at `/e/{ev
 are mapped server-side. User IDs, contact values, and roles do not appear in the URL. Phone OTP is
 not a fallback until its provider, rate-limit, merge-confirmation, and retention contract is approved.
 Dedicated kiosk entry remains outside the active web-first scope.
+
+## DECISION-021 (2026-08-03) — Matching calculation and user delivery are separate boundaries
+
+`POST /api/v1/recommendations` and approved batch workers own matching calculation and persistence.
+The user-facing `GET /api/v1/home` is a read-only delivery query: it selects the newest owned
+`ACTIVE` recommendation snapshot, projects its persisted items and version metadata, and never
+invokes the recommendation orchestrator, an LLM, or an external messaging provider. An expired
+snapshot may remain visible as stale while an invalidated snapshot is never delivered. If no
+snapshot exists, the API returns retryable `RECOMMENDATION_NOT_READY`; a page view cannot
+implicitly spend compute or create a new ranking.
+
+Both the normal `/home` route and opaque personal-link `/e/{event_slug}/my` route render the same
+mobile-first My Event dashboard. Kakao, SMS, and email remain optional entry adapters that carry a
+personal access link, not alternate recommendation products. No provider integration or dedicated
+kiosk flow is introduced by this decision; the CR-009 web-first boundary remains authoritative.

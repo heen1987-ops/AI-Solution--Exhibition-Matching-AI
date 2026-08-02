@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import MyEventDashboard from "@/components/MyEventDashboard";
 import { apiPost } from "@/lib/api-client";
 import { applyVerifiedSession, ensureRuntimeCsrfToken } from "@/lib/auth-state";
 
@@ -67,22 +68,5 @@ export function PersonalAccessLanding({
     );
   }
 
-  return (
-    <main className="mx-auto min-h-screen max-w-md px-5 py-12">
-      <p className="text-sm font-semibold text-emerald-700">사전등록 정보 연결 완료</p>
-      <h1 className="mt-2 text-3xl font-bold tracking-tight">나에게 맞는 전시회를 시작하세요</h1>
-      <p className="mt-3 text-slate-600">추천 업체를 확인하고 관심 목록과 방문 일정을 한곳에서 관리할 수 있어요.</p>
-      <nav className="mt-8 grid gap-3" aria-label="개인화 메뉴">
-        <Link className="rounded-2xl border border-slate-200 p-5 font-semibold" href="/recommendations">
-          맞춤 추천 보기
-        </Link>
-        <Link className="rounded-2xl border border-slate-200 p-5 font-semibold" href="/saved">
-          관심 업체 보기
-        </Link>
-        <Link className="rounded-2xl border border-slate-200 p-5 font-semibold" href="/schedule">
-          방문 일정 보기
-        </Link>
-      </nav>
-    </main>
-  );
+  return <MyEventDashboard />;
 }

@@ -588,9 +588,9 @@ export function createRecommendationSession(
   });
 }
 
-/** U-08 홈. 유효한 추천 세션을 재사용하거나 필요 시 서버가 재정렬한다 (9.3절).
- * 9.3절은 홈 전용 필드를 예시로 제공하지 않아, 9.1절과 같은 추천 세션 형태
- * (`RecommendationResponse`)를 반환한다고 본다. */
+/** U-08 홈 Snapshot 전달 조회 (9.3절, CR-011).
+ * 저장된 최신 추천만 읽으며 계산·재정렬을 시작하지 않는다. 응답은 생성 명령과 동일한
+ * 버전 메타데이터를 가진 `RecommendationResponse`다. */
 export function getHomeRecommendations(
   options?: RequestOptions,
 ): Promise<RecommendationResponse> {

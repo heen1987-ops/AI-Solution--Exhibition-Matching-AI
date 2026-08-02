@@ -380,6 +380,33 @@ tasks:
       - "Uncontracted phone OTP controls are absent from active user flows"
     evidence: "User web 4 tests, lint, typecheck, and 21-route production build PASS."
 
+  - id: DELIVERY-001
+    title: Read-only recommendation snapshot delivery on My Event
+    wave: 2
+    track: BACKEND_USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-010, BACKEND-010, BACKEND-003, USERWEB-007]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/recommendations.py"
+      - "apps/api/app/schemas/recommendation.py"
+      - "apps/api/app/services/matching/errors.py"
+      - "apps/api/tests/test_recommendation_api.py"
+      - "apps/user-web/app/e/**"
+      - "apps/user-web/app/home/**"
+      - "apps/user-web/components/MyEventDashboard.tsx"
+      - "apps/user-web/lib/**"
+      - ".harness/contracts/openapi.json"
+      - ".harness/contracts/error-codes.yaml"
+      - "docs/frontend-backend-ai-interface-spec.md"
+    acceptance:
+      - "GET /home returns the newest owned persisted snapshot without running the matching orchestrator"
+      - "Missing snapshots return RECOMMENDATION_NOT_READY and never trigger implicit calculation"
+      - "The personal-link My Event route renders recommendations, saved/meeting entry points, and schedule content directly"
+      - "Kakao/email remain entry channels and no provider integration or kiosk feature is added"
+    note: "CR-011 is approved by the user's explicit calculation-versus-delivery direction."
+    evidence: "GET /api/v1/home delivers the newest owned ACTIVE snapshot without invoking the orchestrator; missing snapshots return RECOMMENDATION_NOT_READY. Personal-link and /home routes share MyEventDashboard, render up to ten grounded cards, and record explicit dismiss feedback. API 248 passed/2 skipped, common engine 72 passed, user web 5 passed plus typecheck/lint/21-route production build, OpenAPI 75-path local-reference validation, touched Ruff and diff check PASS."
+
   # ---------- WAVE 2: USER_WEB (substantially done) ----------
   - id: USERWEB-001
     title: Next.js 골격 + API 클라이언트 + 레이아웃

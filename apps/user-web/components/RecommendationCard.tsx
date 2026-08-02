@@ -140,6 +140,7 @@ export default function RecommendationCard({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [routeAdded, setRouteAdded] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   const cardRef = useRef<HTMLDivElement | null>(null);
   const impressionFiredRef = useRef(false);
@@ -296,6 +297,22 @@ export default function RecommendationCard({
     // 실제 경로 조립은 U-13 화면에서 이 인터랙션 로그를 참고해 처리한다.
   }
 
+  function handleDismiss() {
+    setDismissed(true);
+    void postInteraction({
+      event_type: "RECOMMENDATION_DISMISSED",
+      object_type: item.object_type,
+      object_id: item.object_id,
+      recommendation_session_id: recommendationSessionId ?? null,
+      match_result_id: item.match_result_id,
+      rank_at_event: item.rank,
+      screen: screen ?? null,
+      occurred_at: new Date().toISOString(),
+    }).catch(() => {
+      // 학습 이벤트 실패가 목록 탐색 자체를 막지는 않는다.
+    });
+  }
+
   const meta = formatMeta(item);
   const reasons = item.reasons.slice(0, 3);
   const showCrowded =
@@ -330,6 +347,18 @@ export default function RecommendationCard({
     }
     return null;
   })();
+
+  if (dismissed) {
+    return (
+      <div
+        role="status"
+        className={`rounded-2xl border p-4 text-sm ${className ?? ""}`}
+        style={{ borderColor: "var(--color-border)", color: "var(--color-text-muted)" }}
+      >
+        관심 없음으로 반영했습니다. 다음 추천을 확인해 주세요.
+      </div>
+    );
+  }
 
   return (
     <div
@@ -433,6 +462,15 @@ export default function RecommendationCard({
           }}
         >
           {favoriteId ? "저장됨" : "저장"}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDismiss}
+          className="tap-target rounded-lg border px-3 text-sm font-semibold"
+          style={{ borderColor: "var(--color-border)", color: "var(--color-text-muted)" }}
+        >
+          관심 없음
         </button>
 
         {primaryAction ? (

@@ -80,7 +80,9 @@ def _verified_subject_test_adapter(monkeypatch: pytest.MonkeyPatch):
             server_time=datetime.now(UTC),
         )
 
-    monkeypatch.setattr(recommendations, "resolve_subject_context", resolve_from_test_headers)
+    monkeypatch.setattr(
+        recommendations, "resolve_subject_context", resolve_from_test_headers
+    )
     yield
     app.dependency_overrides.pop(get_verified_subject, None)
 
@@ -150,8 +152,113 @@ def test_recommendation_routes_are_published_in_openapi() -> None:
     paths = app.openapi()["paths"]
 
     assert "/api/v1/recommendations" in paths
+    assert "/api/v1/home" in paths
     assert "/api/v1/recommendation-sessions/{recommendation_session_id}/items" in paths
     assert "/api/v1/interactions/batch" in paths
+
+
+@pytest.mark.asyncio
+async def test_home_delivers_latest_snapshot_without_running_orchestrator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(UTC)
+    session_id = uuid.uuid4()
+    match_run = SimpleNamespace(
+        recommendation_session_id=session_id,
+        profile_version_id=uuid.uuid4(),
+        policy_version_id=uuid.uuid4(),
+        ranking_model_version_id=uuid.uuid4(),
+        generated_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+
+    class VersionRow:
+        version_number = 4
+
+        def __getitem__(self, index: int) -> str:
+            return ("", "consumer-score-v1.0", "ranking-v1.0")[index]
+
+    class VersionResult:
+        def one_or_none(self) -> VersionRow:
+            return VersionRow()
+
+    class SnapshotDb:
+        def __init__(self) -> None:
+            self.scalar_calls = 0
+
+        async def scalar(self, statement):
+            del statement
+            self.scalar_calls += 1
+            return match_run if self.scalar_calls == 1 else "explain-template-v1.2"
+
+        async def execute(self, statement):
+            del statement
+            return VersionResult()
+
+    async def persisted_items(**kwargs):
+        assert kwargs["recommendation_session_id"] == session_id
+        return recommendations.Envelope(
+            data=recommendations.RecommendationSessionItemsResponse(
+                items=[], next_cursor=None, stale=False
+            ),
+            meta=recommendations.Meta(request_id="snapshot-items", server_time=now),
+        )
+
+    async def forbidden_generate(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("GET /home must never calculate a recommendation")
+
+    db = SnapshotDb()
+
+    async def fake_db():
+        yield db
+
+    monkeypatch.setattr(
+        recommendations, "list_recommendation_session_items", persisted_items
+    )
+    monkeypatch.setattr(
+        recommendations.recommendation_orchestrator, "generate", forbidden_generate
+    )
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        response = TestClient(app).get("/api/v1/home", headers=_subject_headers())
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["recommendation_session_id"] == str(session_id)
+    assert payload["profile_version"] == 4
+    assert payload["ranking_version"] == "ranking-v1.0"
+    assert payload["policy_version"] == "consumer-score-v1.0"
+    assert payload["items"] == []
+
+
+def test_home_missing_snapshot_does_not_start_implicit_calculation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class EmptyDb:
+        async def scalar(self, statement):
+            del statement
+
+    async def fake_db():
+        yield EmptyDb()
+
+    async def forbidden_generate(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("missing Snapshot must not trigger calculation")
+
+    monkeypatch.setattr(
+        recommendations.recommendation_orchestrator, "generate", forbidden_generate
+    )
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        response = TestClient(app).get("/api/v1/home", headers=_subject_headers())
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "RECOMMENDATION_NOT_READY"
 
 
 def test_recommendation_rank_cursor_is_opaque_and_validated() -> None:
