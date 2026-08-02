@@ -156,3 +156,21 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   conditions and will not be started early.
 - Added a durable `AGENTS.md` rule requiring every implementation unit to compare the newest
   roadmap turns with harness state, frozen contracts, and handoffs before changing product behavior.
+
+## 2026-08-02 — AIENGINE-001 common matching-engine semantic recall
+
+- Applied the user's engine-first direction as DECISION-008: web, kiosk, and admin/platform work
+  remain consumers of the common engine; CONTRACT-005 favorites is deferred and AIENGINE-002 is next.
+- Replaced the recommendation candidate generator's vector no-op with the deployed SUMMARY pgvector
+  scorer. A deterministic `PROFILE_SEMANTIC_RECALL_V1` query contains only canonical ontology codes,
+  public Korean labels, requirement level, priority, taxonomy version, and audience type.
+- Excluded profile/user identifiers, raw context, unknown/free-form codes, EXCLUDED values, confidence,
+  and numeric trade conditions from provider input. The request validator still requires active
+  personalized-recommendation consent before the profile reaches this stage.
+- Semantic similarity only expands the candidate pool. Existing Hard Filter, B2C/B2B/reciprocal
+  scoring, context, slate, explanation, and persistence policies were not changed. Each vector hit
+  retains input fingerprint/model version/score, with a three-object-per-participation cap and stable
+  tie-breaking; disabled/provider/pgvector failures keep structured fallback.
+- Verification: targeted semantic/recommendation tests `30 passed`; full backend `178 passed, 2
+  skipped`; root deterministic scoring/ontology `24 passed`; targeted Ruff and diff checks pass.
+  Live PostgreSQL/provider behavior remains part of the existing G3 operational validation.

@@ -16,6 +16,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.services.matching import (
     base_scoring,
     candidate_generator,
@@ -32,6 +33,7 @@ from app.services.matching import (
     request_validator,
     result_store,
 )
+from app.services.matching.semantic_search import SemanticScorer, get_semantic_scorer
 from app.services.matching.types import (
     PipelineTrace,
     RecommendationOutcome,
@@ -44,6 +46,9 @@ def _elapsed_ms(start: float) -> int:
 
 
 class RecommendationOrchestrator:
+    def __init__(self, *, semantic_scorer: SemanticScorer | None = None) -> None:
+        self._semantic_scorer = semantic_scorer
+
     async def generate(
         self,
         db: AsyncSession,
@@ -82,7 +87,11 @@ class RecommendationOrchestrator:
         # ④ Candidate Generator
         step_start = time.perf_counter()
         candidates, channel_counts = await candidate_generator.generate_candidates(
-            db, validated=validated, profile=profile, context=context
+            db,
+            validated=validated,
+            profile=profile,
+            context=context,
+            semantic_scorer=self._semantic_scorer,
         )
         timings["candidate_generator"] = _elapsed_ms(step_start)
 
@@ -207,4 +216,6 @@ class RecommendationOrchestrator:
         return outcome
 
 
-recommendation_orchestrator = RecommendationOrchestrator()
+recommendation_orchestrator = RecommendationOrchestrator(
+    semantic_scorer=get_semantic_scorer(get_settings())
+)

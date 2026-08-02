@@ -169,8 +169,8 @@ tasks:
     status: DONE
     depends_on: [BACKEND-001, CONTRACT-001-INFORMAL]
     owned_paths: ["apps/api/app/services/matching/**", "apps/api/app/api/v1/routers/recommendations.py"]
-    evidence: "12단계 파이프라인 구현, POST /recommendations 등 등록 확인됨. 가중치는 11/12단계(재설계 이전 B2C/B2B 점수) 확정 전 균등가중치 TODO 상태."
-    followup: "재설계 §33~35(키오스크검색점수/웹개인화점수/바이어매칭점수, 12단계 문서의 상세 10요소 가중치와 재설계판 단순화 가중치 중 어느 것을 쓸지)는 CONTRACT-003에서 결정 후 반영 필요"
+    evidence: "12단계 파이프라인과 POST /recommendations가 구현됐다. 단계 10 Hard Filter 평가 ID를 필수로 받는 결정론적 B2C/B2B/양면 점수 정책, 결측 가중치 재정규화, 정책·입력 계산지문이 게시되어 균등가중치 TODO는 해소됐다."
+    followup: "재설계 §34의 단순화 산식으로 교체할지는 AISEARCH-003의 별도 CR에서만 결정한다. 현재 게시 정책은 임의 변경하지 않는다."
 
   - id: BACKEND-004
     title: 상담(미팅) API
@@ -453,6 +453,42 @@ tasks:
     depends_on: [CONTRACT-003]
     owned_paths: ["apps/api/app/services/matching/**"]
     note: "CONTRACT-003은 API 경로만 결정했으므로, 기존 12단계와 §34 산식 중 선택할 별도 CR 필요 여부부터 판단한다."
+
+  - id: AIENGINE-001
+    title: 공통 매칭엔진 프로파일 의미 후보회수 연결
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-003, AISEARCH-002]
+    owned_paths:
+      - "apps/api/app/services/matching/profile_semantic_recall.py"
+      - "apps/api/app/services/matching/candidate_generator.py"
+      - "apps/api/app/services/matching/orchestrator.py"
+      - "apps/api/tests/test_profile_semantic_recall.py"
+    acceptance:
+      - "식별자·자유문·숫자 거래조건 없이 게시 온톨로지 코드와 공개 라벨만 임베딩 입력에 사용"
+      - "벡터 유사도는 후보 회수에만 사용하고 Hard Filter·게시 점수 정책을 변경하지 않음"
+      - "공급자·pgvector 장애/비활성화 시 구조화·인기·탐색 후보 채널 유지"
+      - "참가업체별 후보 상한, 모델 버전·입력지문 계보, 결정론적 tie-break 보존"
+    evidence: "PROFILE_SEMANTIC_RECALL_V1 쿼리/지문, 기존 SUMMARY pgvector scorer 연결, 참가업체당 3개 cap과 VECTOR provenance 구현. backend 178 passed/2 skipped, root 24 passed."
+
+  - id: AIENGINE-002
+    title: 공통 매칭엔진 골든셋·오프라인 평가기 구축
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-001]
+    owned_paths:
+      - "ai/evaluation/**"
+      - "apps/api/tests/fixtures/matching/**"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "일반 관람객·바이어·양면 매칭 대표 골든셋과 기대 Hard Filter 사유를 버전 관리"
+      - "동일 입력·정책·택소노미에서 후보/점수/설명 지문 재현"
+      - "Recall@K·NDCG@K·Hard Filter 위반 0건·업체 집중도 지표를 오프라인 산출"
+      - "벡터 비활성/장애 시 구조화 fallback 품질과 회귀 임계값을 비교"
 
   - id: QA-003
     title: Wave 2 계약·범위·보안 기준선 감사

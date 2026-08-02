@@ -7,6 +7,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.api.v1.routers import recommendations
 from app.core.config import Settings
 from app.core.site_context import sign_site_context, verify_site_context
@@ -20,7 +24,7 @@ from app.models.matching import (
     SlateItem,
 )
 from app.schemas.recommendation import InteractionEventIn
-from app.services.matching import candidate_generator, request_validator
+from app.services.matching import request_validator
 from app.services.matching.errors import RecommendationError
 from app.services.matching.types import (
     MatchCandidate,
@@ -29,9 +33,6 @@ from app.services.matching.types import (
     RecommendationOutcome,
     SubjectContext,
 )
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
 
 
 def _subject_headers() -> dict[str, str]:
@@ -126,23 +127,6 @@ class _ScalarResult:
 
     def scalar_one_or_none(self) -> Any:
         return self.value
-
-
-@pytest.mark.asyncio
-async def test_optional_vector_channel_never_rolls_back_pipeline_transaction() -> None:
-    class SessionWithoutVectorTable:
-        async def execute(self, statement: Any) -> _ScalarResult:
-            assert "to_regclass" in str(statement)
-            return _ScalarResult(False)
-
-    ids, available = await candidate_generator._vector_search_candidates(
-        SessionWithoutVectorTable(),  # type: ignore[arg-type]
-        tenant_id=uuid.uuid4(),
-        event_id=uuid.uuid4(),
-    )
-
-    assert ids == []
-    assert available is False
 
 
 @pytest.mark.asyncio

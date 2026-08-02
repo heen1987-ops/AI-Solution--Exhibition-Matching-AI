@@ -6,8 +6,8 @@
     1. 구조화 속성 검색   - SQL로 승인·활성 상태 후보를 넓게 가져온 뒤, 프로파일의 taxonomy
                             코드(categories/channels/regions/taste/aroma)와
                             ``Catalog.match_strength``로 관련도를 매겨 상위 N개를 뽑는다.
-    2. 벡터 의미 검색     - ai.object_embedding 테이블이 있으면 사용하고 없으면 건너뛰는
-                            방어적 구조만 제공한다 (pgvector/ai 도메인 모델이 아직 없음).
+    2. 벡터 의미 검색     - 식별정보·자유문을 제외한 프로파일 온톨로지 신호로 배포된 SUMMARY
+                            임베딩을 조회한다. 공급자/pgvector 장애 시 구조화 검색만 유지한다.
     3. 인기·품질 기반 후보 - exhibitor_profile.trade_readiness_score, product_profile의
                             consumer_score/buyer_score로 정렬한 상위 N개.
     4. 운영자 지정 후보   - 지정 후보를 담을 테이블이 db-erd/07/08 어디에도 아직 없어
@@ -29,7 +29,7 @@ from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.exhibitor import (
@@ -51,6 +51,11 @@ from app.services.matching.ontology_support import (
     max_match_strength,
     resolve_concept_codes,
 )
+from app.services.matching.profile_semantic_recall import (
+    ProfileSemanticRecall,
+    recall_profile_participations,
+)
+from app.services.matching.semantic_search import NullSemanticScorer, SemanticScorer
 from app.services.matching.types import (
     MatchCandidate,
     ResolvedContext,
@@ -61,11 +66,13 @@ from app.services.matching.types import (
 # 05번 문서 5.4절 "후보군 병합 예시"의 채널별 상한을 그대로 기본값으로 쓴다.
 # TODO(운영 데이터/부하 테스트 확정 후 교체): 정확한 값은 11/12단계 정책에서 확정한다.
 STRUCTURED_LIMIT = 100
+VECTOR_LIMIT = 80
 POPULARITY_LIMIT = 20
 EXPLORATION_LIMIT = 10
 INTEREST_LIMIT = 20
 TOTAL_POOL_CAP = 150
 RAW_FETCH_CAP = 400  # 구조화 관련도 정렬 전에 SQL에서 가져오는 원시 행 상한.
+VECTOR_OBJECTS_PER_PARTICIPATION = 3
 
 _INTEREST_EVENT_TYPES = ("RECOMMENDATION_SAVED", "FAVORITE_ADD")
 
@@ -74,28 +81,6 @@ def _target_object_types(recommendation_type: str) -> tuple[str, ...]:
     if recommendation_type == "MIXED":
         return ("BOOTH", "PRODUCT", "EXHIBITOR", "PROGRAM")
     return (recommendation_type,)
-
-
-async def _vector_search_candidates(
-    db: AsyncSession, *, tenant_id: uuid.UUID, event_id: uuid.UUID
-) -> tuple[list[uuid.UUID], bool]:
-    """벡터 의미 검색. ai.object_embedding + pgvector가 준비되지 않았을 수 있으므로 방어적으로
-    존재 여부만 확인하고, 있어도 실제 kNN 질의는 임베딩 생성 파이프라인(ai 도메인, 이 작업
-    범위 밖)이 갖춰진 뒤에 구현한다.
-
-    Returns: (recommendable_id 목록, 이 채널이 실제로 사용 가능했는지 여부).
-    """
-
-    table_available = (
-        await db.execute(text("SELECT to_regclass('ai.object_embedding') IS NOT NULL"))
-    ).scalar_one()
-    if not table_available:
-        # 선택 기능의 부재는 오류가 아니다. PostgreSQL 카탈로그로 감지하므로 앞 단계가
-        # 쌓아 둔 추천 트랜잭션을 rollback하지 않는다.
-        return [], False
-    # TODO(ai 도메인 임베딩 테이블 확정 후 구현): 프로파일의 자연어 요구조건을 임베딩한 뒤
-    # ai.object_embedding과 코사인 유사도로 kNN 검색해 recommendable_id 목록을 반환한다.
-    return [], True
 
 
 async def _load_supply_profiles(
@@ -576,6 +561,58 @@ def _quality_score(candidate: MatchCandidate, user_type: str) -> float:
     return (score / 100.0) if score is not None else 0.0
 
 
+def _candidate_identity(candidate: MatchCandidate) -> tuple[str, str]:
+    return candidate.object_type, str(candidate.object_id)
+
+
+def _apply_vector_recall(
+    pool: list[MatchCandidate],
+    selected: dict[tuple[str, uuid.UUID], MatchCandidate],
+    *,
+    recall: ProfileSemanticRecall,
+    user_type: str,
+) -> int:
+    """Merge semantic participation hits without allowing product-rich domination."""
+
+    eligible = [
+        candidate
+        for candidate in pool
+        if candidate.participation_id in recall.participation_scores
+    ]
+    eligible.sort(
+        key=lambda candidate: (
+            -recall.participation_scores.get(candidate.participation_id, 0.0),
+            -_quality_score(candidate, user_type),
+            *_candidate_identity(candidate),
+        )
+    )
+
+    per_participation: dict[uuid.UUID, int] = {}
+    applied = 0
+    for candidate in eligible:
+        if applied >= VECTOR_LIMIT:
+            break
+        participation_id = candidate.participation_id
+        if participation_id is None:
+            continue
+        participation_count = per_participation.get(participation_id, 0)
+        if participation_count >= VECTOR_OBJECTS_PER_PARTICIPATION:
+            continue
+
+        score = recall.participation_scores[participation_id]
+        key = (candidate.object_type, candidate.object_id)
+        target = selected.get(key, candidate)
+        target.source_channels.add("VECTOR")
+        target.payload["vector_relevance_score"] = score
+        target.payload["vector_profile_fingerprint"] = recall.input_fingerprint
+        if recall.model_version_id is not None:
+            target.payload["vector_model_version_id"] = str(recall.model_version_id)
+        selected[key] = target
+        per_participation[participation_id] = participation_count + 1
+        applied += 1
+    return applied
+
+
 async def _interest_related_ids(
     db: AsyncSession,
     *,
@@ -626,6 +663,7 @@ async def generate_candidates(
     validated: ValidatedRequest,
     profile: ResolvedProfile,
     context: ResolvedContext,
+    semantic_scorer: SemanticScorer | None = None,
 ) -> tuple[list[MatchCandidate], dict[str, int]]:
     tenant_id = validated.subject.tenant_id
     event_id = validated.subject.event_id
@@ -661,24 +699,44 @@ async def generate_candidates(
 
     # 1. 구조화 속성 검색: 프로파일 코드와의 관련도 상위 STRUCTURED_LIMIT.
     scored = sorted(
-        pool, key=lambda c: _relevance_score(c, profile, catalog), reverse=True
+        pool,
+        key=lambda candidate: (
+            -_relevance_score(candidate, profile, catalog),
+            *_candidate_identity(candidate),
+        ),
     )
     for candidate in scored[:STRUCTURED_LIMIT]:
         candidate.source_channels.add("STRUCTURED")
         selected[(candidate.object_type, candidate.object_id)] = candidate
     channel_counts["STRUCTURED"] = min(STRUCTURED_LIMIT, len(pool))
 
-    # 2. 벡터 의미 검색 (있으면 사용, 없으면 건너뜀).
-    _vector_ids, vector_available = await _vector_search_candidates(
-        db, tenant_id=tenant_id, event_id=event_id
+    # 2. 프로파일 의미 검색. 개인정보 원문이 아닌 온톨로지 코드만 임베딩하며,
+    # 장애/비활성화 시 구조화 채널을 그대로 유지한다.
+    vector_recall = await recall_profile_participations(
+        db,
+        tenant_id=tenant_id,
+        event_id=event_id,
+        profile=profile,
+        semantic_scorer=semantic_scorer or NullSemanticScorer(),
     )
-    channel_counts["VECTOR"] = 0
-    if not vector_available:
+    channel_counts["VECTOR"] = _apply_vector_recall(
+        pool,
+        selected,
+        recall=vector_recall,
+        user_type=profile.user_type,
+    )
+    if vector_recall.status == "DISABLED":
+        channel_counts["VECTOR_DISABLED"] = 1
+    elif vector_recall.status == "UNAVAILABLE":
         channel_counts["VECTOR_UNAVAILABLE"] = 1
 
     # 3. 인기·품질 기반 후보.
     quality_sorted = sorted(
-        pool, key=lambda c: _quality_score(c, profile.user_type), reverse=True
+        pool,
+        key=lambda candidate: (
+            -_quality_score(candidate, profile.user_type),
+            *_candidate_identity(candidate),
+        ),
     )
     added = 0
     for candidate in quality_sorted:
@@ -707,7 +765,7 @@ async def generate_candidates(
     )
     added = 0
     if interest_exhibitor_ids:
-        for candidate in pool:
+        for candidate in sorted(pool, key=_candidate_identity):
             if added >= INTEREST_LIMIT:
                 break
             if candidate.exhibitor_id not in interest_exhibitor_ids:
