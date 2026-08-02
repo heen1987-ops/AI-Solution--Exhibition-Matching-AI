@@ -7,8 +7,8 @@ gates:
       - "PostgreSQL 연결 — 미검증(로컬에 DB 인스턴스 없음, alembic --sql 오프라인 컴파일까지만 확인)"
       - "Redis 연결 — 미검증"
       - "Health Check 성공 — GET /healthz 라우트 등록 확인, 실제 응답은 서버 미기동으로 미검증"
-      - "CI 기본 파이프라인 성공 — CI 자체가 아직 없음(FND-003 대기)"
-    verdict_note: "핵심 조건(코드 실행 가능·빌드 성공)은 충족. 실제 인프라 기동·CI는 미완료지만 부트스트랩을 막을 사유는 아니라고 판단해 PASSED로 기록. FND-003(CI) 완료 시 재검증 권장."
+      - "CI 기본 파이프라인 성공 — FND-003 engine+API 및 CR-009 active-web PR/main workflow 게시·로컬 재현 완료"
+    verdict_note: "핵심 조건(코드 실행 가능·빌드 성공)은 충족. FND-003이 PR/main용 engine+API 및 활성 web CI를 게시했고 clean NTFS 기준 frozen install, lint, typecheck, test, build를 재검증했다. 실제 PostgreSQL/Redis 인프라 통합 기동은 G3 증거로 남는다."
 
   G1_CONTRACT_FREEZE:
     status: PASSED

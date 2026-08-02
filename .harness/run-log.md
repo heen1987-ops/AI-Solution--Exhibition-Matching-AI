@@ -409,3 +409,17 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   skipped; Ruff, compileall, pip check, and diff check PASS.
 - No production sample or approved enforcement Change Request exists. FND-003 CI automation is the
   next safe unit before a later change-controlled enforcement proposal.
+
+## 2026-08-03 — FND-003 common GitHub CI
+
+- Published a read-only GitHub Actions workflow for pull requests, `main`, and manual dispatch.
+- Engine/API job installs both editable Python packages, checks fatal Ruff categories and package
+  consistency, then runs the 72-test common engine suite and 219-test backend suite.
+- Active-web job uses pnpm 9.15.0 with the frozen lock, then runs root lint, typecheck, tests, and
+  production builds. Root filters cover user-web/admin and exclude the inactive kiosk package.
+- Clean NTFS reproduction passed frozen install, active lint/typecheck/test, admin 13-route build,
+  and user-web 21-route build. Backend passed 219/2 skipped after reproducing the Ubuntu LF Git blob;
+  a Windows-only global autocrlf byte-hash mismatch required no source or contract change.
+- The newest living roadmap requests a mobile My Event HTML surface and Kakao notification entry.
+  This remains aligned with web-first scope, but personal links/delivery are deferred until the
+  authentication/session and notification contracts are frozen. CONTRACT-006 is next.

@@ -8,6 +8,7 @@
   "completed_tasks": [
     "FND-001",
     "FND-002",
+    "FND-003",
     "FND-004",
     "CONTRACT-001-INFORMAL",
     "CONTRACT-002",
@@ -54,11 +55,11 @@
     "ADMIN-002(BACKEND-007 의존)",
     "QA-001(re-audit after CR-009 web-first pivot)"
   ],
-  "next_recommended_task": "FND-003 (publish CI checks for the completed engine/backend/web baseline before any enforcement Change Request)",
-  "last_successful_run": "2026-08-03T01:22:29+09:00",
+  "next_recommended_task": "CONTRACT-006 (freeze authentication, session, RBAC, and admin MFA boundaries before personal My Event links or Kakao delivery)",
+  "last_successful_run": "2026-08-03T01:35:49+09:00",
   "scope_status": "LOCKED_WEB_FIRST_CR009",
   "contract_status": "FROZEN",
-  "mvp_progress_percent": 91,
+  "mvp_progress_percent": 92,
   "monorepo_migration": "DONE (DECISION-006, updated by CR-009): canonical apps/* pnpm workspace remains materialized. Active default validation/build covers apps/user-web and apps/admin; apps/kiosk is retained as inactive compatibility source and excluded by root scripts. Latest clean-NTFS active web typecheck/build and frozen install pass.",
   "notes": [
     "The approved 259-concept Backjudaegan alcohol ontology remains canonical (DECISION-004).",
@@ -85,6 +86,8 @@
     "AIENGINE-008 publishes constraint-evaluation-result-v1.0. Verified candidate observations deterministically yield ELIGIBLE, FILTERED_OUT, or INFORMATION_REQUIRED; unknown, missing, stale, conditional, and negotiable values never become pass, mismatch, or zero. Only fully eligible evaluations enter existing scoring.",
     "AIENGINE-009 publishes candidate-observation-adapter-v1.0 and hard-filter-shadow-v1.0. Approved public and verified buyer fields run through the three-state evaluator beside the authoritative legacy Hard Filter; parity and safety gaps are privacy-minimized and enforcement remains disabled.",
     "AIENGINE-010 publishes constraint-shadow-promotion-gate-v1.0. Runtime-safe state and safety-gap reason aggregates de-duplicate retry fingerprints; any divergence or adapter error fails, and 1,000 comparable results plus regression, rollback, and gap-review evidence are required only to become Change Request ready. Enforcement remains false and weighted-v1 is unchanged.",
-    "The common matching-engine stream now has deterministic intent, projection, three-state evaluation, runtime shadow comparison, and a promotion-evidence gate. FND-003 CI automation is the next safe unit before any change-controlled enforcement proposal."
+    "The common matching-engine stream now has deterministic intent, projection, three-state evaluation, runtime shadow comparison, and a promotion-evidence gate.",
+    "FND-003 publishes read-only GitHub CI for root engine and backend tests plus CR-009 active-web lint, typecheck, tests, and builds. Dedicated kiosk remains outside the default CI path.",
+    "The living roadmap now emphasizes a mobile My Event HTML surface reached through Kakao notification links. CONTRACT-006 authentication/session boundaries are the next safe prerequisite; Kakao delivery and magic links are not implemented ahead of frozen contracts."
   ]
 }

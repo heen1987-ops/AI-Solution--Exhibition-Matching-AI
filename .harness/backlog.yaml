@@ -32,12 +32,13 @@ tasks:
     wave: 0
     track: FOUNDATION
     priority: P1
-    status: READY
+    status: DONE
     depends_on: [FND-001]
     owned_paths: [".github/workflows/**"]
     acceptance:
       - "PR마다 backend pytest, frontend typecheck+build가 자동 실행된다"
     note: "Google Drive 동기화 경로에서 npm install이 깨지는 이슈가 있었음(apps/user-web/README.md 참고) — CI 러너는 문제 없음(로컬 개발 환경만의 이슈)"
+    evidence: "GitHub CI now runs root engine and full backend pytest plus fatal Ruff/pip checks, and pnpm 9.15 frozen install with active user-web/admin lint, typecheck, test, and production build on every PR. CR-009 excludes backju-kiosk. Fresh verification: root 72 passed, backend 219 passed/2 skipped, admin 13 routes and user-web 21 routes built."
 
   - id: FND-004
     title: CR-009 웹 중심 채널 전환과 키오스크 기본 빌드 제외
