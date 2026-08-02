@@ -33,6 +33,7 @@
     "AIENGINE-002",
     "AIENGINE-003",
     "AIENGINE-004",
+    "BACKEND-011",
     "QA-003"
   ],
   "blocked_tasks": [
@@ -48,7 +49,7 @@
   "last_successful_run": "2026-08-02T20:37:50+09:00",
   "scope_status": "LOCKED",
   "contract_status": "FROZEN",
-  "mvp_progress_percent": 72,
+  "mvp_progress_percent": 74,
   "monorepo_migration": "DONE (DECISION-006): canonical apps/* pnpm workspace is materialized at the requested repository root with an independent Git boundary. Latest verification: 66 OpenAPI paths, single Alembic head 0017_object_embedding (94 ORM tables), full backend pytest green, all three Next.js apps typecheck/build green, kiosk component privacy tests green, and frozen pnpm install passes supply-chain policy.",
   "notes": [
     "The approved 259-concept Backjudaegan alcohol ontology remains canonical (DECISION-004).",
@@ -66,6 +67,7 @@
     "AIENGINE-003 publishes matching-engine-command/result-v1.0 for catalog search, visitor, buyer, and reciprocal modes; kiosk and recommendation adapters plus matching-evaluator-v1.1 now execute through that pure facade.",
     "AISEARCH-003 retains consumer-score-v1.0 and context-rerank-v1.0: section 34 lacks a current-query input contract and would double-count availability. A future consumer-score-v2 requires an approved CR and labeled shadow evaluation.",
     "AIENGINE-004 publishes matching-engine-command/result-v1.1 and reason-claim-v1.0: allowlisted score, catalog, reciprocal, and Hard Filter claims require adapter evidence and carry source/fingerprint provenance; evaluator-v1.2 validates facade-generated claims.",
+    "BACKEND-011 publishes meet-ai-excel-import-v1.0: standardized preregistrant and exhibitor XLSX rows normalize into existing canonical imports; dry-run is default, ontology and file safety checks fail closed, and approval boundaries remain unchanged.",
     "AIENGINE-005 is next: evaluate deterministic RRF hybrid fusion and UNKNOWN semantics in shadow mode without changing the published weighted catalog policy."
   ]
 }

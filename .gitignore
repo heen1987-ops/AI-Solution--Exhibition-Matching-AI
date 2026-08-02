@@ -226,5 +226,8 @@ node_modules/
 npm-debug.log*
 pnpm-debug.log*
 
+# Generated user-facing artifacts and render previews
+outputs/
+
 # Local agent worktrees and orchestration scratch data
 .claude/

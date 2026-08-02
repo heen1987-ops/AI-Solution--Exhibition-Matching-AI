@@ -4343,6 +4343,109 @@
         }
       }
     },
+    "/api/v1/admin/imports/excel": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Import Excel",
+        "description": "Validate or import the published visitor/exhibitor XLSX workbook.\n\n``dry_run=true`` performs no write. Valid rows use the existing canonical JSON import and\ningestion path; the XLSX adapter does not bypass approval or matching eligibility policies.",
+        "operationId": "import_excel_api_v1_admin_imports_excel_post",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "source_system_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 50,
+              "default": "EXCEL_UPLOAD",
+              "title": "Source System Code"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Dry Run"
+            }
+          },
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content-Type"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+              "schema": {
+                "type": "string",
+                "contentMediaType": "application/octet-stream",
+                "title": "Workbook Bytes"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExcelImportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/imports/products": {
       "post": {
         "tags": [
@@ -7842,6 +7945,109 @@
           "meta"
         ],
         "title": "Envelope[list[PublicProductDetail]]"
+      },
+      "ExcelImportResponse": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "meet-ai-excel-import-v1.0",
+            "title": "Schema Version"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "VALID",
+              "VALID_WITH_ERRORS",
+              "INVALID",
+              "IMPORTED",
+              "IMPORTED_WITH_ERRORS"
+            ],
+            "title": "Status"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "visitors": {
+            "$ref": "#/components/schemas/ExcelImportSheetSummary"
+          },
+          "exhibitors": {
+            "$ref": "#/components/schemas/ExcelImportSheetSummary"
+          },
+          "visitor_import": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportBatchResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exhibitor_import": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportBatchResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "status",
+          "dry_run",
+          "visitors",
+          "exhibitors"
+        ],
+        "title": "ExcelImportResponse",
+        "description": "POST /admin/imports/excel 검증·실행 결과."
+      },
+      "ExcelImportSheetSummary": {
+        "properties": {
+          "sheet_name": {
+            "type": "string",
+            "enum": [
+              "사전등록자",
+              "참여기업"
+            ],
+            "title": "Sheet Name"
+          },
+          "total_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Rows"
+          },
+          "valid_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Valid Rows"
+          },
+          "failed_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Rows"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRowError"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sheet_name",
+          "total_rows",
+          "valid_rows",
+          "failed_rows"
+        ],
+        "title": "ExcelImportSheetSummary",
+        "description": "XLSX 한 입력 시트의 검증 집계. 원본 개인정보 값은 응답하지 않는다."
       },
       "ExhibitorImportRequest": {
         "properties": {

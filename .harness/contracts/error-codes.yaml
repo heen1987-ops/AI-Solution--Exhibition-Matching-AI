@@ -96,6 +96,66 @@ codes:
   # --- Imports (apps/api/app/api/v1/routers/imports.py) ---
   - code: IMPORT_NOT_FOUND
     http_status: 404
+  - code: EXCEL_CONTENT_TYPE_UNSUPPORTED
+    http_status: 415
+    meaning: "XLSX MIME 형식이 아닌 업로드 요청"
+  - code: EXCEL_FILE_SIZE_INVALID
+    http_status: 422
+    meaning: "빈 파일이거나 5MiB 제한을 초과한 XLSX"
+  - code: EXCEL_FILE_INVALID
+    http_status: 422
+    meaning: "유효한 XLSX ZIP 패키지가 아니거나 읽을 수 없는 파일"
+  - code: EXCEL_ARCHIVE_LIMIT_EXCEEDED
+    http_status: 422
+    meaning: "XLSX 내부 파일 수 또는 압축 해제 크기 제한 초과"
+  - code: EXCEL_MACRO_NOT_ALLOWED
+    http_status: 422
+    meaning: "매크로를 포함한 XLSX 업로드 차단"
+  - code: EXCEL_SHEET_DIMENSION_INVALID
+    http_status: 422
+    meaning: "비정상적으로 큰 시트 차원"
+  - code: EXCEL_INPUT_SHEET_HIDDEN
+    http_status: 422
+    meaning: "사전등록자 또는 참여기업 입력 시트가 숨김 상태"
+  - code: EXCEL_HEADERS_INVALID
+    http_status: 422
+    meaning: "입력 시트 열 이름·순서·개수가 게시 템플릿과 불일치"
+  - code: EXCEL_INPUT_EMPTY
+    http_status: 422
+    meaning: "두 입력 시트 모두 비어 있음"
+  - code: EXCEL_ROW_LIMIT_EXCEEDED
+    http_status: 422
+    meaning: "입력 시트의 비어 있지 않은 행이 1,000건을 초과"
+  - code: EXCEL_FORMULA_NOT_ALLOWED
+    http_status: 200
+    meaning: "행 검증 오류 — 입력 셀에 수식 사용"
+  - code: EXCEL_REQUIRED_VALUE_MISSING
+    http_status: 200
+    meaning: "행 검증 오류 — 필수값 누락"
+  - code: EXCEL_DATETIME_INVALID
+    http_status: 200
+    meaning: "행 검증 오류 — source_updated_at 형식 오류"
+  - code: EXCEL_BOOLEAN_INVALID
+    http_status: 200
+    meaning: "행 검증 오류 — 불리언 형식 오류"
+  - code: EXCEL_ONTOLOGY_CODE_UNKNOWN
+    http_status: 200
+    meaning: "행 검증 오류 — 게시 온톨로지에 없는 코드"
+  - code: EXCEL_ONTOLOGY_CODE_NOT_ASSIGNABLE
+    http_status: 200
+    meaning: "행 검증 오류 — 선택할 수 없는 상위 온톨로지 코드"
+  - code: EXCEL_ONTOLOGY_TYPE_INVALID
+    http_status: 200
+    meaning: "행 검증 오류 — 열에 허용되지 않은 온톨로지 유형"
+  - code: EXCEL_SINGLE_VALUE_REQUIRED
+    http_status: 200
+    meaning: "행 검증 오류 — 단일값 열에 복수 코드 입력"
+  - code: EXCEL_SOURCE_ID_DUPLICATE
+    http_status: 200
+    meaning: "행 검증 오류 — 같은 시트의 source_record_id 중복"
+  - code: EXCEL_ROW_SCHEMA_INVALID
+    http_status: 200
+    meaning: "행 검증 오류 — 필드 형식 또는 길이 위반"
 
   # --- Webhooks (apps/api/app/api/v1/routers/webhooks.py) ---
   - code: WEBHOOK_PAYLOAD_INVALID

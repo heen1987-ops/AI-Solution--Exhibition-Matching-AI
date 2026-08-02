@@ -100,6 +100,34 @@ class ImportErrorListResponse(BaseModel):
     next_cursor: str | None = None
 
 
+class ExcelImportSheetSummary(BaseModel):
+    """XLSX 한 입력 시트의 검증 집계. 원본 개인정보 값은 응답하지 않는다."""
+
+    sheet_name: Literal["사전등록자", "참여기업"]
+    total_rows: int = Field(ge=0)
+    valid_rows: int = Field(ge=0)
+    failed_rows: int = Field(ge=0)
+    errors: list[ImportRowError] = Field(default_factory=list)
+
+
+class ExcelImportResponse(BaseModel):
+    """POST /admin/imports/excel 검증·실행 결과."""
+
+    schema_version: Literal["meet-ai-excel-import-v1.0"]
+    status: Literal[
+        "VALID",
+        "VALID_WITH_ERRORS",
+        "INVALID",
+        "IMPORTED",
+        "IMPORTED_WITH_ERRORS",
+    ]
+    dry_run: bool
+    visitors: ExcelImportSheetSummary
+    exhibitors: ExcelImportSheetSummary
+    visitor_import: ImportBatchResult | None = None
+    exhibitor_import: ImportBatchResult | None = None
+
+
 # ---------------------------------------------------------------------------
 # 방문객(관람객) import - 설계문서 2.2절 "표준 필드" 컬럼 기준
 # ---------------------------------------------------------------------------
@@ -226,9 +254,7 @@ class ProductImportRequest(BaseModel):
 # 웹훅 - 설계문서 8.2절 / 인터페이스 명세 18.2절
 # ---------------------------------------------------------------------------
 
-WebhookEventType = Literal[
-    "VISITOR_UPSERTED", "EXHIBITOR_UPSERTED", "PRODUCT_UPSERTED"
-]
+WebhookEventType = Literal["VISITOR_UPSERTED", "EXHIBITOR_UPSERTED", "PRODUCT_UPSERTED"]
 
 
 class WebhookEnvelope(BaseModel):

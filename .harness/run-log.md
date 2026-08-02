@@ -246,3 +246,18 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   diff check PASS; Golden Set 3/3 PASS with zero explanation violations.
 - AIENGINE-005 is next for shadow-only RRF hybrid fusion and explicit UNKNOWN/missing-signal
   evaluation. No published score formula, public API, database schema, or online learning changed.
+
+## 2026-08-02 — BACKEND-011 Excel-based matching input
+
+- Applied the user's file-first direction at the engine input boundary. Published
+  `meet-ai-excel-import-v1.0` with `사전등록자` and `참여기업` sheets plus a guide, the complete
+  259-concept code list, and natural-language search examples.
+- Added `POST /api/v1/admin/imports/excel`; it defaults to non-mutating dry-run and converts valid
+  rows into the existing visitor/exhibitor import schemas. Persisted data therefore continues
+  through the same approval, public-index, Hard Filter, and common matching-facade boundaries.
+- Added fail-closed XLSX validation for size, ZIP expansion, macros, formulas, hidden input sheets,
+  exact headers, duplicate IDs, booleans, timestamps, row limits, and ontology type/assignability.
+  Row errors do not echo source cell values or direct identifiers.
+- The existing `/api/v1/search` remains the natural-language path; no parallel scoring formula was
+  introduced. Focused parser/API tests pass `7/7`; the generated workbook was rendered and all five
+  sheets were visually inspected before publication.

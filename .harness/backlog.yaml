@@ -558,6 +558,29 @@ tasks:
       - "라벨된 검색 fixture에서 weighted-v1 대비 Recall@K/NDCG@K 비열등성과 지문 재현성을 보고"
       - "승격은 별도 versioned contract 결정 전까지 금지"
 
+  - id: BACKEND-011
+    title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-004]
+    owned_paths:
+      - "apps/api/app/services/excel_import.py"
+      - "apps/api/app/api/v1/routers/imports.py"
+      - "apps/api/app/schemas/imports.py"
+      - "apps/api/tests/test_excel_import.py"
+      - "apps/api/tests/fixtures/excel-import-v1-*.xlsx"
+      - "docs/templates/exhibition-matching-import-v1.xlsx"
+      - ".harness/handoffs/contracts/change-request-007-excel-import.md"
+    acceptance:
+      - "표준 XLSX의 사전등록자·참여기업 행을 기존 JSON import 계약으로 정규화"
+      - "게시된 259개 온톨로지 코드만 UUID 참조로 변환하고 미등록·상위 코드는 행 단위 격리"
+      - "dry-run을 기본으로 하고 수식·매크로·비정상 ZIP·추가 열·중복 ID·과대 파일을 차단"
+      - "행 오류에 이름·전화·이메일·원문 셀 값을 포함하지 않음"
+      - "업체 승인 및 공개 인덱스 경계를 우회하지 않고 자연어 검색은 기존 /api/v1/search 사용"
+    evidence: "meet-ai-excel-import-v1.0 parser/API/template published; focused tests 7 passed; workbook rendered and all five sheets visually inspected."
+
   - id: QA-003
     title: Wave 2 계약·범위·보안 기준선 감사
     wave: 2

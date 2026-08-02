@@ -119,3 +119,14 @@ transaction에서 수행한다. 입력 한도 안에서는 업체명과 모든 �
 `explanations` 필드는 호환상 유지하되 평가기에서는 기대 출력으로 신뢰하지 않고 어댑터 근거
 binding으로만 사용하며 실제 facade 생성 claim을 검증한다. 상세 증거는
 `.harness/reports/integration/reason-evidence-contract-20260802.md`를 따른다.
+
+## DECISION-011 (2026-08-02) — XLSX는 공통 매칭엔진 앞단의 입력 어댑터
+
+사전등록자·참여기업 Excel 자료를 별도 점수식이나 별도 정본으로 운영하지 않는다. 게시된
+`meet-ai-excel-import-v1.0` 템플릿의 행을 기존 visitor/exhibitor JSON import 계약과 259개
+온톨로지 UUID로 정규화한 뒤, 기존 승인·공개범위·Hard Filter·공통 facade를 그대로 사용한다.
+브라우저 자유문 검색은 기존 `/api/v1/search`의 질의 해석·검색 경로를 사용한다.
+
+기본 실행은 비저장 `dry_run=true`이고 수식·매크로·미등록 코드·비정상 ZIP을 fail-closed로
+차단한다. 연락처와 원문 셀 값은 매칭 입력이나 행 오류 메시지에 포함하지 않는다. Excel로
+유입된 참여기업 역시 `APPLIED` 상태이므로 운영 승인 전 검색·추천 대상이 되지 않는다.

@@ -35,17 +35,19 @@ docs/2026-backju-ai-matching-service-design.md 8.3절은 `/v1/events/{eventId}/i
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.integration import SyncJob, SyncRowError
 from app.schemas.imports import (
+    ExcelImportResponse,
+    ExcelImportSheetSummary,
     ExhibitorImportRequest,
     ExhibitorImportRow,
     ImportBatchResult,
@@ -56,6 +58,12 @@ from app.schemas.imports import (
     ProductImportRow,
     VisitorImportRequest,
     VisitorImportRow,
+)
+from app.services.excel_import import (
+    EXCEL_IMPORT_SCHEMA_VERSION,
+    ExcelImportValidationError,
+    ParsedSheet,
+    parse_excel_import,
 )
 from app.services.ingestion import (
     IngestionError,
@@ -79,6 +87,8 @@ async def _run_batch(
     job_type: str,
     rows: Sequence[VisitorImportRow | ExhibitorImportRow | ProductImportRow],
     upsert_one,
+    error_row_numbers: Sequence[int] | None = None,
+    include_source_record_id_in_errors: bool = True,
 ) -> ImportBatchResult:
     source_system = await get_or_create_source_system(
         db, tenant_id=tenant_id, system_code=source_system_code
@@ -92,7 +102,7 @@ async def _run_batch(
         status="RUNNING",
         total_rows=len(rows),
     )
-    job.started_at = datetime.now(timezone.utc)
+    job.started_at = datetime.now(UTC)
     db.add(job)
     await db.flush()
 
@@ -100,6 +110,9 @@ async def _run_batch(
     success_rows = 0
 
     for row_index, row in enumerate(rows):
+        reported_row_index = (
+            error_row_numbers[row_index] if error_row_numbers is not None else row_index
+        )
         try:
             async with db.begin_nested():
                 await upsert_one(
@@ -112,8 +125,12 @@ async def _run_batch(
         except IngestionError as exc:
             errors.append(
                 ImportRowError(
-                    row_index=row_index,
-                    source_record_id=row.source_record_id,
+                    row_index=reported_row_index,
+                    source_record_id=(
+                        row.source_record_id
+                        if include_source_record_id_in_errors
+                        else None
+                    ),
                     error_code=exc.code,
                     message=exc.message,
                 )
@@ -121,21 +138,29 @@ async def _run_batch(
             db.add(
                 SyncRowError(
                     sync_job_id=job.sync_job_id,
-                    row_number=row_index,
+                    row_number=reported_row_index,
                     external_id=row.source_record_id,
                     error_code=exc.code,
                     error_message=exc.message,
                     raw_row_json=row.model_dump(mode="json"),
                 )
             )
-        except Exception:  # noqa: BLE001 - 행 하나의 예상 못한 실패를 배치 전체로 번지지 않게 격리
+        except (
+            Exception
+        ):  # Unexpected row failures are isolated from the rest of the batch.
             logger.exception(
-                "import row failed unexpectedly: job=%s row=%s", job.sync_job_id, row_index
+                "import row failed unexpectedly: job=%s row=%s",
+                job.sync_job_id,
+                row_index,
             )
             errors.append(
                 ImportRowError(
-                    row_index=row_index,
-                    source_record_id=row.source_record_id,
+                    row_index=reported_row_index,
+                    source_record_id=(
+                        row.source_record_id
+                        if include_source_record_id_in_errors
+                        else None
+                    ),
                     error_code="INTERNAL_ERROR",
                     message="행 처리 중 알 수 없는 오류가 발생했습니다.",
                 )
@@ -143,7 +168,7 @@ async def _run_batch(
             db.add(
                 SyncRowError(
                     sync_job_id=job.sync_job_id,
-                    row_number=row_index,
+                    row_number=reported_row_index,
                     external_id=row.source_record_id,
                     error_code="INTERNAL_ERROR",
                     error_message="행 처리 중 알 수 없는 오류가 발생했습니다.",
@@ -162,7 +187,7 @@ async def _run_batch(
         job.status = "COMPLETED_WITH_ERRORS"
     job.success_rows = success_rows
     job.failed_rows = failed_rows
-    job.completed_at = datetime.now(timezone.utc)
+    job.completed_at = datetime.now(UTC)
 
     await db.commit()
 
@@ -207,6 +232,107 @@ async def import_exhibitors(
         job_type="EXHIBITOR_IMPORT",
         rows=request.rows,
         upsert_one=upsert_exhibitor,
+    )
+
+
+def _excel_sheet_summary(sheet: ParsedSheet) -> ExcelImportSheetSummary:
+    return ExcelImportSheetSummary(
+        sheet_name=sheet.sheet_name,
+        total_rows=sheet.total_rows,
+        valid_rows=len(sheet.rows),
+        failed_rows=len(sheet.errors),
+        errors=list(sheet.errors),
+    )
+
+
+@router.post("/admin/imports/excel", response_model=ExcelImportResponse)
+async def import_excel(
+    tenant_id: UUID,
+    event_id: UUID,
+    source_system_code: str = Query(default="EXCEL_UPLOAD", max_length=50),
+    dry_run: bool = Query(default=True),
+    workbook_bytes: bytes = Body(
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
+    content_type: str | None = Header(default=None, alias="Content-Type"),
+    db: AsyncSession = Depends(get_db),
+) -> ExcelImportResponse:
+    """Validate or import the published visitor/exhibitor XLSX workbook.
+
+    ``dry_run=true`` performs no write. Valid rows use the existing canonical JSON import and
+    ingestion path; the XLSX adapter does not bypass approval or matching eligibility policies.
+    """
+
+    expected_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if content_type is None or content_type.split(";", 1)[0].strip() != expected_type:
+        raise HTTPException(status_code=415, detail="EXCEL_CONTENT_TYPE_UNSUPPORTED")
+    try:
+        parsed = parse_excel_import(workbook_bytes)
+    except ExcelImportValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.code) from None
+
+    visitor_summary = _excel_sheet_summary(parsed.visitors)
+    exhibitor_summary = _excel_sheet_summary(parsed.exhibitors)
+    valid_count = visitor_summary.valid_rows + exhibitor_summary.valid_rows
+    parse_error_count = visitor_summary.failed_rows + exhibitor_summary.failed_rows
+
+    if valid_count == 0:
+        return ExcelImportResponse(
+            schema_version=EXCEL_IMPORT_SCHEMA_VERSION,
+            status="INVALID",
+            dry_run=dry_run,
+            visitors=visitor_summary,
+            exhibitors=exhibitor_summary,
+        )
+    if dry_run:
+        return ExcelImportResponse(
+            schema_version=EXCEL_IMPORT_SCHEMA_VERSION,
+            status="VALID_WITH_ERRORS" if parse_error_count else "VALID",
+            dry_run=True,
+            visitors=visitor_summary,
+            exhibitors=exhibitor_summary,
+        )
+
+    visitor_import = None
+    if parsed.visitors.rows:
+        visitor_import = await _run_batch(
+            db,
+            tenant_id=tenant_id,
+            event_id=event_id,
+            source_system_code=source_system_code,
+            job_type="VISITOR_EXCEL_IMPORT",
+            rows=parsed.visitors.rows,
+            upsert_one=upsert_visitor,
+            error_row_numbers=parsed.visitors.row_numbers,
+            include_source_record_id_in_errors=False,
+        )
+    exhibitor_import = None
+    if parsed.exhibitors.rows:
+        exhibitor_import = await _run_batch(
+            db,
+            tenant_id=tenant_id,
+            event_id=event_id,
+            source_system_code=source_system_code,
+            job_type="EXHIBITOR_EXCEL_IMPORT",
+            rows=parsed.exhibitors.rows,
+            upsert_one=upsert_exhibitor,
+            error_row_numbers=parsed.exhibitors.row_numbers,
+            include_source_record_id_in_errors=False,
+        )
+    import_failed = any(
+        result is not None and result.failed_rows > 0
+        for result in (visitor_import, exhibitor_import)
+    )
+    return ExcelImportResponse(
+        schema_version=EXCEL_IMPORT_SCHEMA_VERSION,
+        status=(
+            "IMPORTED_WITH_ERRORS" if parse_error_count or import_failed else "IMPORTED"
+        ),
+        dry_run=False,
+        visitors=visitor_summary,
+        exhibitors=exhibitor_summary,
+        visitor_import=visitor_import,
+        exhibitor_import=exhibitor_import,
     )
 
 
@@ -293,4 +419,6 @@ async def get_import_errors(
     ]
     next_cursor = str(offset + limit) if has_more else None
 
-    return ImportErrorListResponse(import_id=import_id, items=items, next_cursor=next_cursor)
+    return ImportErrorListResponse(
+        import_id=import_id, items=items, next_cursor=next_cursor
+    )
