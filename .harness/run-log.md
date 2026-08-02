@@ -391,3 +391,21 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   compileall, pip check, JSON/YAML, and diff check PASS. A 150-candidate local diagnostic run took
   approximately 55 ms; this is evidence only, not a production performance guarantee.
 - AIENGINE-010 is next: aggregate versioned shadow quality metrics and define a promotion gate.
+
+## 2026-08-03 — AIENGINE-010 constraint shadow quality gate
+
+- Published `constraint-shadow-gate-command/result-v1.0` and
+  `constraint-shadow-promotion-gate-v1.0` as a pure aggregate boundary over AIENGINE-009 results.
+- The runtime adapter counts only privacy-safe states and stable safety-gap reason codes. Candidate
+  references and observed values do not enter the gate; identical retry fingerprints are removed
+  from the eligible runtime sample and reported separately.
+- Any DIVERGENCE or ADAPTER_ERROR returns FAIL. At least 1,000 unique comparable results, exact-
+  policy regression evidence, rollback evidence, and safety-gap review evidence are required for
+  PASS. NOT_COMPARABLE and NOT_APPLICABLE stay visible but do not inflate the sample.
+- PASS means only `change_request_ready=true`. `enforcement_allowed=false` remains immutable, the
+  legacy Hard Filter stays authoritative, and weighted-v1/API/database/persisted rank are unchanged.
+- Six fixed scenarios cover pass, divergence, adapter error, small sample, missing gap review, and
+  non-comparable inflation. Verification: focused 25 passed; root 72 passed; backend 219 passed/2
+  skipped; Ruff, compileall, pip check, and diff check PASS.
+- No production sample or approved enforcement Change Request exists. FND-003 CI automation is the
+  next safe unit before a later change-controlled enforcement proposal.

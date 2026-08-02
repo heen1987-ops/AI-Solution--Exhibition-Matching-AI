@@ -1,5 +1,21 @@
 """Offline quality gates for the common matching engine."""
 
+from .constraint_shadow import (
+    CONSTRAINT_SHADOW_ENFORCEMENT_ALLOWED,
+    CONSTRAINT_SHADOW_GATE_COMMAND_V1,
+    CONSTRAINT_SHADOW_GATE_POLICY_VERSION,
+    CONSTRAINT_SHADOW_GATE_RESULT_V1,
+    MINIMUM_RUNTIME_COMPARABLE_SAMPLE,
+    ConstraintShadowGateCommand,
+    ConstraintShadowGateOutcome,
+    ConstraintShadowGateResult,
+    ConstraintShadowGateValidationError,
+    ConstraintShadowReasonCount,
+    ConstraintShadowState,
+    ConstraintShadowStateCount,
+    ConstraintShadowStateRate,
+    evaluate_constraint_shadow_gate,
+)
 from .engine import (
     EVALUATOR_VERSION,
     GOLDEN_SET_SCHEMA_VERSION,
@@ -34,12 +50,25 @@ from .intent_normalization import (
 )
 
 __all__ = [
+    "CONSTRAINT_SHADOW_ENFORCEMENT_ALLOWED",
+    "CONSTRAINT_SHADOW_GATE_COMMAND_V1",
+    "CONSTRAINT_SHADOW_GATE_POLICY_VERSION",
+    "CONSTRAINT_SHADOW_GATE_RESULT_V1",
     "EVALUATOR_VERSION",
     "GOLDEN_SET_SCHEMA_VERSION",
     "HYBRID_SHADOW_EVALUATOR_VERSION",
     "HYBRID_SHADOW_FIXTURE_SCHEMA_V1",
     "INTENT_EVALUATOR_VERSION",
     "INTENT_FIXTURE_SCHEMA_V1",
+    "MINIMUM_RUNTIME_COMPARABLE_SAMPLE",
+    "ConstraintShadowGateCommand",
+    "ConstraintShadowGateOutcome",
+    "ConstraintShadowGateResult",
+    "ConstraintShadowGateValidationError",
+    "ConstraintShadowReasonCount",
+    "ConstraintShadowState",
+    "ConstraintShadowStateCount",
+    "ConstraintShadowStateRate",
     "EvaluationReport",
     "GoldenSet",
     "GoldenSetValidationError",
@@ -49,6 +78,7 @@ __all__ = [
     "IntentEvaluationReport",
     "IntentFixture",
     "IntentFixtureValidationError",
+    "evaluate_constraint_shadow_gate",
     "evaluate_golden_set",
     "evaluate_hybrid_shadow_fixture",
     "evaluate_hybrid_shadow_scenario",

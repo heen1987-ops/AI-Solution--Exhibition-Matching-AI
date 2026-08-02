@@ -1,0 +1,139 @@
+{
+  "schema_version": "constraint-shadow-gate-fixture-v1.0",
+  "fixture_version": "constraint-shadow-gate-fixture-2026-08-03",
+  "source_policy_versions": [
+    "candidate-observation-adapter-v1.0",
+    "hard-filter-shadow-v1.0"
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "ready-for-change-request-not-enforcement",
+      "sample_window_ref": "fixture:ready-window",
+      "state_counts": {
+        "PARITY": 975,
+        "SAFETY_GAP": 25,
+        "DIVERGENCE": 0,
+        "NOT_COMPARABLE": 100,
+        "NOT_APPLICABLE": 50,
+        "ADAPTER_ERROR": 0
+      },
+      "safety_gap_reason_counts": {
+        "LEGACY_PASSED_INFORMATION_REQUIRED": 20,
+        "LEGACY_PASSED_PROJECTED_VIOLATION": 5
+      },
+      "regression_evidence_refs": ["report:full-regression-20260803"],
+      "rollback_evidence_refs": ["runbook:constraint-shadow-rollback-v1"],
+      "safety_gap_review_evidence_refs": ["report:safety-gap-review-20260803"],
+      "expected_outcome": "PASS",
+      "expected_blockers": [],
+      "expected_comparable_sample_count": 1000,
+      "expected_change_request_ready": true
+    },
+    {
+      "scenario_id": "divergence-always-blocks",
+      "sample_window_ref": "fixture:divergence-window",
+      "state_counts": {
+        "PARITY": 999,
+        "SAFETY_GAP": 0,
+        "DIVERGENCE": 1,
+        "NOT_COMPARABLE": 0,
+        "NOT_APPLICABLE": 0,
+        "ADAPTER_ERROR": 0
+      },
+      "safety_gap_reason_counts": {},
+      "regression_evidence_refs": ["report:full-regression-20260803"],
+      "rollback_evidence_refs": ["runbook:constraint-shadow-rollback-v1"],
+      "safety_gap_review_evidence_refs": [],
+      "expected_outcome": "FAIL",
+      "expected_blockers": ["DIVERGENCE_PRESENT"],
+      "expected_comparable_sample_count": 1000,
+      "expected_change_request_ready": false
+    },
+    {
+      "scenario_id": "adapter-error-always-blocks",
+      "sample_window_ref": "fixture:adapter-error-window",
+      "state_counts": {
+        "PARITY": 999,
+        "SAFETY_GAP": 0,
+        "DIVERGENCE": 0,
+        "NOT_COMPARABLE": 0,
+        "NOT_APPLICABLE": 0,
+        "ADAPTER_ERROR": 1
+      },
+      "safety_gap_reason_counts": {},
+      "regression_evidence_refs": ["report:full-regression-20260803"],
+      "rollback_evidence_refs": ["runbook:constraint-shadow-rollback-v1"],
+      "safety_gap_review_evidence_refs": [],
+      "expected_outcome": "FAIL",
+      "expected_blockers": ["ADAPTER_ERROR_PRESENT"],
+      "expected_comparable_sample_count": 1000,
+      "expected_change_request_ready": false
+    },
+    {
+      "scenario_id": "small-sample-and-missing-evidence",
+      "sample_window_ref": "fixture:small-window",
+      "state_counts": {
+        "PARITY": 999,
+        "SAFETY_GAP": 0,
+        "DIVERGENCE": 0,
+        "NOT_COMPARABLE": 0,
+        "NOT_APPLICABLE": 0,
+        "ADAPTER_ERROR": 0
+      },
+      "safety_gap_reason_counts": {},
+      "regression_evidence_refs": [],
+      "rollback_evidence_refs": [],
+      "safety_gap_review_evidence_refs": [],
+      "expected_outcome": "INSUFFICIENT_EVIDENCE",
+      "expected_blockers": [
+        "MINIMUM_RUNTIME_SAMPLE_NOT_MET",
+        "REGRESSION_EVIDENCE_REQUIRED",
+        "ROLLBACK_EVIDENCE_REQUIRED"
+      ],
+      "expected_comparable_sample_count": 999,
+      "expected_change_request_ready": false
+    },
+    {
+      "scenario_id": "safety-gap-review-is-required",
+      "sample_window_ref": "fixture:unreviewed-safety-window",
+      "state_counts": {
+        "PARITY": 990,
+        "SAFETY_GAP": 10,
+        "DIVERGENCE": 0,
+        "NOT_COMPARABLE": 0,
+        "NOT_APPLICABLE": 0,
+        "ADAPTER_ERROR": 0
+      },
+      "safety_gap_reason_counts": {
+        "LEGACY_PASSED_INFORMATION_REQUIRED": 10
+      },
+      "regression_evidence_refs": ["report:full-regression-20260803"],
+      "rollback_evidence_refs": ["runbook:constraint-shadow-rollback-v1"],
+      "safety_gap_review_evidence_refs": [],
+      "expected_outcome": "INSUFFICIENT_EVIDENCE",
+      "expected_blockers": ["SAFETY_GAP_REVIEW_REQUIRED"],
+      "expected_comparable_sample_count": 1000,
+      "expected_change_request_ready": false
+    },
+    {
+      "scenario_id": "not-comparable-does-not-inflate-runtime-sample",
+      "sample_window_ref": "fixture:not-comparable-window",
+      "state_counts": {
+        "PARITY": 999,
+        "SAFETY_GAP": 0,
+        "DIVERGENCE": 0,
+        "NOT_COMPARABLE": 1000,
+        "NOT_APPLICABLE": 0,
+        "ADAPTER_ERROR": 0
+      },
+      "safety_gap_reason_counts": {},
+      "regression_evidence_refs": ["report:full-regression-20260803"],
+      "rollback_evidence_refs": ["runbook:constraint-shadow-rollback-v1"],
+      "safety_gap_review_evidence_refs": [],
+      "expected_outcome": "INSUFFICIENT_EVIDENCE",
+      "expected_blockers": ["MINIMUM_RUNTIME_SAMPLE_NOT_MET"],
+      "expected_comparable_sample_count": 999,
+      "expected_change_request_ready": false
+    }
+  ]
+}

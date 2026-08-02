@@ -708,7 +708,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-009]
     owned_paths:
       - "src/meet_ai/evaluation/**"
@@ -722,6 +722,8 @@ tasks:
       - "Publish a reproducible offline gate over fixed fixtures and runtime-safe aggregate inputs"
       - "Do not enable three-state enforcement or change the published weighted-v1 rank until a separate approved promotion decision"
       - "Record the minimum runtime sample and rollback evidence required for a later enforcement Change Request"
+
+    evidence: "constraint-shadow-gate-command/result-v1.0 and constraint-shadow-promotion-gate-v1.0 aggregate de-duplicated runtime-safe state/reason counts only. Any DIVERGENCE or ADAPTER_ERROR fails; 1,000 comparable unique results plus regression, rollback, and safety-gap review evidence are required for Change Request readiness. Enforcement remains false. Six fixtures pass; focused 25 passed, root 72 passed, backend 219 passed/2 skipped."
 
   - id: BACKEND-011
     title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿

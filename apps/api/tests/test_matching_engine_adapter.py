@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 from app.services.matching.constraint_shadow import (
     HARD_FILTER_SHADOW_ENFORCEMENT,
+    build_runtime_constraint_shadow_gate_command,
     evaluate_runtime_constraint_shadow,
+    evaluate_runtime_constraint_shadow_gate,
     map_candidate_observations,
     project_runtime_profile,
 )
@@ -30,6 +32,15 @@ from app.services.matching.types import (
 )
 
 from meet_ai.engine import CatalogSearchSignals, MatchingMode
+from meet_ai.evaluation import (
+    MINIMUM_RUNTIME_COMPARABLE_SAMPLE,
+    ConstraintShadowGateCommand,
+    ConstraintShadowGateValidationError,
+    ConstraintShadowReasonCount,
+    ConstraintShadowState,
+    ConstraintShadowStateCount,
+    evaluate_constraint_shadow_gate,
+)
 from meet_ai.scoring import EligibilityDecision
 
 
@@ -46,6 +57,9 @@ RUNTIME_SHADOW_PAYLOAD = json.loads(
     RUNTIME_SHADOW_FIXTURE.read_text(encoding="utf-8")
 )
 RUNTIME_SHADOW_SCENARIOS = RUNTIME_SHADOW_PAYLOAD["scenarios"]
+SHADOW_GATE_FIXTURE = _fixture("constraint-shadow-gate.v1.json")
+SHADOW_GATE_PAYLOAD = json.loads(SHADOW_GATE_FIXTURE.read_text(encoding="utf-8"))
+SHADOW_GATE_SCENARIOS = SHADOW_GATE_PAYLOAD["scenarios"]
 
 
 def test_backend_catalog_adapter_uses_common_facade_policy() -> None:
@@ -497,3 +511,128 @@ def test_profile_without_hard_conditions_is_explicitly_not_applicable() -> None:
     assert shadow.parity_state is ShadowParityState.NOT_APPLICABLE
     assert shadow.projected_outcome is None
     assert shadow.reason_codes == ("NO_PROJECTED_HARD_CONSTRAINTS",)
+
+
+def _shadow_gate_command(scenario: dict[str, object]) -> ConstraintShadowGateCommand:
+    raw_state_counts = scenario["state_counts"]
+    raw_reason_counts = scenario["safety_gap_reason_counts"]
+    assert isinstance(raw_state_counts, dict)
+    assert isinstance(raw_reason_counts, dict)
+    return ConstraintShadowGateCommand(
+        sample_window_ref=str(scenario["sample_window_ref"]),
+        state_counts=tuple(
+            ConstraintShadowStateCount(ConstraintShadowState(state), int(count))
+            for state, count in raw_state_counts.items()
+        ),
+        safety_gap_reason_counts=tuple(
+            ConstraintShadowReasonCount(reason_code, int(count))
+            for reason_code, count in raw_reason_counts.items()
+        ),
+        source_policy_versions=tuple(SHADOW_GATE_PAYLOAD["source_policy_versions"]),
+        regression_evidence_refs=tuple(scenario["regression_evidence_refs"]),
+        rollback_evidence_refs=tuple(scenario["rollback_evidence_refs"]),
+        safety_gap_review_evidence_refs=tuple(
+            scenario["safety_gap_review_evidence_refs"]
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    SHADOW_GATE_SCENARIOS,
+    ids=[item["scenario_id"] for item in SHADOW_GATE_SCENARIOS],
+)
+def test_constraint_shadow_gate_fixture_is_reproducible_and_fail_closed(
+    scenario: dict[str, object],
+) -> None:
+    assert (
+        SHADOW_GATE_PAYLOAD["schema_version"]
+        == "constraint-shadow-gate-fixture-v1.0"
+    )
+    command = _shadow_gate_command(scenario)
+    result = evaluate_constraint_shadow_gate(command)
+    reordered = ConstraintShadowGateCommand(
+        sample_window_ref=command.sample_window_ref,
+        state_counts=tuple(reversed(command.state_counts)),
+        safety_gap_reason_counts=tuple(reversed(command.safety_gap_reason_counts)),
+        source_policy_versions=tuple(reversed(command.source_policy_versions)),
+        regression_evidence_refs=tuple(reversed(command.regression_evidence_refs)),
+        rollback_evidence_refs=tuple(reversed(command.rollback_evidence_refs)),
+        safety_gap_review_evidence_refs=tuple(
+            reversed(command.safety_gap_review_evidence_refs)
+        ),
+    )
+    repeated = evaluate_constraint_shadow_gate(reordered)
+
+    assert result.outcome.value == scenario["expected_outcome"]
+    assert list(result.blocker_reason_codes) == scenario["expected_blockers"]
+    assert result.comparable_sample_count == scenario["expected_comparable_sample_count"]
+    assert result.change_request_ready is scenario["expected_change_request_ready"]
+    assert result.enforcement_allowed is False
+    assert result.minimum_runtime_comparable_sample == 1000
+    assert result.input_fingerprint == repeated.input_fingerprint
+    assert result.result_fingerprint == repeated.result_fingerprint
+
+
+def test_runtime_shadow_gate_adapter_aggregates_without_candidate_data() -> None:
+    subject = _subject()
+    profile = _buyer_profile(subject)
+    shadow = _evaluate_shadow(
+        _exhibitor_candidate("NEGOTIABLE"), profile, subject
+    ).constraint_shadow[0]
+    shadows = (shadow,) * MINIMUM_RUNTIME_COMPARABLE_SAMPLE
+
+    command = build_runtime_constraint_shadow_gate_command(
+        shadows,
+        sample_window_ref="runtime:20260803-window-001",
+        regression_evidence_refs=("report:backend-regression-20260803",),
+        rollback_evidence_refs=("runbook:constraint-shadow-rollback-v1",),
+        safety_gap_review_evidence_refs=("report:safety-gap-review-20260803",),
+    )
+    result = evaluate_runtime_constraint_shadow_gate(
+        shadows,
+        sample_window_ref="runtime:20260803-window-001",
+        regression_evidence_refs=("report:backend-regression-20260803",),
+        rollback_evidence_refs=("runbook:constraint-shadow-rollback-v1",),
+        safety_gap_review_evidence_refs=("report:safety-gap-review-20260803",),
+    )
+    serialized = json.dumps(result.to_dict(), sort_keys=True)
+
+    assert result.outcome.value == "INSUFFICIENT_EVIDENCE"
+    assert result.change_request_ready is False
+    assert result.enforcement_allowed is False
+    assert sum(item.count for item in command.state_counts) == 1
+    assert result.duplicate_shadow_count == 999
+    assert "MINIMUM_RUNTIME_SAMPLE_NOT_MET" in result.blocker_reason_codes
+    assert shadow.candidate_ref not in serialized
+    assert "NEGOTIABLE" not in serialized
+    assert "supply_profile" not in serialized
+
+
+def test_constraint_shadow_gate_rejects_incomplete_or_unsafe_aggregates() -> None:
+    with pytest.raises(
+        ConstraintShadowGateValidationError,
+        match="cover every shadow state",
+    ):
+        ConstraintShadowGateCommand(
+            sample_window_ref="fixture:invalid",
+            state_counts=(
+                ConstraintShadowStateCount(ConstraintShadowState.PARITY, 1),
+            ),
+            safety_gap_reason_counts=(),
+            source_policy_versions=("hard-filter-shadow-v1.0",),
+        )
+
+    with pytest.raises(
+        ConstraintShadowGateValidationError,
+        match="opaque reference",
+    ):
+        ConstraintShadowGateCommand(
+            sample_window_ref="visitor@example.com",
+            state_counts=tuple(
+                ConstraintShadowStateCount(state, 0)
+                for state in ConstraintShadowState
+            ),
+            safety_gap_reason_counts=(),
+            source_policy_versions=("hard-filter-shadow-v1.0",),
+        )

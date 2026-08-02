@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
@@ -32,10 +33,20 @@ from meet_ai.engine import (
     normalize_canonical_profile_intent,
     project_intent,
 )
+from meet_ai.evaluation.constraint_shadow import (
+    ConstraintShadowGateCommand,
+    ConstraintShadowGateResult,
+    ConstraintShadowReasonCount,
+    ConstraintShadowState,
+    ConstraintShadowStateCount,
+    evaluate_constraint_shadow_gate,
+)
 
 CANDIDATE_OBSERVATION_ADAPTER_VERSION = "candidate-observation-adapter-v1.0"
 HARD_FILTER_SHADOW_VERSION = "hard-filter-shadow-v1.0"
 HARD_FILTER_SHADOW_ENFORCEMENT = False
+
+_SHA256_HEX = frozenset("0123456789abcdef")
 
 _REQUIRED_LEVELS = frozenset({"REQUIRED", "MUST"})
 _PREFERRED_LEVELS = frozenset({"PREFERRED", "HIGH", "HIGHEST"})
@@ -505,3 +516,78 @@ def evaluate_runtime_constraint_shadow(
             )
         )
     return tuple(results)
+
+
+def build_runtime_constraint_shadow_gate_command(
+    shadows: Sequence[CandidateHardFilterShadow],
+    *,
+    sample_window_ref: str,
+    regression_evidence_refs: Sequence[str] = (),
+    rollback_evidence_refs: Sequence[str] = (),
+    safety_gap_review_evidence_refs: Sequence[str] = (),
+) -> ConstraintShadowGateCommand:
+    """Reduce candidate shadows to the privacy-safe aggregate gate contract."""
+
+    state_counts: Counter[str] = Counter()
+    safety_reason_counts: Counter[str] = Counter()
+    seen_fingerprints: set[str] = set()
+    duplicate_shadow_count = 0
+    for shadow in shadows:
+        if shadow.contract_version != HARD_FILTER_SHADOW_VERSION:
+            raise ValueError("shadow contract version mismatch")
+        if shadow.adapter_version != CANDIDATE_OBSERVATION_ADAPTER_VERSION:
+            raise ValueError("shadow adapter version mismatch")
+        if shadow.enforcement_enabled:
+            raise ValueError("enforced shadow results cannot enter the offline gate")
+        if (
+            len(shadow.shadow_fingerprint) != 64
+            or not set(shadow.shadow_fingerprint) <= _SHA256_HEX
+        ):
+            raise ValueError("shadow fingerprint must be lowercase SHA-256 hex")
+        if shadow.shadow_fingerprint in seen_fingerprints:
+            duplicate_shadow_count += 1
+            continue
+        seen_fingerprints.add(shadow.shadow_fingerprint)
+        state_counts[shadow.parity_state.value] += 1
+        if shadow.parity_state is ShadowParityState.SAFETY_GAP:
+            safety_reason_counts.update(shadow.reason_codes)
+
+    return ConstraintShadowGateCommand(
+        sample_window_ref=sample_window_ref,
+        state_counts=tuple(
+            ConstraintShadowStateCount(state, state_counts[state.value])
+            for state in ConstraintShadowState
+        ),
+        safety_gap_reason_counts=tuple(
+            ConstraintShadowReasonCount(reason_code, count)
+            for reason_code, count in sorted(safety_reason_counts.items())
+        ),
+        source_policy_versions=(
+            CANDIDATE_OBSERVATION_ADAPTER_VERSION,
+            HARD_FILTER_SHADOW_VERSION,
+        ),
+        duplicate_shadow_count=duplicate_shadow_count,
+        regression_evidence_refs=tuple(regression_evidence_refs),
+        rollback_evidence_refs=tuple(rollback_evidence_refs),
+        safety_gap_review_evidence_refs=tuple(safety_gap_review_evidence_refs),
+    )
+
+
+def evaluate_runtime_constraint_shadow_gate(
+    shadows: Sequence[CandidateHardFilterShadow],
+    *,
+    sample_window_ref: str,
+    regression_evidence_refs: Sequence[str] = (),
+    rollback_evidence_refs: Sequence[str] = (),
+    safety_gap_review_evidence_refs: Sequence[str] = (),
+) -> ConstraintShadowGateResult:
+    """Evaluate runtime-safe aggregates; never authorize enforcement directly."""
+
+    command = build_runtime_constraint_shadow_gate_command(
+        shadows,
+        sample_window_ref=sample_window_ref,
+        regression_evidence_refs=regression_evidence_refs,
+        rollback_evidence_refs=rollback_evidence_refs,
+        safety_gap_review_evidence_refs=safety_gap_review_evidence_refs,
+    )
+    return evaluate_constraint_shadow_gate(command)
