@@ -347,8 +347,20 @@ tasks:
     wave: 1
     track: BACKEND
     priority: P0
-    status: READY
+    status: DONE
     depends_on: []
+    completed_note: >
+      /health/live·/health/ready(실제 Postgres+Redis 확인, S3는 TCP reachability만+
+      READY_CHECK_FAILS_ON_S3_DOWN 분기)·/api/v1/system/info 구현, 기존 /healthz는
+      다른 곳(README/quality-gates.yaml)이 참조 중이라 유지. apps/worker는 RQ 채택
+      (Celery 대비 Redis 하나로 충분, 근거 문서화) - 큐 연결·샘플 태스크·재시도
+      정책(max 3, backoff)·구조화 로그·smoke 스크립트, 실제 Redis로 5건 테스트 통과.
+      backend 회귀 90 passed/11 skipped(변화 없음). 테스트 작성 중 실제 버그 발견
+      (get_settings lru_cache를 monkeypatch 이후에 clear해야 하는 순서 문제) -
+      즉시 수정. backend/tests/**가 QA_SECURITY 전속이라 헬스체크 테스트 파일은
+      직접 커밋하지 않고 .harness/handoffs/qa/BAC-001-test-request.md에 전체 소스+
+      검증결과를 남겨 핸드오프(QAS-006으로 등록). 핸드오프:
+      .harness/handoffs/backend/BAC-001-{health,worker}.md.
     owned_paths:
       - "backend/app/main.py"
       - "backend/app/api/**"
@@ -478,6 +490,20 @@ tasks:
     acceptance:
       - "WAVE-1 §12.1 항목 자동화: OpenAPI Syntax, operationId 중복, Schema 참조, 오류응답 구조, 온톨로지 YAML, 이벤트 Catalog, 오류코드 중복, DB Migration Upgrade/Downgrade"
       - "infra/scripts/validate-harness와 중복되지 않게 역할 분리(validate-harness는 하네스 자체, 이 태스크는 계약 내용)"
+
+  - id: QAS-006
+    title: BAC-001 헬스체크 API 테스트 반영 (backend/tests/test_health_api.py)
+    wave: 1
+    track: QA_SECURITY
+    priority: P1
+    status: READY
+    depends_on: ["BAC-001"]
+    owned_paths:
+      - "backend/tests/test_health_api.py"
+    acceptance:
+      - ".harness/handoffs/backend/BAC-001-test-request.md(또는 qa/BAC-001-test-request.md)에 담긴 검증된 테스트 소스를 backend/tests/에 실제로 커밋"
+      - "pytest 재실행으로 6 passed/1 skipped(Postgres 없는 환경) 확인"
+    note: "BAC-001이 locks.yaml 소유권 원칙을 지켜 직접 커밋하지 않고 넘긴 케이스 - 코드 재작성 없이 그대로 반영하면 됨."
 
   - id: QAS-004
     title: 프런트 기본 E2E 하네스 (Playwright smoke)

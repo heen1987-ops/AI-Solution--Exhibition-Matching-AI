@@ -5,7 +5,6 @@
   "current_gate": "G0_BOOTSTRAP",
   "gate_status": "IN_PROGRESS",
   "active_tasks": [
-    "BAC-001",
     "CTR-002",
     "CTR-003",
     "CTR-004",
@@ -26,7 +25,8 @@
     "AIS-002",
     "ADM-001",
     "KSK-001",
-    "WEB-001"
+    "WEB-001",
+    "BAC-001"
   ],
   "blocked_tasks": [
     "FND-004 (Docker unavailable in this execution environment)"

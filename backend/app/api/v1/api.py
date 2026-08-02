@@ -15,7 +15,8 @@ app.main은 이 모듈의 api_router를 settings.API_V1_PREFIX(기본 /api/v1)�
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import ontology
+from app.api.v1.endpoints import ontology, system
 
 api_router = APIRouter()
 api_router.include_router(ontology.router, prefix="/ontology", tags=["ontology"])
+api_router.include_router(system.router, prefix="/system", tags=["system"])

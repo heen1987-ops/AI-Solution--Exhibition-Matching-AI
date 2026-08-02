@@ -31,6 +31,7 @@ FORBIDDEN_PATTERNS: dict[str, str] = {
 
 EXCLUDED_DIR_PARTS = {
     ".git", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".tmp-venv",
+    ".venv", "venv", "site-packages",  # 로컬 스크래치 가상환경·설치된 서드파티 패키지
     # 빌드 산출물 - 사람이 작성한 코드가 아니라 컴파일러가 주석·코드를 뒤섞어 재배치한
     # 결과물이라 코멘트 스트리핑으로 오탐을 걸러낼 수 없다. 소스 파일 자체를 검사하므로
     # 여기서 제외해도 실제 코드 검사 커버리지에는 영향이 없다.

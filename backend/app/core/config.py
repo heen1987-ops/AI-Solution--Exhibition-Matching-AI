@@ -52,6 +52,19 @@ class Settings(BaseSettings):
     # 세션, 속도 제한, 추천 캐시, 부스상태 캐시 (db-erd-table-spec.md 3절)
     REDIS_URL: str = Field(default="redis://localhost:6379/0")
 
+    # --- S3 호환 Object Storage (로컬은 docker-compose.yml의 MinIO) ---
+    # 업체자료 원본 저장(ai.source_document, C-2 문서)에 사용 예정 - 이번 Wave는 연결
+    # 설정과 /health/ready 도달성 체크만 다루고, 실제 업로드 로직은 없다.
+    S3_ENDPOINT: str = Field(default="http://localhost:9000")
+    S3_BUCKET: str = Field(default="backju-dev")
+    S3_ACCESS_KEY: str = Field(default="minioadmin")
+    S3_SECRET_KEY: str = Field(default="minioadmin")
+
+    # /health/ready에서 MinIO(S3) 장애를 전체 실패로 처리할지 여부. 기본값 false =
+    # MinIO 장애는 checks.s3="warning"으로만 보고하고 PostgreSQL/Redis만 정상이면
+    # 전체 status는 "degraded"를 유지한다(완전 실패로 보지 않는다).
+    READY_CHECK_FAILS_ON_S3_DOWN: bool = Field(default=False)
+
     # --- CORS ---
     # 개발 환경에서는 전체 허용(main.py 참고). 운영 환경은 콤마로 구분된 origin 목록을 지정한다.
     CORS_ORIGINS: str = Field(default="*", description="콤마(,)로 구분된 허용 origin 목록, 기본값 전체 허용")
