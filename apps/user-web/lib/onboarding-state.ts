@@ -60,9 +60,17 @@ export interface OnboardingState {
 
 const STORAGE_KEY = "baekju.onboarding.state.v1";
 
-/** 인터페이스 명세 7.1절 예시 값. 실제 행사 ID는 배포 환경변수로 대체한다. */
-export const DEFAULT_EVENT_ID = "evt_backju_2026";
-export const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID ?? DEFAULT_EVENT_ID;
+/** 배포에서는 반드시 실제 UUID를 지정한다. nil UUID는 빌드 시 타입 안전성을 위한 값이다. */
+export const DEFAULT_EVENT_ID = "00000000-0000-0000-0000-000000000000";
+const CONFIGURED_EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID?.trim();
+export const EVENT_ID = CONFIGURED_EVENT_ID || DEFAULT_EVENT_ID;
+export const EVENT_ID_IS_CONFIGURED = Boolean(
+  CONFIGURED_EVENT_ID &&
+    CONFIGURED_EVENT_ID !== DEFAULT_EVENT_ID &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      CONFIGURED_EVENT_ID,
+    ),
+);
 
 /** 인터페이스 명세 7.4절 예시의 동의 문서 버전. TODO(운영팀이 실제 약관 버전 관리 체계를
  * 확정하면 배포 설정값으로 교체). */

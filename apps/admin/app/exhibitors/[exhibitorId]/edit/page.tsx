@@ -97,7 +97,7 @@ export default function EditExhibitorPage() {
             </p>
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">
               법인명은 원천 신뢰가 필요해 이 화면에서 바꿀 수 없습니다(업체 등록 화면의 배치
-              import를 통해서만 변경). 08 문서 31.1절 "업체·운영자 충돌" 원칙에 따라, 이 폼을
+              import를 통해서만 변경). 08 문서 31.1절 ‘업체·운영자 충돌’ 원칙에 따라, 이 폼을
               저장하면 승인상태가 DRAFT로 되돌아가 재검수가 필요합니다.
             </p>
           </div>

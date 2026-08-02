@@ -8,7 +8,8 @@
  * - `사전등록 정보 불러오기`: 서명 링크 확인 또는 휴대전화 OTP. 이 저장소는 아직 서명 링크
  *   검증 엔드포인트가 없어(7.2절 프로즈만 있고 링크형 검증 API는 명세에 없음) 휴대전화 OTP
  *   경로만 실제로 구현한다. OTP 검증 성공 후 세션을 만들고 다음 단계(U-02)로 보낸다.
- * - `로그인 없이 둘러보기`: 개인화 온보딩 없이 일반 탐색으로 보낸다 (`/explore`, 4.1절).
+ * - `로그인 없이 둘러보기`: 세션·프로파일 생성 없이 GUEST_WEB 탐색으로 보낸다
+ *   (`/explore`, CR-009). 검색은 회원가입의 선행조건이 아니다.
  *
  * 6.1절 상태모델의 시작점(`anonymous`)에 해당한다.
  */
@@ -78,17 +79,10 @@ export default function StartPage() {
     }
   }
 
-  async function handleBrowseWithoutLogin() {
+  function handleBrowseWithoutLogin() {
     setBusy("browse");
     setErrorMessage(null);
-    try {
-      await startAnonymousSession();
-      router.push("/explore");
-    } catch (error) {
-      setErrorMessage(friendlyErrorMessage(error));
-    } finally {
-      setBusy("none");
-    }
+    router.push("/explore");
   }
 
   async function handleRequestOtp() {

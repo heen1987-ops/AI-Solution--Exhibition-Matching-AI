@@ -39,6 +39,7 @@ npm run dev
 | 변수 | 설명 |
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | 백엔드 API 오리진(예: `http://localhost:8000`). 비우면 같은 오리진 상대경로(`/api/v1/...`)로 호출한다. |
+| `NEXT_PUBLIC_EVENT_ID` | 검색·추천 대상 행사의 UUID. 배포 시 필수이며 미설정/형식 오류이면 게스트 검색은 fail-closed로 안내한다. |
 
 ## 디렉터리 구조
 

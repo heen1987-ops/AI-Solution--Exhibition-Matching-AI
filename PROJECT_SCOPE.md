@@ -1,26 +1,35 @@
 # Project Scope
 
-> Canonical scope contract for the parallel-development harness. See
-> [docs/vibe-coding-master-spec-v1.md](./docs/vibe-coding-master-spec-v1.md) for full detail and
-> [docs/redesign-web-kiosk-split.md](./docs/redesign-web-kiosk-split.md) for the pivot rationale.
+> Canonical scope contract for the parallel-development harness. The web-first pivot is approved
+> in CR-009 and supersedes the earlier web/kiosk split wherever the documents disagree.
 
 ## One-line definition
 
-For pre-registered users and buyers: proactive, personalized exhibitor/booth recommendations
-based on registration data and interests. For unregistered on-site visitors: anonymous
-natural-language search via kiosk (or a QR-handed-off guest web view) for exhibitors/booths
-matching their current interest. A web/kiosk-split AI matching & discovery service.
+A mobile-first web service that connects pre-registered visitors, anonymous on-site guests,
+verified buyers, exhibitors, and event operators to one deterministic AI matching and discovery
+engine without requiring an app installation or dedicated kiosk hardware.
 
-## Three modules
+## Active service channels
 
-1. **Web personalization module** (pre-registered general users + buyers) — persistent profile,
-   proactive recommendations, favorites, buyer↔exhibitor matching, lightweight meeting requests.
-2. **Kiosk portable search module** (anonymous on-site visitors) — no login, no long-lived
-   profile, natural-language/category search, exhibitor/booth results, map, QR handoff to
-   mobile, auto session reset.
-3. **Common AI/data platform** — exhibitor/booth/product data, interest ontology, NL query
-   analysis, hybrid (keyword+vector) search, ranking, recommendation-reason generation,
-   exhibitor-content AI structuring, approval workflow, basic stats, auth/audit.
+1. **REGISTERED_WEB** — persistent profile, proactive recommendations, favorites, visit planning.
+2. **GUEST_WEB** — anonymous natural-language/category search, exhibitor/product/booth detail,
+   map access, and optional later account linkage. Search is never gated by signup.
+3. **BUYER_WEB** — verified buyer profile, hard-condition matching, comparison, and meeting request.
+4. **ADMIN_PARTNER_WEB** — exhibitor content submission and operator review/approval/operations.
+
+`KIOSK` is not an active MVP or v1.x channel. QR codes on event entrances, badges, printed maps,
+and booth materials are entry links to `GUEST_WEB`; they are not kiosk handoff tokens.
+
+## Two modules
+
+1. **Web service module** — the four active channels above, implemented primarily in
+   `apps/user-web` and `apps/admin` and backed by `apps/api`.
+2. **Common AI/data platform** — canonical exhibitor/product/booth data, ontology, natural-language
+   intent normalization, keyword+vector retrieval, deterministic ranking, grounded reasons,
+   document structuring proposals, approval workflow, and quality evaluation.
+
+The matching engine remains channel-independent. Web surfaces consume its versioned contracts and
+must not recreate score formulas or infer missing facts.
 
 ## Fixed tech stack (do not swap without an ADR)
 
@@ -32,37 +41,51 @@ matching their current interest. A web/kiosk-split AI matching & discovery servi
 
 ## Applications
 
-| App | Owner track | Users |
-|---|---|---|
-| `apps/api` | BACKEND | all |
-| `apps/user-web` | USER_WEB | pre-registered users, buyers, QR guests |
-| `apps/kiosk` | KIOSK | anonymous on-site visitors |
-| `apps/admin` | ADMIN | event operators, exhibitor admins, data reviewers |
-| `apps/worker` | BACKEND | document structuring, embeddings, notifications, aggregation |
+| App | Status | Owner track | Users |
+|---|---|---|---|
+| `apps/api` | active | BACKEND | all active web channels |
+| `apps/user-web` | active | USER_WEB | registered visitors, guests, buyers |
+| `apps/admin` | active, auth-gated | ADMIN | event operators, exhibitor admins, reviewers |
+| `apps/worker` | planned | BACKEND | document, embedding, notification, aggregation jobs |
+| `apps/kiosk` | inactive compatibility source | KIOSK | no active deployment or release target |
 
-`apps/api` and `apps/user-web` were physically migrated from the legacy `backend/`/`frontend/`
-directory names on 2026-08-02 (pnpm workspace adoption, DECISION-006). Full monorepo now uses
-`pnpm-workspace.yaml` (`apps/*`, `packages/*`).
+The existing kiosk source and API are retained temporarily as reversible compatibility assets.
+They receive no feature development and are excluded from default root validation/build commands.
+Removal of the frozen kiosk API and stored records requires a separate compatibility migration.
 
-## Explicit exclusions (do not implement without an approved scope change)
+## Explicit exclusions
 
-Precise indoor navigation, real-time congestion prediction, real-time per-product inventory,
-long-term CRM, quotes/contracts/settlement, sample shipping management, complex meeting-room
-auto-assignment, real-time online learning / multi-armed bandit, dedicated vector DB, Kafka,
-complex microservice decomposition, large data warehouse, automatic model retraining/promotion,
-kiosk sign-up, kiosk long-term personalization, kiosk personal-data entry.
+Do not implement the following without an approved scope change:
 
-If you find yourself implementing any of the above "because it seemed useful," stop and record it
-in `.harness/expansion-candidates.md` instead.
+- Dedicated kiosk hardware, kiosk web runtime, kiosk deployment, kiosk configuration UI, or kiosk
+  session/handoff feature development
+- Native mobile app installation as a prerequisite
+- Precise indoor navigation, real-time congestion prediction, real-time per-product inventory
+- Long-term CRM, quotes/contracts/settlement, sample shipping management
+- Complex meeting-room auto-assignment, real-time online learning/multi-armed bandits
+- Dedicated vector database, Kafka, large warehouse, or premature microservice decomposition
+- Automatic model retraining/promotion
 
-## MVP completion criteria (summary — see master spec §55 for full detail)
+## Mandatory boundaries
 
-- **Web**: registered login, view/edit interests, personalized recommendations, NL search,
-  favorites, buyer exhibitor search/matching, simple meeting requests.
-- **Kiosk**: no signup required, NL/category search, exhibitor/booth results, detail + map,
-  QR handoff to mobile, session data wiped after close.
-- **Admin**: register/approve exhibitor+product+booth, manage interest-area codes, kiosk config,
-  booth operating status, basic search/recommendation stats + zero-result queries.
-- **AI**: NL query structured into allowed ontology codes, keyword+vector search combined,
-  recommendation/search reasons are grounded in real evidence, keyword search survives AI
-  outages, unapproved exhibitor data never used.
+- Only approved and currently participating exhibitor information reaches search or recommendation.
+- Hard filters execute before ranking; UNKNOWN is not silently converted to pass, mismatch, or zero.
+- AI output is a proposal until deterministic validation and the required human confirmation.
+- Contact details remain hidden until the exhibitor accepts a meeting request.
+- Guest web search requires no login, phone number, email address, or persistent personal profile.
+- Current query and explicit/confirmed profile data outrank weak behavioral signals.
+- Existing weighted-v1 public ranks remain authoritative until a separate promotion decision.
+
+## MVP completion criteria
+
+- **Registered web**: login/prefill, interests, personalized recommendations, natural-language
+  search, favorites, visit plan, and simple meeting requests.
+- **Guest web**: direct QR/URL entry, no-login natural-language/category search, approved exhibitor
+  and booth results, detail and map access, and optional later account linkage.
+- **Buyer web**: verified profile, MUST/PREFER/EXCLUDE conditions, hard-filtered exhibitor matching,
+  comparison, meeting request, and consent-gated contact sharing.
+- **Admin/partner web**: exhibitor/product/booth submission and approval, ontology management,
+  document extraction review, and basic search/recommendation/zero-result operations.
+- **AI engine**: shared natural-language and Excel-profile intent contract, keyword+vector candidate
+  retrieval, deterministic ranking, grounded reason claims, offline evaluation, and provider outage
+  fallback without relaxation of hard constraints.

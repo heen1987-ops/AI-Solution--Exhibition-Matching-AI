@@ -101,6 +101,8 @@ import type {
   UserTypeUpdateResponse,
   VisitPlanRequest,
   VisitPlanResponse,
+  WebSearchRequest,
+  WebSearchResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -346,6 +348,23 @@ export const apiPatch = <T>(path: string, body?: unknown, options?: RequestOptio
   apiRequest<T>("PATCH", path, body, options);
 export const apiDelete = <T>(path: string, options?: RequestOptions): Promise<T> =>
   apiRequest<T>("DELETE", path, undefined, options);
+
+/** Anonymous GUEST_WEB search. It uses only the approved public catalog and never requires login. */
+export function searchApprovedCatalog(
+  request: WebSearchRequest,
+  options?: RequestOptions,
+): Promise<WebSearchResponse> {
+  return apiPost<WebSearchResponse>(
+    "/search",
+    {
+      ...request,
+      channel: "WEB",
+      category_codes: request.category_codes ?? [],
+      limit: request.limit ?? 12,
+    },
+    options,
+  );
+}
 
 // ===========================================================================
 // 7절 세션·인증

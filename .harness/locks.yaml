@@ -39,7 +39,7 @@ ownership:
     - "apps/user-web/**"
 
   KIOSK:
-    - "apps/kiosk/**"    # net-new
+    - "apps/kiosk/**"    # CR-009 inactive compatibility source; no new feature work
 
   ADMIN:
     - "apps/admin/**"    # net-new

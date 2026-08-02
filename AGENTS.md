@@ -47,7 +47,7 @@ After an implementation unit passes relevant checks, commit it intentionally and
 This project is developed by multiple parallel agents/workers coordinated through a
 persistent harness in `.harness/`. Read these before any task:
 
-1. `PROJECT_SCOPE.md` — the three modules (web personalization / kiosk search / common AI platform), fixed tech stack, explicit exclusions.
+1. `PROJECT_SCOPE.md` — the active web channels and common AI platform, fixed tech stack, explicit exclusions.
 2. `.harness/state.json` — current wave/gate/task pointers.
 3. `.harness/backlog.yaml` — the task list.
 4. `.harness/locks.yaml` — which track owns which paths.
@@ -56,8 +56,11 @@ persistent harness in `.harness/`. Read these before any task:
 
 Full methodology (tracks, waves, quality gates, "다음"/status/verify/retry/rollback command
 protocol, worker prompt templates): [docs/harness-orchestrator-prompt-pack.md](./docs/harness-orchestrator-prompt-pack.md).
-Product scope pivot rationale: [docs/redesign-web-kiosk-split.md](./docs/redesign-web-kiosk-split.md) and
-[docs/vibe-coding-master-spec-v1.md](./docs/vibe-coding-master-spec-v1.md).
+Current product scope: [PROJECT_SCOPE.md](./PROJECT_SCOPE.md) and
+[.harness/handoffs/contracts/change-request-009-web-first-scope.md](./.harness/handoffs/contracts/change-request-009-web-first-scope.md).
+The older [docs/redesign-web-kiosk-split.md](./docs/redesign-web-kiosk-split.md) and
+[docs/vibe-coding-master-spec-v1.md](./docs/vibe-coding-master-spec-v1.md) are historical where they
+conflict with CR-009.
 
 ### Absolute rules
 
@@ -70,7 +73,7 @@ Product scope pivot rationale: [docs/redesign-web-kiosk-split.md](./docs/redesig
 - Never leave a temporary mock committed as if it were production code.
 - Trust only published contracts for other tracks' implementations — never guess.
 - Database schema changes go through Alembic migrations only, owned by the CONTRACTS track.
-- Kiosk builds collect no login, no personal data, no long-lived profile — verified by QA before release.
+- Dedicated kiosk runtime/deployment is excluded from MVP/v1.x. Retained kiosk source is compatibility-only and receives no feature work.
 - Meeting/contact details stay hidden until the exhibitor accepts a request.
 - Unapproved exhibitor data never reaches search or recommendation output.
 
@@ -80,9 +83,9 @@ Product scope pivot rationale: [docs/redesign-web-kiosk-split.md](./docs/redesig
 2026-08-02 (this superseded the earlier ASSUMPTION-001, which had deliberately kept the legacy
 names — see `.harness/assumptions.md` for that history). The repo now uses a pnpm workspace
 (`pnpm-workspace.yaml`: `apps/*`, `packages/*`) with all app names canonical:
-`apps/api`, `apps/user-web`, `apps/kiosk`, `apps/admin`, `apps/worker`. `apps/kiosk`, `apps/admin`,
-`apps/worker`, `ai/`, `packages/**` are still net-new (not yet created) — create them directly
-under their canonical paths when their backlog task starts.
+`apps/api`, `apps/user-web`, `apps/admin`, `apps/worker`. `apps/kiosk` exists only as an inactive
+compatibility source under CR-009; do not include it in the default release path. `apps/worker`,
+`ai/`, and parts of `packages/**` remain planned and should be created only by their backlog tasks.
 
 Two hardcoded-path bugs were found and fixed during the migration (Alembic DDL-file lookups and
 test `ROOT` path constants that assumed the old `backend/` nesting depth) — if you find another

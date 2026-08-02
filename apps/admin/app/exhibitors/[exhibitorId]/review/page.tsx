@@ -155,7 +155,7 @@ export default function ExhibitorReviewPage() {
                 <ErrorBanner error={reviewError} onRetry={loadReviewDetail} />
                 <p className="text-xs text-[var(--color-text-muted)]">
                   변경 이력(이전 버전) API가 없어 지금은 현재 값만 확인할 수 있습니다. 아래
-                  표의 "변경 전" 칸은 그 API가 구현되기 전까지 비어 있습니다.
+                  표의 ‘변경 전’ 칸은 그 API가 구현되기 전까지 비어 있습니다.
                 </p>
               </div>
             ) : null}

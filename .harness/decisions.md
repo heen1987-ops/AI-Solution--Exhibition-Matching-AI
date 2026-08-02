@@ -154,3 +154,17 @@ Candidate-level UNKNOWN and MISSING business signals are separate diagnostics an
 false, zero, or mismatch. Production promotion requires a separate versioned Change Request and
 larger labeled plus runtime-shadow evidence. See
 `.harness/reports/integration/hybrid-rrf-shadow-20260802.md`.
+
+## DECISION-014 (2026-08-02) — Web-first channels supersede the kiosk split
+
+CR-009 makes `REGISTERED_WEB`, `GUEST_WEB`, `BUYER_WEB`, and `ADMIN_PARTNER_WEB` the only active
+MVP/v1.x channels. Dedicated kiosk hardware/runtime/deployment is excluded. QR codes on entrances,
+badges, printed maps, and booths open `GUEST_WEB` directly; anonymous search cannot require signup
+or profile-session creation.
+
+The implemented kiosk source, API routes, stored records, and `/kiosk-handoff` are not deleted in
+this change. They remain inactive compatibility assets until a separate versioned OpenAPI/data
+removal decision defines retention and rollback. Default root validation/build excludes
+`backju-kiosk`. The matching engine remains channel-independent, and existing score, Hard Filter,
+UNKNOWN, approval, evidence, and contact-sharing contracts do not change. See
+`.harness/reports/integration/web-first-pivot-20260802.md`.

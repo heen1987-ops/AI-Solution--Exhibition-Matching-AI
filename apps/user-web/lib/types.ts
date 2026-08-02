@@ -81,6 +81,58 @@ export interface ApiSuccessEnvelope<T> {
   meta: ApiMeta;
 }
 
+// ---------------------------------------------------------------------------
+// Anonymous guest web search — POST /api/v1/search
+// ---------------------------------------------------------------------------
+
+export interface WebSearchRequest {
+  event_id: string;
+  query: string;
+  category_codes?: string[];
+  channel?: "WEB";
+  limit?: number;
+}
+
+export interface WebSearchInterpretedQuery {
+  intent: "SEARCH_EXHIBITOR";
+  concepts: string[];
+  fallback_mode: "KEYWORD";
+}
+
+export interface WebSearchResult {
+  result_id: string;
+  rank: number;
+  object_type: "EXHIBITOR";
+  exhibitor_id: string;
+  booth_id: string;
+  name: string;
+  booth_number: string;
+  zone_name: string | null;
+  summary: string | null;
+  product_names: string[];
+  reason: string;
+  concepts: string[];
+  operating_status: "OPEN" | "PAUSED";
+  estimated_wait_minutes: number | null;
+  map_x: number | null;
+  map_y: number | null;
+}
+
+export interface WebSearchClarification {
+  question: string;
+  options: string[];
+}
+
+export interface WebSearchResponse {
+  search_session_id: string;
+  channel: "WEB";
+  interpreted_query: WebSearchInterpretedQuery;
+  results: WebSearchResult[];
+  clarification: WebSearchClarification | null;
+  created_at: IsoDateTime;
+  expires_at: IsoDateTime;
+}
+
 export interface ApiErrorEnvelope {
   success: false;
   error: ApiErrorBody;

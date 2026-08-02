@@ -295,3 +295,23 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   golden set 3/3 PASS; Ruff, compileall, pip check, and diff check PASS.
 - AIENGINE-006 is next for a shared deterministic intent contract across natural-language queries
   and canonical Excel profiles. RRF production promotion remains change-controlled.
+
+## 2026-08-02 — CR-009 web-first pivot and GUEST_WEB search
+
+- Rechecked the living product-roadmap conversation. Applied the explicit decision that the event
+  has no dedicated intermediate kiosks and the service should be install-free, mobile-web first.
+- Approved CR-009 and replaced the canonical scope with four active channels:
+  REGISTERED_WEB, GUEST_WEB, BUYER_WEB, and ADMIN_PARTNER_WEB.
+- Completed FND-002 with a current repository architecture snapshot. Root scripts now exclude the
+  inactive `backju-kiosk` package while retaining its source/API/data compatibility for reversible,
+  separately versioned cleanup.
+- Implemented `/explore` over the existing public approved-catalog `/api/v1/search` WEB channel.
+  Anonymous browsing no longer creates a profile session, and missing event UUID configuration
+  fails closed before an invalid request.
+- Verified frozen install plus active user/admin lint, root typecheck, and production builds in a clean
+  NTFS workspace. `/explore` prerenders successfully. Browser inspection confirmed the labeled
+  search form, landmarks, 390 px geometry, configuration error boundary, and zero console errors.
+- Root deterministic tests passed `54`; backend passed `197` with the two existing PostgreSQL
+  integration skips.
+- The next engine task remains AIENGINE-006: one deterministic intent contract for natural-language
+  queries and canonical Excel profiles.
