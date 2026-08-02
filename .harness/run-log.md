@@ -174,3 +174,25 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
 - Verification: targeted semantic/recommendation tests `30 passed`; full backend `178 passed, 2
   skipped`; root deterministic scoring/ontology `24 passed`; targeted Ruff and diff checks pass.
   Live PostgreSQL/provider behavior remains part of the existing G3 operational validation.
+
+## 2026-08-02 — AIENGINE-002 golden set and offline evaluator
+
+- Published `matching-golden-set-v1` as a packaged JSON Schema plus a checked-in baseline covering
+  general visitor, buyer-to-exhibitor, and reciprocal matching. Each candidate fixes expected and
+  observed eligibility, recall channels, score inputs, relevance grade, allowed explanation codes,
+  and evidence references.
+- Added the provider/DB-independent `matching-evaluator-v1.0`. It recalculates scores only through
+  the published deterministic policies and reports Recall@K, NDCG@K, structured fallback recall,
+  Hard Filter admission/reason mismatches, explanation grounding, exhibitor concentration/HHI, and
+  stable input/scenario/result fingerprints.
+- The evaluator fails closed on policy/taxonomy drift, unknown recall channels, ineligible candidate
+  admission, missing/unapproved explanation evidence, fallback regression, ranking regression, and
+  concentration threshold breaches. `python -m meet_ai.evaluation` returns nonzero on regression.
+- Baseline: three scenarios PASS; Recall@3 `1.0`; NDCG@3 `1.0`; fallback Recall@3 `0.666667`;
+  Hard Filter, filter-decision, and explanation violations `0`; max exhibitor share `0.333333`.
+- Verification: root scoring/ontology/evaluation `35 passed`; backend `178 passed, 2 skipped`;
+  targeted Ruff, JSON parsing, editable package data, module CLI, and `pip check` pass. The generated
+  Windows console-wrapper executable was blocked by local Application Control, so the portable
+  `python -m` invocation is the verified local command.
+- This is a deterministic regression baseline, not a claim of production relevance. Human-judged
+  event data, real provider/pgvector recall, latency, cost, and ANN-vs-exact checks remain G3 work.

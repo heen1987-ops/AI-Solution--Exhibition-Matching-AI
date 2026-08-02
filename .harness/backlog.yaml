@@ -478,17 +478,38 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-001]
     owned_paths:
-      - "ai/evaluation/**"
-      - "apps/api/tests/fixtures/matching/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_evaluation.py"
       - ".harness/reports/integration/**"
     acceptance:
       - "일반 관람객·바이어·양면 매칭 대표 골든셋과 기대 Hard Filter 사유를 버전 관리"
       - "동일 입력·정책·택소노미에서 후보/점수/설명 지문 재현"
       - "Recall@K·NDCG@K·Hard Filter 위반 0건·업체 집중도 지표를 오프라인 산출"
       - "벡터 비활성/장애 시 구조화 fallback 품질과 회귀 임계값을 비교"
+    evidence: "matching-golden-set-v1 JSON Schema와 visitor/buyer/reciprocal 3개 시나리오, matching-evaluator-v1.0 CLI를 게시했다. 기준선 Recall@3=1.0, NDCG@3=1.0, fallback Recall@3=0.666667, 필터·설명 위반 0. root 35 passed, backend 178 passed/2 skipped."
+
+  - id: AIENGINE-003
+    title: 공통 매칭엔진 입출력 계약·실행 facade 분리
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-002]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "apps/api/app/services/matching/engine_adapter.py"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/test_matching_engine_facade.py"
+    acceptance:
+      - "카탈로그 검색·일반 추천·바이어·양면 모드의 버전 고정 command/result 계약 제공"
+      - "순수 facade는 FastAPI·SQLAlchemy·외부 AI 공급자에 의존하지 않음"
+      - "웹·키오스크 어댑터는 동일 정책을 호출하며 점수 산식을 재구현하지 않음"
+      - "eligibility 평가 ID, 택소노미·정책·모델 버전, 입력·결과 지문을 결과에 보존"
+      - "AIENGINE-002 골든셋이 facade 출력의 회귀 계약으로 동작"
 
   - id: QA-003
     title: Wave 2 계약·범위·보안 기준선 감사
