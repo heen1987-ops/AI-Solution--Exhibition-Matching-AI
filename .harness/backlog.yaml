@@ -278,10 +278,20 @@ tasks:
     wave: 1
     track: USER_WEB
     priority: P1
-    status: READY
+    status: DONE
     depends_on: ["FND-002"]
     owned_paths:
       - "apps/user-web/**"
+    completed_note: >
+      Next.js 16/TS strict/Tailwind 4, npm workspace @backju/user-web. '/','/health'
+      + W-3의 S-1~S-8 전체(Mock). loading/empty/error 상태 컴포넌트 공용화, 상담
+      수락 전 연락처 비공개 규칙(AGENTS.md §8)을 buyer-matching 목데이터·렌더링
+      양쪽에 반영. lint/test(9)/build 전부 통과 + 실제 브라우저 수동 스모크 테스트.
+      에이전트가 자체적으로 로컬 커밋(2ab9d34)까지 수행 - push는 하지 않음(정확한
+      판단, AGENTS.md §12 갱신 참고: 'exhibition' remote가 실재하지 않음을 이 작업
+      중 발견). 리스크: vitest 메이저 버전이 워크스페이스 전역에서 앱마다 다르게
+      호이스팅될 가능성 발견(risks.md RSK-006) - Wave 2 전 점검 필요.
+      핸드오프: .harness/handoffs/user-web/WEB-001.md.
     acceptance:
       - "docs/redesign-v2/web/W-3-screen-ia.md S-1~S-8 라우트가 Mock 데이터로 렌더링된다"
       - "실제 API를 호출하지 않는다(G1 이전 원칙)"
