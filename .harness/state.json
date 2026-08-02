@@ -14,6 +14,7 @@
     "CONTRACT-002",
     "CONTRACT-003",
     "CONTRACT-004",
+    "CONTRACT-006",
     "AISEARCH-001-INFORMAL",
     "BACKEND-001",
     "BACKEND-002",
@@ -50,16 +51,15 @@
   "blocked_tasks": [
     "BACKEND-007(BACKEND-010 의존)",
     "BACKEND-009(CONTRACT-005 의존)",
-    "BACKEND-010(CONTRACT-006 의존)",
     "ADMIN-001(실제 인증/MFA 필요)",
     "ADMIN-002(BACKEND-007 의존)",
     "QA-001(re-audit after CR-009 web-first pivot)"
   ],
-  "next_recommended_task": "CONTRACT-006 (freeze authentication, session, RBAC, and admin MFA boundaries before personal My Event links or Kakao delivery)",
-  "last_successful_run": "2026-08-03T01:35:49+09:00",
+  "next_recommended_task": "BACKEND-010 (implement CR-006 verified browser sessions/service JWT principal, scoped RBAC, personal-link exchange, and administrator MFA foundation)",
+  "last_successful_run": "2026-08-03T01:50:59+09:00",
   "scope_status": "LOCKED_WEB_FIRST_CR009",
   "contract_status": "FROZEN",
-  "mvp_progress_percent": 92,
+  "mvp_progress_percent": 93,
   "monorepo_migration": "DONE (DECISION-006, updated by CR-009): canonical apps/* pnpm workspace remains materialized. Active default validation/build covers apps/user-web and apps/admin; apps/kiosk is retained as inactive compatibility source and excluded by root scripts. Latest clean-NTFS active web typecheck/build and frozen install pass.",
   "notes": [
     "The approved 259-concept Backjudaegan alcohol ontology remains canonical (DECISION-004).",
@@ -88,6 +88,8 @@
     "AIENGINE-010 publishes constraint-shadow-promotion-gate-v1.0. Runtime-safe state and safety-gap reason aggregates de-duplicate retry fingerprints; any divergence or adapter error fails, and 1,000 comparable results plus regression, rollback, and gap-review evidence are required only to become Change Request ready. Enforcement remains false and weighted-v1 is unchanged.",
     "The common matching-engine stream now has deterministic intent, projection, three-state evaluation, runtime shadow comparison, and a promotion-evidence gate.",
     "FND-003 publishes read-only GitHub CI for root engine and backend tests plus CR-009 active-web lint, typecheck, tests, and builds. Dedicated kiosk remains outside the default CI path.",
-    "The living roadmap now emphasizes a mobile My Event HTML surface reached through Kakao notification links. CONTRACT-006 authentication/session boundaries are the next safe prerequisite; Kakao delivery and magic links are not implemented ahead of frozen contracts."
+    "The living roadmap emphasizes a mobile My Event HTML surface reached through Kakao notification links. CR-006 now freezes the safe personal-link exchange and verified session boundary; Kakao remains a delivery channel rather than an authenticator.",
+    "CR-006 publishes OpenAPI 0.2.0 with opaque Secure/HttpOnly browser sessions, short-lived service JWT verification, scoped EVENT_ADMIN/DATA_REVIEWER/EXHIBITOR_ADMIN grants, AAL2/fresh-MFA policy, generic link failures, and a fail-closed trusted-header transition.",
+    "Magic-link plus TOTP is not AAL2 because both prove possession. User-verifying multi-factor WebAuthn is preferred; TOTP requires an independently verified different primary factor. BACKEND-010 must add reviewed credential/session persistence before MFA can be complete."
   ]
 }

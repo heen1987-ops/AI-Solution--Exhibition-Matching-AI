@@ -7,10 +7,41 @@ codes:
   # --- Auth / authorization ---
   - code: AUTH_REQUIRED
     http_status: 401
-    meaning: "요청 주체를 식별할 수 없음 (임시 헤더 기반 인증 스텁 — 실제 세션/JWT 미구현, RISK-003 참고)"
+    meaning: "검증 가능한 브라우저 세션 또는 서비스 JWT가 없어 요청 principal을 만들 수 없음"
+  - code: AUTH_LINK_INVALID
+    http_status: 401
+    meaning: "The personal access link is unknown, expired, consumed, or revoked; clients receive one generic response."
+  - code: SESSION_EXPIRED
+    http_status: 401
+    meaning: "The server-managed session is missing, expired, or revoked and must not yield a principal."
+  - code: TOKEN_INVALID
+    http_status: 401
+    meaning: "The service JWT failed signature, issuer, audience, time, algorithm, key, or revocation validation."
+  - code: PRINCIPAL_CONFLICT
+    http_status: 401
+    meaning: "More than one incompatible credential or subject context was presented."
+  - code: MFA_CHALLENGE_INVALID
+    http_status: 401
+    meaning: "The MFA challenge or proof is unknown, expired, consumed, mismatched, or exhausted."
   - code: RESOURCE_FORBIDDEN
     http_status: 403
     meaning: "인증된 주체가 해당 리소스에 접근할 권한이 없음"
+
+  - code: SCOPE_FORBIDDEN
+    http_status: 403
+    meaning: "The verified principal does not belong to the requested tenant, event, exhibitor, or resource scope."
+  - code: MFA_REQUIRED
+    http_status: 403
+    meaning: "The verified principal has a privileged role but has not completed required AAL2 authentication."
+  - code: MFA_FRESHNESS_REQUIRED
+    http_status: 403
+    meaning: "The privileged action requires MFA completed within the configured freshness window."
+  - code: CSRF_FAILED
+    http_status: 403
+    meaning: "The browser mutation failed the session-bound CSRF token or origin check."
+  - code: AUTH_RATE_LIMITED
+    http_status: 429
+    meaning: "Authentication, access-link, MFA, or recovery attempts exceeded a non-secret rate limit."
 
   # --- Generic validation ---
   - code: VALIDATION_FAILED

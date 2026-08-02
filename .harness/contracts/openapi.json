@@ -2,7 +2,61 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Backju AI Matching Service",
-    "version": "0.1.0"
+    "version": "0.2.0",
+    "description": "Frozen API snapshot. Authentication contract v1 is defined by CR-006."
+  },
+  "x-meet-ai-auth-contract": {
+    "version": "1.0",
+    "normative_document": ".harness/handoffs/contracts/change-request-006-auth-rbac.md",
+    "browser_session_cookie": "__Host-meet_ai_session",
+    "guest_session_cookie": "__Host-meet_ai_guest",
+    "deprecated_identity_headers": [
+      "X-User-ID",
+      "X-Guest-Session-ID",
+      "X-Tenant-ID",
+      "X-Event-ID",
+      "X-Actor-User-Id"
+    ],
+    "admin_roles": [
+      "EVENT_ADMIN",
+      "DATA_REVIEWER",
+      "EXHIBITOR_ADMIN"
+    ],
+    "admin_mfa_required_roles": [
+      "EVENT_ADMIN",
+      "DATA_REVIEWER"
+    ],
+    "public_anonymous_families": [
+      "/healthz",
+      "/api/v1/ontology/**",
+      "/api/v1/events/**",
+      "/api/v1/exhibitors/{exhibitor_id}",
+      "/api/v1/exhibitors/{exhibitor_id}/profile",
+      "/api/v1/exhibitors/{exhibitor_id}/products",
+      "/api/v1/booths/**",
+      "/api/v1/search/**"
+    ],
+    "guest_or_authenticated_families": [
+      "/api/v1/profiles/me/**",
+      "/api/v1/visit-sessions/**",
+      "/api/v1/consents/me",
+      "/api/v1/privacy-requests/**",
+      "/api/v1/conversations/**",
+      "/api/v1/recommendations/**",
+      "/api/v1/recommendation-sessions/**",
+      "/api/v1/interactions/**"
+    ],
+    "protected_families": [
+      "/api/v1/profiles/{profile_id}/**",
+      "/api/v1/exhibitors/{exhibitor_id}/availability",
+      "/api/v1/meetings/**",
+      "/api/v1/partner/**",
+      "/api/v1/admin/**"
+    ],
+    "dedicated_machine_credential_families": [
+      "/api/v1/internal/**",
+      "/api/v1/webhooks/**"
+    ]
   },
   "paths": {
     "/healthz": {
@@ -24,6 +78,356 @@
                   },
                   "type": "object",
                   "title": "Response Healthz Healthz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/magic-links/exchange": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Exchange One-Time Personal Access Link",
+        "description": "Consumes an opaque, single-use, short-lived link token and creates a server-managed browser session. Invalid, expired, consumed, revoked, and unknown tokens use the same AUTH_LINK_INVALID response.",
+        "operationId": "exchange_magic_link_api_v1_auth_magic_links_exchange_post",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthMagicLinkExchangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session established; the opaque secret is returned only in Set-Cookie.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "__Host-meet_ai_session with Secure, HttpOnly, SameSite=Lax, Path=/, and no Domain."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_LINK_INVALID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "AUTH_RATE_LIMITED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Get Verified Session Principal",
+        "operationId": "get_auth_session_api_v1_auth_session_get",
+        "security": [
+          {
+            "BrowserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified principal and session metadata without secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_REQUIRED or SESSION_EXPIRED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Revoke Current Session",
+        "operationId": "delete_auth_session_api_v1_auth_session_delete",
+        "security": [
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session revoked and browser cookie cleared."
+          },
+          "401": {
+            "description": "AUTH_REQUIRED or SESSION_EXPIRED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_FAILED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa/enrollments": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Start Administrator MFA Enrollment",
+        "description": "Starts WebAuthn or TOTP enrollment for an authenticated account. Role activation waits for successful verification.",
+        "operationId": "start_mfa_enrollment_api_v1_auth_mfa_enrollments_post",
+        "security": [
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthMfaEnrollmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Purpose-bound enrollment challenge created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMfaChallengeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_REQUIRED or SESSION_EXPIRED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RESOURCE_FORBIDDEN or CSRF_FAILED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa/challenges": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Start MFA or Recovery Challenge",
+        "operationId": "start_mfa_challenge_api_v1_auth_mfa_challenges_post",
+        "security": [
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthMfaChallengeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Short-lived, session- and purpose-bound challenge created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMfaChallengeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_REQUIRED or SESSION_EXPIRED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "AUTH_RATE_LIMITED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa/challenges/{challenge_id}/verify": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Verify MFA Enrollment, Step-Up, or Recovery",
+        "operationId": "verify_mfa_challenge_api_v1_auth_mfa_challenges_challenge_id_verify_post",
+        "security": [
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthMfaVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Challenge consumed, session rotated, and principal re-evaluated.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Rotated __Host-meet_ai_session cookie."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMfaVerificationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "MFA_CHALLENGE_INVALID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RESOURCE_FORBIDDEN or CSRF_FAILED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "AUTH_RATE_LIMITED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
                 }
               }
             }
@@ -5699,7 +6103,457 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "BrowserSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-meet_ai_session",
+        "description": "Opaque server-managed authenticated session. Secure, HttpOnly, SameSite=Lax, Path=/, no Domain."
+      },
+      "BearerJWT": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Asymmetrically signed service access JWT with at most 10 minutes lifetime. Not issued to browser JavaScript."
+      },
+      "GuestSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-meet_ai_guest",
+        "description": "Anonymous continuity cookie. It is not authentication and cannot authorize protected roles or contact access."
+      }
+    },
+    "parameters": {
+      "CsrfToken": {
+        "name": "X-CSRF-Token",
+        "in": "header",
+        "required": true,
+        "description": "Origin-checked token bound to the current browser session. Not required for service JWT calls.",
+        "schema": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 512
+        }
+      }
+    },
     "schemas": {
+      "AuthError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "AUTH_REQUIRED",
+              "AUTH_LINK_INVALID",
+              "SESSION_EXPIRED",
+              "TOKEN_INVALID",
+              "PRINCIPAL_CONFLICT",
+              "RESOURCE_FORBIDDEN",
+              "SCOPE_FORBIDDEN",
+              "MFA_REQUIRED",
+              "MFA_FRESHNESS_REQUIRED",
+              "MFA_CHALLENGE_INVALID",
+              "CSRF_FAILED",
+              "AUTH_RATE_LIMITED"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "request_id": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id"
+        ],
+        "additionalProperties": false,
+        "title": "AuthError"
+      },
+      "AuthMagicLinkExchangeRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 22,
+            "maxLength": 2048,
+            "writeOnly": true
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional event selection; the server verifies it against the token and membership."
+          },
+          "return_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^/[^/].*$",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Allowlisted same-origin relative path only."
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "additionalProperties": false,
+        "title": "AuthMagicLinkExchangeRequest"
+      },
+      "AuthRoleGrant": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "EVENT_ADMIN",
+              "DATA_REVIEWER",
+              "EXHIBITOR_ADMIN"
+            ]
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exhibitor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "tenant_id",
+          "event_id",
+          "exhibitor_id"
+        ],
+        "additionalProperties": false,
+        "title": "AuthRoleGrant"
+      },
+      "AuthPrincipal": {
+        "properties": {
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "USER",
+              "SERVICE"
+            ]
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role_grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthRoleGrant"
+            },
+            "maxItems": 50
+          },
+          "authn_level": {
+            "type": "string",
+            "enum": [
+              "AAL1",
+              "AAL2"
+            ]
+          },
+          "amr": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "magic_link",
+                "password",
+                "oidc",
+                "webauthn",
+                "totp",
+                "recovery_code",
+                "service_jwt"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "authenticated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mfa_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "subject_type",
+          "subject_id",
+          "tenant_id",
+          "event_id",
+          "role_grants",
+          "authn_level",
+          "amr",
+          "authenticated_at",
+          "mfa_at"
+        ],
+        "additionalProperties": false,
+        "title": "AuthPrincipal"
+      },
+      "AuthSessionResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "AUTHENTICATED",
+              "MFA_PENDING",
+              "MFA_ENROLLMENT_REQUIRED"
+            ]
+          },
+          "principal": {
+            "$ref": "#/components/schemas/AuthPrincipal"
+          },
+          "csrf_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 512,
+            "description": "Non-cookie anti-CSRF value bound to the session; not an authentication credential."
+          },
+          "idle_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "absolute_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "state",
+          "principal",
+          "csrf_token",
+          "idle_expires_at",
+          "absolute_expires_at"
+        ],
+        "additionalProperties": false,
+        "title": "AuthSessionResponse"
+      },
+      "AuthMfaEnrollmentRequest": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "WEBAUTHN",
+              "TOTP"
+            ]
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "method"
+        ],
+        "additionalProperties": false,
+        "description": "A user-verifying multi-factor WebAuthn authenticator may establish AAL2. TOTP establishes AAL2 only with an independently verified primary factor of a different class; magic_link plus TOTP remains AAL1.",
+        "title": "AuthMfaEnrollmentRequest"
+      },
+      "AuthMfaChallengeRequest": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "LOGIN",
+              "STEP_UP",
+              "RECOVERY"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "WEBAUTHN",
+              "TOTP",
+              "RECOVERY_CODE"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "purpose",
+          "method"
+        ],
+        "additionalProperties": false,
+        "title": "AuthMfaChallengeRequest"
+      },
+      "AuthMfaChallengeResponse": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "ENROLLMENT",
+              "LOGIN",
+              "STEP_UP",
+              "RECOVERY"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "WEBAUTHN",
+              "TOTP",
+              "RECOVERY_CODE"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "public_options": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Method-specific public enrollment/challenge options. Secrets are never returned after initial TOTP enrollment setup."
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "purpose",
+          "method",
+          "expires_at",
+          "public_options"
+        ],
+        "additionalProperties": false,
+        "title": "AuthMfaChallengeResponse"
+      },
+      "AuthMfaVerifyRequest": {
+        "properties": {
+          "otp_code": {
+            "type": "string",
+            "pattern": "^[0-9]{6,10}$",
+            "writeOnly": true
+          },
+          "recovery_code": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 128,
+            "writeOnly": true
+          },
+          "webauthn_response": {
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": 1,
+        "additionalProperties": false,
+        "description": "Exactly one proof matching the challenge method is required.",
+        "title": "AuthMfaVerifyRequest"
+      },
+      "AuthMfaVerificationResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/AuthSessionResponse"
+          },
+          "recovery_codes": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "writeOnly": true
+                },
+                "minItems": 10,
+                "maxItems": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Returned exactly once after initial MFA enrollment or regeneration."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session",
+          "recovery_codes"
+        ],
+        "additionalProperties": false,
+        "title": "AuthMfaVerificationResponse"
+      },
       "AddRemove": {
         "properties": {
           "add": {

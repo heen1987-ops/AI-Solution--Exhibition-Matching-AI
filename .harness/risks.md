@@ -30,6 +30,14 @@ ASSUMPTION-001 당시 상태를 보존한다.
 아닌 호출자 제공 식별 헤더에 의존한다. 해결 경로로 CONTRACT-006과 BACKEND-010을 백로그에
 추가했으며, 실제 세션/JWT·RBAC·관리자 MFA 적용과 헤더 스텁 제거 전에는 G3 승인을 금지한다.
 
+### 2026-08-03 update — CONTRACT MITIGATED / IMPLEMENTATION OPEN
+
+CR-006과 OpenAPI 0.2.0이 서버 세션·서비스 JWT 검증, tenant/event/resource scope, 역할표,
+관리자 AAL2·복구, 개인 링크 교환, 신뢰 헤더 제거 절차를 동결했다. BACKEND-010은 READY로
+전환됐지만 구현은 아직 없으므로 위험은 닫지 않는다. 특히 현재 DB 인증수단 enum은
+WebAuthn/TOTP/복구를 저장하지 못하며, 검토된 0018 마이그레이션과 spoofing 회귀시험 전에는
+보호 API·관리자 기능·G3 권한시험을 완료 처리할 수 없다.
+
 ## RISK-004: 매칭 점수 산식 이중화
 
 기존 12단계 문서(바이어 B2B 매칭점수, 10요소 상세 가중치)와 재설계 §34~35(단순화된 웹

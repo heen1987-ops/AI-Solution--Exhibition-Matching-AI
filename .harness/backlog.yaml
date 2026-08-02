@@ -154,7 +154,7 @@ tasks:
     wave: 2
     track: CONTRACTS
     priority: P1
-    status: READY
+    status: DONE
     depends_on: [CONTRACT-003]
     owned_paths:
       - ".harness/handoffs/contracts/change-request-006-auth-rbac.md"
@@ -165,6 +165,7 @@ tasks:
       - "EVENT_ADMIN/EXHIBITOR_ADMIN/DATA_REVIEWER 권한표와 관리자 MFA·복구 정책을 계약한다"
       - "임시 호출자 제공 식별 헤더의 제거·호환 전환과 401/403 오류 계약을 정의한다"
     note: "RISK-003의 구현 선행 계약이며, BACKEND-010 게시 전 관리자·보호 API를 완료 처리하지 않는다."
+    evidence: "CR-006 APPROVED; OpenAPI 0.2.0에 BrowserSession/BearerJWT/GuestSession과 개인 링크·세션·MFA 5개 경로, 10개 Auth 스키마 게시. 오류코드 12개 경계 검증, 루트 72 및 API 219 passed/2 skipped."
 
   # ---------- WAVE 2: BACKEND (substantially done) ----------
   - id: BACKEND-001
@@ -286,18 +287,26 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P1
-    status: BLOCKED
+    status: READY
     depends_on: [CONTRACT-006]
     owned_paths:
       - "apps/api/app/core/auth.py"
+      - "apps/api/app/core/config.py"
       - "apps/api/app/api/v1/routers/auth.py"
+      - "apps/api/app/api/v1/api.py"
       - "apps/api/app/schemas/auth.py"
+      - "apps/api/app/models/auth.py"
+      - "apps/api/app/models/__init__.py"
+      - "apps/api/alembic/env.py"
+      - "apps/api/alembic/versions/20260803_0018_auth_session_mfa.py"
+      - "apps/api/tests/test_auth.py"
+      - "apps/api/pyproject.toml"
     acceptance:
       - "CONTRACT-006의 세션/JWT 검증 결과만 request principal로 사용한다"
       - "tenant/event 경계와 역할 기반 401/403 정책을 공통 dependency로 적용한다"
       - "관리자 MFA 등록·검증·복구 흐름과 감사 이벤트를 구현한다"
       - "보호 API의 호출자 제공 식별 헤더 스텁을 호환 계획에 따라 제거한다"
-    note: "CONTRACT-006 게시 전에는 인증 방식과 토큰 수명주기를 임의 구현하지 않는다."
+    note: "CR-006 게시로 시작 가능. 현재 authentication_method enum은 WebAuthn/TOTP/복구 저장을 지원하지 않으므로 0018 마이그레이션·보안 credential store가 필수이며, magic-link+TOTP를 AAL2로 취급하지 않는다."
 
   # ---------- WAVE 2: USER_WEB (substantially done) ----------
   - id: USERWEB-001

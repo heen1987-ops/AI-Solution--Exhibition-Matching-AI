@@ -423,3 +423,27 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
 - The newest living roadmap requests a mobile My Event HTML surface and Kakao notification entry.
   This remains aligned with web-first scope, but personal links/delivery are deferred until the
   authentication/session and notification contracts are frozen. CONTRACT-006 is next.
+
+## 2026-08-03 — CONTRACT-006 authentication, scoped RBAC, and administrator MFA contract
+
+- Published approved CR-006 and OpenAPI 0.2.0. The browser boundary is an opaque server-managed
+  `__Host-meet_ai_session` cookie; service integrations use allowlisted asymmetric JWTs of at most
+  ten minutes. Guest continuity remains separate and cannot authorize protected roles.
+- Added five authentication route contracts for one-time personal-link exchange, session read/revoke,
+  MFA enrollment/challenge, and verification, plus three security schemes and ten Auth schemas.
+- Froze immutable tenant/event/user/role principal claims, resource-scoped EVENT_ADMIN,
+  DATA_REVIEWER, and EXHIBITOR_ADMIN capabilities, 12-hour absolute sessions, stricter admin idle
+  limits, fresh-MFA requirements, contact-disclosure non-override, and generic 401/403 behavior.
+- Personal links are opaque, digest-stored, single-use, and at most 15 minutes. Kakao/email are
+  delivery channels only. Magic-link plus TOTP is explicitly not AAL2; user-verifying multi-factor
+  WebAuthn is preferred and TOTP needs an independent different primary factor.
+- Deprecated caller identity headers now have a fail-closed transition: the compatibility adapter
+  defaults off, cannot assert AAL2, and is forbidden in production. Before G3, spoofing tests must
+  prove headers cannot alter the principal or scope.
+- The current identity model cannot persist WebAuthn/TOTP/recovery state. BACKEND-010 ownership was
+  expanded to a reviewed 0018 migration, credential/session model, router registration, dependency,
+  and tests; the task is READY but no implementation claim has been made.
+- Verification: JSON references and 73 error-code entries parsed; contract invariants passed; root
+  72 tests passed; API 219 tests passed with 2 skipped; `git diff --check` passed.
+- BACKEND-010 is next. Personal My Event HTML and Kakao sending remain downstream of its verified
+  session principal and a separate notification delivery contract.
