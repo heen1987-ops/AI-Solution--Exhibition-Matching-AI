@@ -449,10 +449,11 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P1
-    status: READY
+    status: DONE
     depends_on: [CONTRACT-003]
     owned_paths: ["apps/api/app/services/matching/**"]
     note: "CONTRACT-003은 API 경로만 결정했으므로, 기존 12단계와 §34 산식 중 선택할 별도 CR 필요 여부부터 판단한다."
+    evidence: "RETAIN_CONSUMER_SCORE_V1. §34 current-query 입력은 추천 계약에 없고 booth availability는 context-rerank-v1.0에서 이미 처리되어 즉시 교체 시 임의 proxy·이중가중이 발생한다. consumer-score-v2는 승인 CR, 새 입력/개인정보 계약, 라벨 골든셋, shadow 비열등성 증거가 있을 때만 진행한다. 경계 회귀 3건 추가."
 
   - id: AIENGINE-001
     title: 공통 매칭엔진 프로파일 의미 후보회수 연결
@@ -512,6 +513,28 @@ tasks:
       - "AIENGINE-002 골든셋이 facade 출력의 회귀 계약으로 동작"
 
     evidence: "matching-engine-command/result-v1.0 facade and four modes published; kiosk, directional, and reciprocal adapters call it without owning weights. matching-evaluator-v1.1 runs the golden set through facade commands. Root 42 passed; backend 180 passed/2 skipped; golden set 3/3 PASS."
+
+  - id: AIENGINE-004
+    title: 공통 매칭엔진 결정론적 추천근거·증거 계약
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-003, AISEARCH-003]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "apps/api/app/services/matching/engine_adapter.py"
+      - "apps/api/app/services/matching/explanation_generator.py"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+    acceptance:
+      - "점수 기여도·Hard Filter·양면 상태에서 allowlisted reason claim을 결정론적으로 생성"
+      - "각 claim은 어댑터가 제공한 실제 evidence_ref 없이는 게시되지 않으며 LLM이 사실을 추가하지 못함"
+      - "순수 facade는 FastAPI·SQLAlchemy·외부 AI 공급자에 의존하지 않고 근거 계약과 지문을 반환"
+      - "일반 추천·바이어·양면·카탈로그 검색 어댑터가 동일 근거 계약을 사용"
+      - "AIENGINE-002 골든셋이 입력된 설명이 아니라 facade가 생성한 설명을 검증"
 
   - id: QA-003
     title: Wave 2 계약·범위·보안 기준선 감사

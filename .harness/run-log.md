@@ -214,3 +214,19 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   pass. Live PostgreSQL/provider behavior remains deferred to the existing G3 operational checks.
 - AISEARCH-003 is next for a change-controlled decision on the redesign's simplified formula. No
   published formula was changed in this unit.
+
+## 2026-08-02 — AISEARCH-003 section-34 personalization policy decision
+
+- Compared the simplified section-34 web formula with the executable `consumer-score-v1.0`, the
+  recommendation request contract, feature builder, context reranker, and facade-backed Golden Set.
+- Chose `RETAIN_CONSUMER_SCORE_V1`. Current-query match has no recommendation input or judged
+  feature, while booth availability already belongs to `context-rerank-v1.0`; immediate replacement
+  would require invented proxies and would risk double weighting runtime availability.
+- Classified a future section-34 replacement as `consumer-score-v2` requiring an approved Change
+  Request, query privacy/retention contract, explicit interest aggregation, single ownership of
+  availability, versioned DB policy binding, labeled v2 fixture, and shadow non-inferiority evidence.
+- Added a regression boundary proving consumer-v1 dimensions, the no-query recommendation contract,
+  and separate context availability remain intact. No runtime formula, API, database, or public
+  result changed.
+- Added `AIENGINE-004` as the next engine-first task: deterministic generated reason claims and
+  evidence grounding in the common facade, followed by facade-generated explanation evaluation.

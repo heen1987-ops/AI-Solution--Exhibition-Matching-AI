@@ -91,3 +91,18 @@ transaction에서 수행한다. 입력 한도 안에서는 업체명과 모든 �
 계산지문을 유지한다. 향후 재설계 §34 산식 교체는 `AISEARCH-003`의 별도 CR 없이는 적용하지
 않는다. 프로파일 임베딩 입력은 개인화 동의가 검증된 요청에서도 식별자·자유문·숫자 조건을
 제외하고 게시 온톨로지 코드와 공개 라벨로 최소화한다.
+
+## DECISION-009 (2026-08-02) — §34 웹 개인화 산식은 현 시점 미적용
+
+`AISEARCH-003` 감사 결과 현재 게시된 `consumer-score-v1.0`과
+`context-rerank-v1.0`을 유지한다. §34의 `Current Query Match`는 현재 추천 요청·특성 계약에
+존재하지 않고, `Booth Availability`는 이미 별도 컨텍스트 재정렬에서 처리된다. 또한 §34의 단일
+`User Interest Match`로 교체하면 현재 카테고리·감각·가격·도수·서비스·용도별 근거가 소실된다.
+
+따라서 §34 적용은 단순 가중치 수정이 아니라 입력계약·개인정보 처리·점수 단계·정책 시드·골든셋을
+함께 바꾸는 `consumer-score-v2` 변경이다. 별도 승인 Change Request와 새 라벨 평가셋, shadow
+비열등성 증거가 생기기 전에는 적용하지 않는다. 현재 Golden Set에 없는 질의·부스가용성 값을
+임의 proxy로 만들어 비교하지 않으며, 현 정책 유지 결정을 실패나 미완료로 간주하지 않는다.
+
+상세 근거는
+`.harness/reports/integration/personalization-score-policy-assessment-20260802.md`에 기록한다.
