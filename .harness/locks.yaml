@@ -1,0 +1,67 @@
+# File ownership by track. No path appears under more than one track.
+# Paths reflect this repo's ACTUAL layout (backend/, src/meet_ai/, netlify/), not the
+# meta-prompt's idealized apps/+packages/ layout - see ASSUMPTION-001 in assumptions.md
+# for why we did not physically relocate existing code into apps/api, apps/worker.
+
+ownership:
+  FOUNDATION:
+    - ".harness/**"
+    - "AGENTS.md"
+    - "PROJECT_SCOPE.md"
+    - "ARCHITECTURE.md"
+    - "DEVELOPMENT.md"
+    - "TESTING.md"
+    - "SECURITY.md"
+    - "README.md"
+    - "docker-compose.yml"
+    - "package.json"
+    - "pyproject.toml"
+    - "tsconfig.json"
+    - "netlify.toml"
+    - ".gitignore"
+    - ".github/**"
+
+  CONTRACTS:
+    - "docs/**"
+    - "backend/alembic/**"
+    - "backend/app/models/**"
+    - "backend/app/db/**"
+    - "db/migrations/**"
+    - "src/meet_ai/ontology/**"
+    - "packages/shared-types/**"
+    - "packages/api-client/**"
+    - "packages/validation/**"
+    - "packages/config/**"
+
+  BACKEND:
+    - "backend/app/api/**"
+    - "backend/app/core/**"
+    - "backend/app/main.py"
+    - "backend/pyproject.toml"
+    - "backend/scripts/**"
+
+  USER_WEB:
+    - "apps/user-web/**"
+
+  KIOSK:
+    - "apps/kiosk/**"
+
+  ADMIN:
+    - "apps/admin/**"
+
+  AI_SEARCH:
+    - "backend/app/services/matching/**"
+    - "src/meet_ai/scoring/**"
+    - "netlify/functions/**"
+    - "packages/search/**"
+    - "ai/**"
+
+  QA_SECURITY:
+    - "backend/tests/**"
+    - "tests/**"
+    - ".harness/reports/**"
+
+# Rule: a track may only edit paths it owns. Needing another track's path means
+# writing a handoff request under .harness/handoffs/{track}/, not editing directly.
+# packages/ui/** is intentionally unassigned until Wave 2 decides which app owns
+# shared UI components first (recorded as an open question in assumptions.md).

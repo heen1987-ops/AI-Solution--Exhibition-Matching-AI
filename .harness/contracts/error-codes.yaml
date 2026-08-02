@@ -1,0 +1,7 @@
+# Error codes (DRAFT placeholder)
+# 상태: DRAFT. 태스크 CTR-004가 완성한다.
+# 완성본은 기존 EligibilityDecision/filter_result 상태값 어휘
+# (PASS/FAIL/UNKNOWN/CONDITIONAL_PASS/MANUAL_REVIEW/TEMPORARY_BLOCK/POLICY_BLOCK/USER_EXCLUDED)를
+# HTTP 오류코드 체계로 매핑한다.
+status: draft
+codes: []

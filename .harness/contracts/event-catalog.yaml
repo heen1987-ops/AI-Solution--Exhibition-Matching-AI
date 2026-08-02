@@ -1,0 +1,6 @@
+# Event catalog (DRAFT placeholder)
+# 상태: DRAFT. 태스크 CTR-005가 완성한다.
+# 완성본은 content_approval 확정, meeting 상태 변경, guest 회원전환 등
+# RQ/Celery 큐잉 수준의 최소 이벤트만 정의한다 (Kafka 등 스트리밍 인프라 전제하지 않음).
+status: draft
+events: []

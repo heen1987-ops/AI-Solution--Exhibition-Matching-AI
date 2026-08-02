@@ -1,0 +1,102 @@
+# Quality gates. A gate PASSES only when every criterion under it is checked true.
+# Status values: NOT_STARTED | IN_PROGRESS | PASSED | FAILED
+
+gates:
+  G0_BOOTSTRAP:
+    status: IN_PROGRESS
+    criteria:
+      - id: g0-1
+        desc: "모든 앱이 로컬에서 실행"
+        status: BLOCKED
+        note: "apps/user-web, apps/kiosk, apps/admin이 아직 존재하지 않음 (FND-002 이후 가능)"
+      - id: g0-2
+        desc: "Docker Compose 실행"
+        status: LIKELY_PASS
+        note: "docker-compose.yml 존재(postgres+redis), FND-004에서 재검증 필요"
+      - id: g0-3
+        desc: "PostgreSQL 연결"
+        status: LIKELY_PASS
+        note: "이전 세션에서 실제 Postgres 대상 통합 테스트 통과 이력 있음, FND-004에서 재검증"
+      - id: g0-4
+        desc: "Redis 연결"
+        status: UNVERIFIED
+        note: "현재 백엔드 코드가 Redis를 실제로 사용하는 경로가 없음(캐시 미구현) - C-7에서 설계만 존재"
+      - id: g0-5
+        desc: "Health Check 성공"
+        status: LIKELY_PASS
+        note: "backend/app/main.py에 /healthz 존재(README 기준), FND-004에서 재검증"
+      - id: g0-6
+        desc: "CI 기본 파이프라인 성공"
+        status: NOT_STARTED
+        note: ".github/workflows 없음 - FND-003"
+
+  G1_CONTRACT_FREEZE:
+    status: NOT_STARTED
+    criteria:
+      - id: g1-1
+        desc: "도메인 모델 확정"
+        status: NOT_STARTED
+        note: "CTR-001. docs/redesign-v2 26개 문서가 근거 자료로는 이미 존재"
+      - id: g1-2
+        desc: "OpenAPI 유효"
+        status: NOT_STARTED
+        note: "CTR-002"
+      - id: g1-3
+        desc: "DB 스키마 초안"
+        status: PARTIAL_PASS
+        note: "8개 Alembic 마이그레이션 기존 존재. CTR-006(saved_recommendable)만 추가 필요"
+      - id: g1-4
+        desc: "온톨로지 유효"
+        status: LIKELY_PASS
+        note: "src/meet_ai/ontology validate CLI로 259개 개념 검증 이력 있음. CTR-003에서 계약 파일화만 필요"
+      - id: g1-5
+        desc: "오류코드 정의"
+        status: NOT_STARTED
+        note: "CTR-004"
+      - id: g1-6
+        desc: "API Mock 동작"
+        status: NOT_STARTED
+        note: "WEB-001/KSK-001/ADM-001"
+      - id: g1-7
+        desc: "계약 변경절차 정의"
+        status: PASSED
+        note: "본 메타프롬프트 §8(CHANGE_REQUEST 절차) 자체가 절차 정의 - AGENTS.md에 반영됨"
+
+  G2_FEATURE_COMPLETE:
+    status: NOT_STARTED
+    criteria:
+      - { id: g2-1, desc: "핵심 API 구현", status: NOT_STARTED, note: "BAC-GROUP-001" }
+      - { id: g2-2, desc: "user-web 핵심 흐름 구현", status: NOT_STARTED, note: "WEB-GROUP-001" }
+      - { id: g2-3, desc: "kiosk 핵심 흐름 구현", status: NOT_STARTED, note: "KSK-GROUP-001" }
+      - { id: g2-4, desc: "admin 핵심 흐름 구현", status: NOT_STARTED, note: "ADM-GROUP-001" }
+      - id: g2-5
+        desc: "검색·추천 구현"
+        status: PARTIAL_PASS
+        note: "구조화 검색(RRF)·하드필터·컨텍스트재랭킹·이유생성은 이미 구현됨(AIS-GROUP-001은 키워드·벡터 채널 및 키오스크 점수식만 추가)"
+      - id: g2-6
+        desc: "상담 최소 기능 구현"
+        status: NOT_STARTED
+        note: "Meeting/MeetingStatusHistory/MeetingContactShare 모델은 존재, API 미구현 - BAC-GROUP-001"
+      - { id: g2-7, desc: "권한 적용", status: NOT_STARTED, note: "profile.UserRole 스키마는 존재, 인가 로직 미구현" }
+
+  G3_MVP_RELEASE:
+    status: NOT_STARTED
+    criteria:
+      - { id: g3-1, desc: "Lint 성공", status: NOT_STARTED }
+      - { id: g3-2, desc: "Type Check 성공", status: NOT_STARTED }
+      - id: g3-3
+        desc: "Unit Test 성공"
+        status: PARTIAL_PASS
+        note: "이전 세션 기준 83개 유닛 테스트 존재·통과 이력. 신규 코드 추가 시 재검증 필요"
+      - id: g3-4
+        desc: "Integration Test 성공"
+        status: PARTIAL_PASS
+        note: "이전 세션 기준 11개 DB 통합 테스트 존재·통과 이력"
+      - { id: g3-5, desc: "E2E 핵심 시나리오 성공", status: NOT_STARTED }
+      - { id: g3-6, desc: "Migration Test 성공", status: PARTIAL_PASS, note: "8개 마이그레이션 왕복 검증 이력, CTR-006 추가분은 재검증 필요" }
+      - { id: g3-7, desc: "AI Gold Set 기준 통과", status: NOT_STARTED, note: "AIS-001 선행 필요" }
+      - { id: g3-8, desc: "권한시험 성공", status: NOT_STARTED }
+      - { id: g3-9, desc: "개인정보 로그 노출 0건", status: NOT_STARTED }
+      - { id: g3-10, desc: "키오스크 세션 잔존 0건", status: NOT_STARTED }
+      - { id: g3-11, desc: "성능 목표 통과", status: NOT_STARTED }
+      - { id: g3-12, desc: "제외범위 위반 0건", status: NOT_STARTED, note: "PROJECT_SCOPE.md §제외범위 대비 매 작업 종료 시 점검" }

@@ -1,0 +1,7 @@
+# Ontology contract (DRAFT placeholder)
+# 상태: DRAFT. 태스크 CTR-003이 완성한다.
+# 완성본은 src/meet_ai/ontology/catalog.v1.json의 concept_type 체계와
+# docs/redesign-v2/common/C-3-ontology.md §1의 6개 카테고리 매핑 표를 계약 형식으로 반영한다.
+status: draft
+source_catalog: "src/meet_ai/ontology/catalog.v1.json"
+categories: []

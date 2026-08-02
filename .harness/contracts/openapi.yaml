@@ -1,0 +1,10 @@
+openapi: 3.0.3
+info:
+  title: 백주대간 AI 매칭·탐색 서비스 API (DRAFT placeholder)
+  version: 0.0.0-draft
+  description: >
+    상태: DRAFT. 이 파일은 태스크 CTR-002가 완성한다(.harness/backlog.yaml 참고).
+    완성본은 docs/redesign-v2/web/W-8-api-and-db-changes.md §5,
+    docs/redesign-v2/common/C-5-common-api.md §1의 엔드포인트 목록과
+    기존 backend/app/api/v1/endpoints/ontology.py를 모두 포함한다.
+paths: {}
