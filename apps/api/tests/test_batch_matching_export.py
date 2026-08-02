@@ -230,6 +230,11 @@ def test_endpoint_returns_xlsx_with_schema_header(
 
     monkeypatch.setattr(imports_router, "run_batch_matching", fake_run)
     app.dependency_overrides[get_db] = fake_db
+    app.dependency_overrides[imports_router.require_import_admin] = lambda: type(
+        "AllowedImportPrincipal",
+        (),
+        {"has_role": lambda self, *args, **kwargs: True},
+    )()
     try:
         response = TestClient(app).post(
             "/api/v1/admin/imports/excel/matches",

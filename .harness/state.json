@@ -46,20 +46,20 @@
     "AIENGINE-010",
     "BACKEND-011",
     "BACKEND-012",
-    "QA-003"
+    "QA-003",
+    "BACKEND-010",
+    "ADMIN-001"
   ],
   "blocked_tasks": [
-    "BACKEND-007(BACKEND-010 의존)",
     "BACKEND-009(CONTRACT-005 의존)",
-    "ADMIN-001(실제 인증/MFA 필요)",
     "ADMIN-002(BACKEND-007 의존)",
     "QA-001(re-audit after CR-009 web-first pivot)"
   ],
-  "next_recommended_task": "BACKEND-010 (implement CR-006 verified browser sessions/service JWT principal, scoped RBAC, personal-link exchange, and administrator MFA foundation)",
-  "last_successful_run": "2026-08-03T01:50:59+09:00",
+  "next_recommended_task": "BACKEND-007 (implement operator approval/rejection and operations APIs on the verified BACKEND-010 principal/RBAC boundary)",
+  "last_successful_run": "2026-08-03T03:04:00+09:00",
   "scope_status": "LOCKED_WEB_FIRST_CR009",
   "contract_status": "FROZEN",
-  "mvp_progress_percent": 93,
+  "mvp_progress_percent": 95,
   "monorepo_migration": "DONE (DECISION-006, updated by CR-009): canonical apps/* pnpm workspace remains materialized. Active default validation/build covers apps/user-web and apps/admin; apps/kiosk is retained as inactive compatibility source and excluded by root scripts. Latest clean-NTFS active web typecheck/build and frozen install pass.",
   "notes": [
     "The approved 259-concept Backjudaegan alcohol ontology remains canonical (DECISION-004).",
@@ -90,6 +90,9 @@
     "FND-003 publishes read-only GitHub CI for root engine and backend tests plus CR-009 active-web lint, typecheck, tests, and builds. Dedicated kiosk remains outside the default CI path.",
     "The living roadmap emphasizes a mobile My Event HTML surface reached through Kakao notification links. CR-006 now freezes the safe personal-link exchange and verified session boundary; Kakao remains a delivery channel rather than an authenticator.",
     "CR-006 publishes OpenAPI 0.2.0 with opaque Secure/HttpOnly browser sessions, short-lived service JWT verification, scoped EVENT_ADMIN/DATA_REVIEWER/EXHIBITOR_ADMIN grants, AAL2/fresh-MFA policy, generic link failures, and a fail-closed trusted-header transition.",
-    "Magic-link plus TOTP is not AAL2 because both prove possession. User-verifying multi-factor WebAuthn is preferred; TOTP requires an independently verified different primary factor. BACKEND-010 must add reviewed credential/session persistence before MFA can be complete."
+    "Magic-link plus TOTP is not AAL2 because both prove possession. User-verifying multi-factor WebAuthn is preferred; TOTP requires an independently verified different primary factor.",
+    "BACKEND-010 now implements opaque one-time personal-link exchange, Secure/HttpOnly browser sessions, allowlisted Origin plus session-bound CSRF on unsafe methods, RS256 service JWT verification, explicit scoped RBAC, WebAuthn/TOTP/recovery MFA, and spoof-resistant protected-route principals.",
+    "ADMIN-001 now consumes the verified server session without localStorage credentials or caller identity headers and renders role-scoped menus; backend authorization remains authoritative.",
+    "Active web dependencies now use patched Next/React/PostCSS/Sharp/esbuild versions; production pnpm audit reports no known vulnerabilities."
   ]
 }

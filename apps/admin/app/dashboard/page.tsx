@@ -21,6 +21,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!hasCapability(session.role, "AUDIT_VIEW")) {
+      setAnalytics(null);
+      setError(null);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     setLoading(true);
     setError(null);
     getSearchAnalytics(DEMO_EVENT_ID)
@@ -36,14 +44,14 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [session.role]);
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">관리자 홈</h1>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          현재 역할: <strong>{ROLE_LABELS[session.role]}</strong>
+          현재 역할: <strong>{session.role ? ROLE_LABELS[session.role] : "인증 필요"}</strong>
           {session.displayName ? ` · ${session.displayName}` : ""}
         </p>
       </div>
@@ -53,13 +61,19 @@ export default function DashboardPage() {
           href="/exhibitors"
           title="참가업체 검수"
           description="승인상태별 목록 조회, 업체 등록·수정, 검수·승인/반려"
-          visible
+          visible={
+            hasCapability(session.role, "EXHIBITOR_REVIEW") ||
+            hasCapability(session.role, "EXHIBITOR_EDIT_OWN")
+          }
         />
         <QuickLinkCard
           href="/products"
           title="제품·서비스"
           description="제품 등록·수정, 승인상태 확인"
-          visible
+          visible={
+            hasCapability(session.role, "PRODUCT_MANAGE_ANY") ||
+            hasCapability(session.role, "PRODUCT_MANAGE_OWN")
+          }
         />
         <QuickLinkCard
           href="/booths"
@@ -83,7 +97,9 @@ export default function DashboardPage() {
 
       <section>
         <h2 className="mb-2 text-base font-semibold">검색 통계 요약 (§48 KPI)</h2>
-        {loading && <p className="text-sm text-[var(--color-text-muted)]">불러오는 중…</p>}
+        {hasCapability(session.role, "AUDIT_VIEW") && loading && (
+          <p className="text-sm text-[var(--color-text-muted)]">불러오는 중…</p>
+        )}
         {!loading && error ? <ErrorBanner error={error} /> : null}
         {!loading && !error && analytics && (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm">

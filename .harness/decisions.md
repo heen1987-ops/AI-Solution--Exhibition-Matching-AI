@@ -232,3 +232,17 @@ Promotion requires a separate approved Change Request, zero divergence and adapt
 versioned aggregate quality gate, a sufficient runtime sample, regression evidence, and rollback.
 The weighted-v1 formula, API response, database schema, persistence, and rank remain unchanged. See
 `.harness/reports/integration/runtime-constraint-shadow-20260803.md`.
+
+## DECISION-019 (2026-08-03) — Browser identity is server-derived and mutations are origin-bound
+
+Personal links contain only opaque random material and are consumed once into a Secure/HttpOnly
+server session. Browser identity, tenant, event, role, profile, and exhibitor scope are loaded from
+that session and database grants; caller-supplied identity headers cannot create or alter a
+principal. Service integrations use allowlisted RS256 JWT verification and never issue browser
+refresh tokens.
+
+Every unsafe request authenticated by the browser cookie must present both an allowlisted HTTPS
+Origin and a CSRF token bound to the current session. MFA success rotates the session token only
+after the old session request has passed this check. Magic-link plus TOTP remains AAL1; WebAuthn or
+an independently verified different primary factor plus TOTP is required for AAL2. Frontend role
+menus are hints only and backend resource-scope checks remain authoritative.

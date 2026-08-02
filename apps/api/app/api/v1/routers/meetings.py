@@ -41,15 +41,13 @@ aggregator, 이 작업 범위 밖)가 이 router를 include_router할 때 접두
 
 알려진 임시방편(TODO)과 이유
 ------------------------------
-1. 인증: 이 리포지토리에는 아직 세션/JWT 기반 인증 미들웨어가 없다(다른 에이전트 담당,
-   interface-spec 7절). ``X-Profile-Id``/``X-Staff-Id`` 헤더로 인증된 주체를 임시로
-   전달받는다 - 실제로는 서버가 세션에서 파생해야 하는 값이다(12.3절 "서버는 바이어
-   주체에서 프로파일을 파생한다"). 인증 계층이 통합되면 이 두 의존성 함수만 교체하면 된다.
+1. 인증: 바이어 프로파일과 업체 담당자는 검증된 서버 세션/JWT principal에서
+   DB로 파생한다. ``X-Profile-Id``/``X-Staff-Id``는 권한 결정에 사용하지 않는다.
 2. 멱등키 저장소: interaction/integration 스키마의 영속 멱등성 테이블이 아직 없어
    프로세스 내 메모리 캐시(``_IDEMPOTENCY_CACHE``)로 대체한다. 재시작·다중 인스턴스 환경에서
    재사용되지 않는 한계가 있다.
-3. 봉투 암호화: identity 도메인의 KMS 기반 공용 암복호화 유틸리티가 아직 없어
-   ``_encrypt_text``/``_decrypt_text``는 평문 UTF-8 인코딩 placeholder다(컬럼 타입만 맞춤).
+3. 봉투 암호화: 상담 메시지·메모·후속조치는 공용 AEAD 봉투 형식으로 저장한다.
+   배포에서는 ``AUTH_ENCRYPTION_KEY_B64``를 반드시 외부 비밀 저장소로 주입한다.
 4. 상담주제/결과/후속조치 코드값: 6단계 매칭 분류체계 문서가 최근 생겼지만
    MEETING_OUTCOME.*/FOLLOW_UP_ACTION.* 네임스페이스는 아직 시드되지 않았다(meeting.py
    자체 TODO). 상담주제(topic)는 카탈로그의 BUSINESS_GOAL 네임스페이스로 최선노력
@@ -70,9 +68,10 @@ import hashlib
 import json
 import threading
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Annotated, Any
 
+from cryptography.exceptions import InvalidTag
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -80,6 +79,13 @@ from sqlalchemy import case, func, literal, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import (
+    VerifiedPrincipal,
+    decrypt_secret,
+    encrypt_secret,
+    get_verified_principal,
+)
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.consent import AuditLog, ConsentPolicy
 from app.models.exhibitor import ExhibitorParticipation, ExhibitorStaff
@@ -125,20 +131,49 @@ _KST = timezone(timedelta(hours=9))
 # --------------------------------------------------------------------------
 
 
-def _buyer_profile_header(
-    x_profile_id: Annotated[uuid.UUID | None, Header(alias="X-Profile-Id")] = None,
+async def _buyer_profile_header(
+    principal: Annotated[VerifiedPrincipal, Depends(get_verified_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> uuid.UUID | None:
-    """PHONE_VERIFIED+BUYER 주체를 임시로 헤더에서 읽는다. 실제 세션 인증으로 교체 예정."""
+    """검증된 사용자의 현재 행사 프로파일을 파생한다."""
 
-    return x_profile_id
+    if principal.principal.event_id is None:
+        return None
+    return await db.scalar(
+        select(UserProfile.profile_id)
+        .where(
+            UserProfile.user_id == principal.user_id,
+            UserProfile.tenant_id == principal.principal.tenant_id,
+            UserProfile.event_id == principal.principal.event_id,
+            UserProfile.deleted_at.is_(None),
+        )
+        .order_by(UserProfile.user_type.desc())
+        .limit(1)
+    )
 
 
-def _staff_header(
-    x_staff_id: Annotated[uuid.UUID | None, Header(alias="X-Staff-Id")] = None,
+async def _staff_header(
+    principal: Annotated[VerifiedPrincipal, Depends(get_verified_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> uuid.UUID | None:
-    """ACCOUNT_AUTHENTICATED+EXHIBITOR 주체를 임시로 헤더에서 읽는다."""
+    """검증된 사용자의 현재 행사 활성 담당자를 파생한다."""
 
-    return x_staff_id
+    if principal.principal.event_id is None:
+        return None
+    return await db.scalar(
+        select(ExhibitorStaff.staff_id)
+        .join(
+            ExhibitorParticipation,
+            ExhibitorParticipation.participation_id == ExhibitorStaff.participation_id,
+        )
+        .where(
+            ExhibitorStaff.user_id == principal.user_id,
+            ExhibitorStaff.active.is_(True),
+            ExhibitorParticipation.tenant_id == principal.principal.tenant_id,
+            ExhibitorParticipation.event_id == principal.principal.event_id,
+        )
+        .limit(1)
+    )
 
 
 async def _load_active_staff(
@@ -158,7 +193,7 @@ async def _load_active_staff(
 
 
 def _server_time() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _meta(request_id: str | None) -> dict[str, str]:
@@ -169,7 +204,11 @@ def _meta(request_id: str | None) -> dict[str, str]:
 
 
 def _ok(data: Any, *, request_id: str | None, status_code: int = 200) -> JSONResponse:
-    payload = {"success": True, "data": jsonable_encoder(data), "meta": _meta(request_id)}
+    payload = {
+        "success": True,
+        "data": jsonable_encoder(data),
+        "meta": _meta(request_id),
+    }
     return JSONResponse(status_code=status_code, content=payload)
 
 
@@ -270,20 +309,26 @@ def _is_uuid(value: str | None) -> bool:
 
 
 # --------------------------------------------------------------------------
-# 암호화 placeholder (모듈 docstring TODO 3 참고)
+# AEAD 봉투 암호화 (모듈 docstring 3 참고)
 # --------------------------------------------------------------------------
 
 
-def _encrypt_text(value: str | None) -> bytes | None:
+def _encrypt_text(value: str | None, *, purpose: str) -> bytes | None:
     if value is None:
         return None
-    return value.encode("utf-8")
+    return encrypt_secret(value, purpose=purpose, settings=get_settings())
 
 
-def _decrypt_text(value: bytes | None) -> str | None:
+def _decrypt_text(value: bytes | None, *, purpose: str) -> str | None:
     if value is None:
         return None
-    return value.decode("utf-8", errors="replace")
+    try:
+        return decrypt_secret(value, purpose=purpose, settings=get_settings()).decode(
+            "utf-8"
+        )
+    except (InvalidTag, ValueError, UnicodeDecodeError):
+        # Fail closed: legacy/plaintext or corrupt data must never be echoed.
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -326,7 +371,9 @@ def _catalog() -> Catalog:
 @functools.lru_cache(maxsize=1)
 def _concept_id_to_code() -> dict[uuid.UUID, str]:
     catalog = _catalog()
-    return {stable_uuid("concept", item["code"]): item["code"] for item in catalog.concepts}
+    return {
+        stable_uuid("concept", item["code"]): item["code"] for item in catalog.concepts
+    }
 
 
 def _concept_code_for(concept_id: uuid.UUID | None) -> str | None:
@@ -441,7 +488,10 @@ async def _release_all_held_slots(db: AsyncSession, meeting: MeetingRequest) -> 
         await _release_slot(db, slot_id=row.availability_slot_id)
         released_ids.add(row.availability_slot_id)
         row.status = "WITHDRAWN"
-    if meeting.confirmed_slot_id is not None and meeting.confirmed_slot_id not in released_ids:
+    if (
+        meeting.confirmed_slot_id is not None
+        and meeting.confirmed_slot_id not in released_ids
+    ):
         await _release_slot(db, slot_id=meeting.confirmed_slot_id)
 
 
@@ -457,7 +507,8 @@ async def _load_candidate_slots(
         select(MeetingSlotRequest, AvailabilitySlot)
         .join(
             AvailabilitySlot,
-            AvailabilitySlot.availability_slot_id == MeetingSlotRequest.availability_slot_id,
+            AvailabilitySlot.availability_slot_id
+            == MeetingSlotRequest.availability_slot_id,
         )
         .where(MeetingSlotRequest.meeting_id == meeting_id)
         .order_by(MeetingSlotRequest.preference_order)
@@ -490,10 +541,12 @@ async def _build_meeting_response(
     return MeetingResponse(
         meeting_id=meeting.meeting_id,
         status=meeting.status,
-        exhibitor_id=participation.exhibitor_id if participation else meeting.participation_id,
+        exhibitor_id=participation.exhibitor_id
+        if participation
+        else meeting.participation_id,
         participation_id=meeting.participation_id,
         topic_code=_concept_code_for(meeting.concept_id),
-        message_preview=_decrypt_text(meeting.message_enc),
+        message_preview=_decrypt_text(meeting.message_enc, purpose="meeting-message"),
         candidate_slots=candidate_slots,
         confirmed_start=meeting.confirmed_start,
         confirmed_end=meeting.confirmed_end,
@@ -515,7 +568,10 @@ async def _match_result_belongs_to_profile(
             MatchRun,
             MatchRun.recommendation_session_id == MatchResult.recommendation_session_id,
         )
-        .where(MatchResult.match_result_id == match_result_id, MatchRun.profile_id == profile_id)
+        .where(
+            MatchResult.match_result_id == match_result_id,
+            MatchRun.profile_id == profile_id,
+        )
     )
     return (await db.execute(stmt)).scalar_one_or_none() is not None
 
@@ -557,11 +613,16 @@ async def list_availability(
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
 ) -> JSONResponse:
     if buyer_profile_id is None:
-        return _fail(401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id)
+        return _fail(
+            401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id
+        )
     profile = await db.get(UserProfile, buyer_profile_id)
     if profile is None:
         return _fail(
-            403, "RESOURCE_FORBIDDEN", "프로파일을 찾을 수 없습니다.", request_id=x_request_id
+            403,
+            "RESOURCE_FORBIDDEN",
+            "프로파일을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
 
     participation_stmt = select(ExhibitorParticipation).where(
@@ -572,12 +633,17 @@ async def list_availability(
     participation = (await db.execute(participation_stmt)).scalar_one_or_none()
     if participation is None:
         return _fail(
-            404, "RESOURCE_FORBIDDEN", "업체를 찾을 수 없습니다.", request_id=x_request_id
+            404,
+            "RESOURCE_FORBIDDEN",
+            "업체를 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
 
     topic_concept_id: uuid.UUID | None = None
     if topic:
-        resolved = _resolve_concept(topic, namespace_fallbacks=_TOPIC_NAMESPACE_FALLBACKS)
+        resolved = _resolve_concept(
+            topic, namespace_fallbacks=_TOPIC_NAMESPACE_FALLBACKS
+        )
         if resolved is not None:
             topic_concept_id = resolved[1]
 
@@ -629,7 +695,10 @@ async def create_meeting(
 ) -> JSONResponse:
     if buyer_profile_id is None:
         return _fail(
-            401, "AUTH_REQUIRED", "휴대전화 인증 후 이용할 수 있습니다.", request_id=x_request_id
+            401,
+            "AUTH_REQUIRED",
+            "휴대전화 인증 후 이용할 수 있습니다.",
+            request_id=x_request_id,
         )
 
     subject = str(buyer_profile_id)
@@ -644,7 +713,10 @@ async def create_meeting(
     profile = await db.get(UserProfile, buyer_profile_id)
     if profile is None or profile.deleted_at is not None:
         return _fail(
-            403, "RESOURCE_FORBIDDEN", "프로파일을 찾을 수 없습니다.", request_id=x_request_id
+            403,
+            "RESOURCE_FORBIDDEN",
+            "프로파일을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
     if profile.user_type != "BUYER":
         return _fail(
@@ -655,7 +727,10 @@ async def create_meeting(
         )
     if profile.user_id is None:
         return _fail(
-            401, "AUTH_REQUIRED", "휴대전화 인증 후 이용할 수 있습니다.", request_id=x_request_id
+            401,
+            "AUTH_REQUIRED",
+            "휴대전화 인증 후 이용할 수 있습니다.",
+            request_id=x_request_id,
         )
     account = await db.get(UserAccount, profile.user_id)
     if account is None or account.authentication_state not in (
@@ -663,7 +738,10 @@ async def create_meeting(
         "ACCOUNT_AUTHENTICATED",
     ):
         return _fail(
-            401, "AUTH_REQUIRED", "휴대전화 인증 후 이용할 수 있습니다.", request_id=x_request_id
+            401,
+            "AUTH_REQUIRED",
+            "휴대전화 인증 후 이용할 수 있습니다.",
+            request_id=x_request_id,
         )
 
     participation_stmt = select(ExhibitorParticipation).where(
@@ -689,7 +767,9 @@ async def create_meeting(
             request_id=x_request_id,
         )
 
-    topic_resolved = _resolve_concept(payload.topic, namespace_fallbacks=_TOPIC_NAMESPACE_FALLBACKS)
+    topic_resolved = _resolve_concept(
+        payload.topic, namespace_fallbacks=_TOPIC_NAMESPACE_FALLBACKS
+    )
     if topic_resolved is None:
         return _fail(
             400,
@@ -737,7 +817,10 @@ async def create_meeting(
                 "VALIDATION_FAILED",
                 "알 수 없는 연락처 공유 동의 문서 버전입니다.",
                 field_errors=[
-                    {"field": "contact_share.document_version", "reason": "unknown_document_version"}
+                    {
+                        "field": "contact_share.document_version",
+                        "reason": "unknown_document_version",
+                    }
                 ],
                 request_id=x_request_id,
             )
@@ -746,12 +829,14 @@ async def create_meeting(
             meeting_id=meeting_id,
             consent_policy_id=consent_policy.consent_policy_id,
             shared_fields=payload.contact_share.fields,
-            accepted_at=datetime.now(timezone.utc),
+            accepted_at=datetime.now(UTC),
         )
 
     match_result_id: uuid.UUID | None = None
     if payload.match_result_id is not None:
-        if await _match_result_belongs_to_profile(db, payload.match_result_id, profile.profile_id):
+        if await _match_result_belongs_to_profile(
+            db, payload.match_result_id, profile.profile_id
+        ):
             match_result_id = payload.match_result_id
 
     meeting = MeetingRequest(
@@ -764,7 +849,7 @@ async def create_meeting(
         booth_id=reserved_slot.booth_id,
         taxonomy_version_id=taxonomy_version_id,
         concept_id=concept_id,
-        message_enc=_encrypt_text(payload.message),
+        message_enc=_encrypt_text(payload.message, purpose="meeting-message"),
         status="requested",
         match_result_id=match_result_id,
     )
@@ -777,7 +862,9 @@ async def create_meeting(
                 meeting_id=meeting_id,
                 availability_slot_id=slot_id,
                 preference_order=order,
-                status="SELECTED" if slot_id == reserved_slot.availability_slot_id else "PENDING",
+                status="SELECTED"
+                if slot_id == reserved_slot.availability_slot_id
+                else "PENDING",
             )
         )
 
@@ -791,7 +878,9 @@ async def create_meeting(
             previous_status=None,
             new_status="requested",
             changed_by_user_id=profile.user_id,
-            request_id=uuid.UUID(idempotency_key) if _is_uuid(idempotency_key) else None,
+            request_id=uuid.UUID(idempotency_key)
+            if _is_uuid(idempotency_key)
+            else None,
         )
     )
 
@@ -828,9 +917,13 @@ async def list_meetings(
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
 ) -> JSONResponse:
     if buyer_profile_id is None:
-        return _fail(401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id)
+        return _fail(
+            401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id
+        )
 
-    stmt = select(MeetingRequest).where(MeetingRequest.buyer_profile_id == buyer_profile_id)
+    stmt = select(MeetingRequest).where(
+        MeetingRequest.buyer_profile_id == buyer_profile_id
+    )
     if status_filter:
         stmt = stmt.where(MeetingRequest.status == status_filter)
     decoded = _decode_cursor(cursor) if cursor else None
@@ -840,9 +933,9 @@ async def list_meetings(
             tuple_(MeetingRequest.created_at, MeetingRequest.meeting_id)
             < (cursor_created_at, cursor_id)
         )
-    stmt = stmt.order_by(MeetingRequest.created_at.desc(), MeetingRequest.meeting_id.desc()).limit(
-        limit + 1
-    )
+    stmt = stmt.order_by(
+        MeetingRequest.created_at.desc(), MeetingRequest.meeting_id.desc()
+    ).limit(limit + 1)
     rows = list((await db.execute(stmt)).scalars().all())
 
     next_cursor = None
@@ -863,11 +956,16 @@ async def get_meeting(
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
 ) -> JSONResponse:
     if buyer_profile_id is None:
-        return _fail(401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id)
+        return _fail(
+            401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id
+        )
     meeting = await db.get(MeetingRequest, meeting_id)
     if meeting is None or meeting.buyer_profile_id != buyer_profile_id:
         return _fail(
-            404, "RESOURCE_FORBIDDEN", "상담 요청을 찾을 수 없습니다.", request_id=x_request_id
+            404,
+            "RESOURCE_FORBIDDEN",
+            "상담 요청을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
     data = await _build_meeting_response(db, meeting)
     return _ok(data, request_id=x_request_id)
@@ -890,7 +988,9 @@ async def cancel_meeting(
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
 ) -> JSONResponse:
     if buyer_profile_id is None:
-        return _fail(401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id)
+        return _fail(
+            401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id
+        )
 
     subject = str(buyer_profile_id)
     path = f"POST:/meetings/{meeting_id}/cancel"
@@ -901,12 +1001,19 @@ async def cancel_meeting(
     if replay is not None:
         return replay
 
-    stmt = select(MeetingRequest).where(MeetingRequest.meeting_id == meeting_id).with_for_update()
+    stmt = (
+        select(MeetingRequest)
+        .where(MeetingRequest.meeting_id == meeting_id)
+        .with_for_update()
+    )
     meeting = (await db.execute(stmt)).scalar_one_or_none()
     if meeting is None or meeting.buyer_profile_id != buyer_profile_id:
         await db.rollback()
         return _fail(
-            404, "RESOURCE_FORBIDDEN", "상담 요청을 찾을 수 없습니다.", request_id=x_request_id
+            404,
+            "RESOURCE_FORBIDDEN",
+            "상담 요청을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
     if meeting.row_version != payload.version:
         await db.rollback()
@@ -958,7 +1065,9 @@ async def respond_to_counter_proposal(
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
 ) -> JSONResponse:
     if buyer_profile_id is None:
-        return _fail(401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id)
+        return _fail(
+            401, "AUTH_REQUIRED", "인증이 필요합니다.", request_id=x_request_id
+        )
 
     subject = str(buyer_profile_id)
     path = f"POST:/meetings/{meeting_id}/respond"
@@ -969,12 +1078,19 @@ async def respond_to_counter_proposal(
     if replay is not None:
         return replay
 
-    stmt = select(MeetingRequest).where(MeetingRequest.meeting_id == meeting_id).with_for_update()
+    stmt = (
+        select(MeetingRequest)
+        .where(MeetingRequest.meeting_id == meeting_id)
+        .with_for_update()
+    )
     meeting = (await db.execute(stmt)).scalar_one_or_none()
     if meeting is None or meeting.buyer_profile_id != buyer_profile_id:
         await db.rollback()
         return _fail(
-            404, "RESOURCE_FORBIDDEN", "상담 요청을 찾을 수 없습니다.", request_id=x_request_id
+            404,
+            "RESOURCE_FORBIDDEN",
+            "상담 요청을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
     if meeting.row_version != payload.version:
         await db.rollback()
@@ -997,7 +1113,8 @@ async def respond_to_counter_proposal(
         select(MeetingSlotRequest, AvailabilitySlot)
         .join(
             AvailabilitySlot,
-            AvailabilitySlot.availability_slot_id == MeetingSlotRequest.availability_slot_id,
+            AvailabilitySlot.availability_slot_id
+            == MeetingSlotRequest.availability_slot_id,
         )
         .where(
             MeetingSlotRequest.meeting_id == meeting.meeting_id,
@@ -1008,7 +1125,10 @@ async def respond_to_counter_proposal(
     if not held_rows:
         await db.rollback()
         return _fail(
-            409, "MEETING_CONFLICT", "제안된 시간을 찾을 수 없습니다.", request_id=x_request_id
+            409,
+            "MEETING_CONFLICT",
+            "제안된 시간을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
     _held_slot_request, held_slot = held_rows[0]
 
@@ -1069,7 +1189,10 @@ async def list_partner_meetings(
     staff = await _load_active_staff(db, staff_id)
     if staff is None:
         return _fail(
-            401, "AUTH_REQUIRED", "파트너 계정 인증이 필요합니다.", request_id=x_request_id
+            401,
+            "AUTH_REQUIRED",
+            "파트너 계정 인증이 필요합니다.",
+            request_id=x_request_id,
         )
 
     # wireframes 8절 E-02: "자기 업체 요청만" - 담당자 개인이 아니라 참가(participation)
@@ -1086,9 +1209,9 @@ async def list_partner_meetings(
             tuple_(MeetingRequest.created_at, MeetingRequest.meeting_id)
             < (cursor_created_at, cursor_id)
         )
-    stmt = stmt.order_by(MeetingRequest.created_at.desc(), MeetingRequest.meeting_id.desc()).limit(
-        limit + 1
-    )
+    stmt = stmt.order_by(
+        MeetingRequest.created_at.desc(), MeetingRequest.meeting_id.desc()
+    ).limit(limit + 1)
     rows = list((await db.execute(stmt)).scalars().all())
 
     next_cursor = None
@@ -1125,22 +1248,30 @@ async def get_partner_buyer_summary(
     staff = await _load_active_staff(db, staff_id)
     if staff is None:
         return _fail(
-            401, "AUTH_REQUIRED", "파트너 계정 인증이 필요합니다.", request_id=x_request_id
+            401,
+            "AUTH_REQUIRED",
+            "파트너 계정 인증이 필요합니다.",
+            request_id=x_request_id,
         )
 
     meeting = await db.get(MeetingRequest, meeting_id)
     if meeting is None or meeting.participation_id != staff.participation_id:
         return _fail(
-            404, "RESOURCE_FORBIDDEN", "상담 요청을 찾을 수 없습니다.", request_id=x_request_id
+            404,
+            "RESOURCE_FORBIDDEN",
+            "상담 요청을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
 
     # interface-spec 12.1절 "VIEWED는 상담 상태가 아니라 viewed_at 메타데이터" - 업체가
     # 바이어 상세를 처음 열람하는 시점을 "읽음" 표시로 기록한다(E-02 신규 요청 뱃지 근거).
     if meeting.viewed_at is None:
-        meeting.viewed_at = datetime.now(timezone.utc)
+        meeting.viewed_at = datetime.now(UTC)
 
     buyer_need_row = (
-        await db.execute(select(BuyerNeed).where(BuyerNeed.profile_id == meeting.buyer_profile_id))
+        await db.execute(
+            select(BuyerNeed).where(BuyerNeed.profile_id == meeting.buyer_profile_id)
+        )
     ).scalar_one_or_none()
     buyer_need = (
         BuyerNeedSummary(
@@ -1177,17 +1308,21 @@ async def get_partner_buyer_summary(
         if buyer_profile is not None and buyer_profile.user_id is not None:
             identity = (
                 await db.execute(
-                    select(UserIdentity).where(UserIdentity.user_id == buyer_profile.user_id)
+                    select(UserIdentity).where(
+                        UserIdentity.user_id == buyer_profile.user_id
+                    )
                 )
             ).scalar_one_or_none()
         if identity is not None:
-            # TODO(identity 도메인의 KMS 복호화 유틸리티 확정 후): _decrypt_text placeholder를
-            # 교체한다(모듈 docstring TODO 3).
+            # 식별정보도 동일 봉투 형식인 경우에만 복호화한다.
+            # 구 평문/uc190상 데이터는 _decrypt_text가 None으로 차단한다.
             field_values = {
-                "NAME": _decrypt_text(identity.name_enc),
-                "PHONE": _decrypt_text(identity.phone_enc),
-                "BUSINESS_EMAIL": _decrypt_text(identity.email_enc),
-                "EMAIL": _decrypt_text(identity.email_enc),
+                "NAME": _decrypt_text(identity.name_enc, purpose="identity-name"),
+                "PHONE": _decrypt_text(identity.phone_enc, purpose="identity-phone"),
+                "BUSINESS_EMAIL": _decrypt_text(
+                    identity.email_enc, purpose="identity-email"
+                ),
+                "EMAIL": _decrypt_text(identity.email_enc, purpose="identity-email"),
             }
             contact = {
                 field: value
@@ -1195,7 +1330,7 @@ async def get_partner_buyer_summary(
                 if (value := field_values.get(field)) is not None
             }
         if contact_share.disclosed_at is None:
-            contact_share.disclosed_at = datetime.now(timezone.utc)
+            contact_share.disclosed_at = datetime.now(UTC)
             contact_share.disclosed_to_user_id = staff.user_id
             db.add(
                 AuditLog(
@@ -1218,7 +1353,7 @@ async def get_partner_buyer_summary(
         meeting_id=meeting.meeting_id,
         status=meeting.status,
         topic_code=_concept_code_for(meeting.concept_id),
-        message_preview=_decrypt_text(meeting.message_enc),
+        message_preview=_decrypt_text(meeting.message_enc, purpose="meeting-message"),
         buyer_need=buyer_need,
         contact=contact,
         contact_disclosed=contact is not None,
@@ -1249,7 +1384,10 @@ async def decide_meeting(
     staff = await _load_active_staff(db, staff_id)
     if staff is None:
         return _fail(
-            401, "AUTH_REQUIRED", "파트너 계정 인증이 필요합니다.", request_id=x_request_id
+            401,
+            "AUTH_REQUIRED",
+            "파트너 계정 인증이 필요합니다.",
+            request_id=x_request_id,
         )
 
     subject = str(staff.staff_id)
@@ -1261,12 +1399,19 @@ async def decide_meeting(
     if replay is not None:
         return replay
 
-    stmt = select(MeetingRequest).where(MeetingRequest.meeting_id == meeting_id).with_for_update()
+    stmt = (
+        select(MeetingRequest)
+        .where(MeetingRequest.meeting_id == meeting_id)
+        .with_for_update()
+    )
     meeting = (await db.execute(stmt)).scalar_one_or_none()
     if meeting is None or meeting.participation_id != staff.participation_id:
         await db.rollback()
         return _fail(
-            404, "RESOURCE_FORBIDDEN", "상담 요청을 찾을 수 없습니다.", request_id=x_request_id
+            404,
+            "RESOURCE_FORBIDDEN",
+            "상담 요청을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
     if meeting.row_version != payload.version:
         await db.rollback()
@@ -1292,7 +1437,9 @@ async def decide_meeting(
         await _release_all_held_slots(db, meeting)
         meeting.status = "rejected"
     else:
-        assert payload.slot_id is not None, "schema validator guarantees slot_id for ACCEPT/COUNTER_PROPOSE"
+        assert payload.slot_id is not None, (
+            "schema validator guarantees slot_id for ACCEPT/COUNTER_PROPOSE"
+        )
         held_stmt = select(MeetingSlotRequest).where(
             MeetingSlotRequest.meeting_id == meeting.meeting_id,
             MeetingSlotRequest.availability_slot_id == payload.slot_id,
@@ -1394,13 +1541,19 @@ async def record_meeting_outcome(
     staff = await _load_active_staff(db, staff_id)
     if staff is None:
         return _fail(
-            401, "AUTH_REQUIRED", "파트너 계정 인증이 필요합니다.", request_id=x_request_id
+            401,
+            "AUTH_REQUIRED",
+            "파트너 계정 인증이 필요합니다.",
+            request_id=x_request_id,
         )
 
     meeting = await db.get(MeetingRequest, meeting_id)
     if meeting is None or meeting.participation_id != staff.participation_id:
         return _fail(
-            404, "RESOURCE_FORBIDDEN", "상담 요청을 찾을 수 없습니다.", request_id=x_request_id
+            404,
+            "RESOURCE_FORBIDDEN",
+            "상담 요청을 찾을 수 없습니다.",
+            request_id=x_request_id,
         )
     if meeting.status not in _OUTCOME_ALLOWED_SOURCE_STATUSES:
         return _fail(
@@ -1422,18 +1575,21 @@ async def record_meeting_outcome(
         db.add(lead)
     lead.is_qualified_lead = payload.is_qualified_lead
     if outcome_resolved is not None:
-        lead.taxonomy_version_id, lead.concept_id, _resolved_outcome_code = outcome_resolved
+        lead.taxonomy_version_id, lead.concept_id, _resolved_outcome_code = (
+            outcome_resolved
+        )
     lead.expected_amount = payload.expected_amount
     lead.currency = payload.currency
     lead.expected_probability_percent = payload.expected_probability_percent
-    lead.memo_enc = _encrypt_text(payload.memo)
-    lead.completed_at = datetime.now(timezone.utc)
+    lead.memo_enc = _encrypt_text(payload.memo, purpose="lead-memo")
+    lead.completed_at = datetime.now(UTC)
     lead.recorded_by_user_id = staff.user_id
 
     follow_up_id: uuid.UUID | None = None
     if payload.follow_up is not None:
         follow_up_resolved = _resolve_concept(
-            payload.follow_up.action_code, namespace_fallbacks=_FOLLOW_UP_NAMESPACE_FALLBACKS
+            payload.follow_up.action_code,
+            namespace_fallbacks=_FOLLOW_UP_NAMESPACE_FALLBACKS,
         )
         follow_up = FollowUp(
             follow_up_action_id=uuid.uuid4(),
@@ -1441,12 +1597,14 @@ async def record_meeting_outcome(
             assignee_user_id=staff.user_id,
             due_date=payload.follow_up.due_date,
             status="PENDING",
-            note_enc=_encrypt_text(payload.follow_up.note),
+            note_enc=_encrypt_text(payload.follow_up.note, purpose="follow-up-note"),
         )
         if follow_up_resolved is not None:
-            follow_up.taxonomy_version_id, follow_up.concept_id, _resolved_action_code = (
-                follow_up_resolved
-            )
+            (
+                follow_up.taxonomy_version_id,
+                follow_up.concept_id,
+                _resolved_action_code,
+            ) = follow_up_resolved
         db.add(follow_up)
         follow_up_id = follow_up.follow_up_action_id
 

@@ -274,20 +274,20 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P1
-    status: BLOCKED
+    status: READY
     depends_on: [CONTRACT-003, BACKEND-010]
     owned_paths: ["apps/api/app/api/v1/routers/admin.py"]
     acceptance:
       - "업체 승인/반려, 부스 상태 변경, 검색통계, 무결과 검색어 조회 엔드포인트"
       - "RBAC 적용 (EVENT_ADMIN, DATA_REVIEWER)"
-    note: "partner.py의 일부와 겹칠 수 있어 통합 시 중복 제거가 필요하며, BACKEND-010의 검증된 principal/RBAC가 없어 현재 차단됨."
+    note: "BACKEND-010의 검증된 principal/RBAC 완료로 시작 가능. partner.py와 겹치는 기능은 통합 시 중복 제거한다."
 
   - id: BACKEND-010
     title: 세션/JWT principal·RBAC·관리자 MFA 백엔드 기반
     wave: 2
     track: BACKEND
     priority: P1
-    status: READY
+    status: DONE
     depends_on: [CONTRACT-006]
     owned_paths:
       - "apps/api/app/core/auth.py"
@@ -301,12 +301,23 @@ tasks:
       - "apps/api/alembic/versions/20260803_0018_auth_session_mfa.py"
       - "apps/api/tests/test_auth.py"
       - "apps/api/pyproject.toml"
+      - "apps/api/app/main.py"
+      - "apps/api/app/api/v1/routers/imports.py"
+      - "apps/api/app/api/v1/routers/meetings.py"
+      - "apps/api/app/api/v1/routers/partner.py"
+      - "apps/api/app/api/v1/routers/profile.py"
+      - "apps/api/app/api/v1/routers/recommendations.py"
+      - "apps/api/tests/test_batch_matching_export.py"
+      - "apps/api/tests/test_excel_import.py"
+      - "apps/api/tests/test_exhibitor_models.py"
+      - "apps/api/tests/test_recommendation_api.py"
     acceptance:
       - "CONTRACT-006의 세션/JWT 검증 결과만 request principal로 사용한다"
       - "tenant/event 경계와 역할 기반 401/403 정책을 공통 dependency로 적용한다"
       - "관리자 MFA 등록·검증·복구 흐름과 감사 이벤트를 구현한다"
       - "보호 API의 호출자 제공 식별 헤더 스텁을 호환 계획에 따라 제거한다"
-    note: "CR-006 게시로 시작 가능. 현재 authentication_method enum은 WebAuthn/TOTP/복구 저장을 지원하지 않으므로 0018 마이그레이션·보안 credential store가 필수이며, magic-link+TOTP를 AAL2로 취급하지 않는다."
+    evidence: "0018 migration과 digest-only 개인 링크/세션, AEAD 비밀 저장, RS256 서비스 JWT, 명시적 event/exhibitor RBAC, WebAuthn/TOTP/일회 복구코드, 감사 이벤트를 구현했다. 보호 라우터는 검증된 principal/guest만 사용하고 호출자 identity 헤더 spoofing을 거부한다. 쿠키 변경 요청은 allowlist Origin+세션 결합 CSRF를 공통 검증한다. API 236 passed/2 skipped, 공통 엔진 72 passed, Alembic single head/offline full upgrade PASS."
+    note: "Magic-link+TOTP는 AAL2가 아니며, WebAuthn 또는 독립된 primary factor+TOTP만 AAL2로 승격한다."
 
   # ---------- WAVE 2: USER_WEB (substantially done) ----------
   - id: USERWEB-001
@@ -448,13 +459,14 @@ tasks:
     wave: 2
     track: ADMIN
     priority: P1
-    status: BLOCKED
+    status: DONE
     depends_on: [CONTRACT-003, BACKEND-010]
     owned_paths: ["apps/admin/**"]
     acceptance:
       - "역할별(EVENT_ADMIN/EXHIBITOR_ADMIN/DATA_REVIEWER) 로그인 및 메뉴 분기"
       - "A00 관리자 홈"
-    note: "화면 골격은 일부 존재하지만 BACKEND-010의 실제 인증/MFA 기반이 없어 완료할 수 없다."
+    evidence: "localStorage 역할 스위처를 제거하고 서버 세션 조회/폐기, opaque link 교환, WebAuthn 등록·step-up, 일회 복구코드 표시, 역할별 메뉴·A00 홈 분기를 연결했다. 브라우저는 identity 헤더를 만들지 않고 mutation에 런타임 CSRF만 첨부한다. Admin 3 tests, lint/typecheck/build PASS."
+    note: "화면 역할 게이트는 표시 보조이며 모든 최종 권한 결정은 BACKEND-010 공통 dependency가 반복한다."
 
   - id: ADMIN-002
     title: 업체·제품 검수 + AI 추출 검수 화면

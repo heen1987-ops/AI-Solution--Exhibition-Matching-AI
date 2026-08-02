@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.db.base import SCHEMA_ONTOLOGY, Base
 from app.models import (  # noqa: F401
     ai,
+    auth,
     cold_start,
     consent,
     conversation,

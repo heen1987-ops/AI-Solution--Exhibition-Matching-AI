@@ -14,14 +14,10 @@
 
 주체(subject) 해석에 대한 중요한 메모
 --------------------------------------
-인터페이스 명세 9.1절: "서버는 현재 인증·익명 세션에서 profile_id, visit_session_id,
-event_id를 파생한다. 클라이언트가 다른 프로파일 ID를 지정할 수 없다." 이 저장소에는 그
-세션 해석 미들웨어가 아직 없다(인증 도메인 에이전트 책임, 이 작업 범위 밖). 그 미들웨어가
-나오기 전까지 ``resolve_subject_context``가 사이트별 BFF/PHP/Netlify 어댑터가 해석하고
-HMAC 서명한 요청 헤더(X-Tenant-Id/X-Event-Id/X-Profile-Id/X-Visit-Session-Id/X-User-Id/
-X-Guest-Session-Id)로 주체를 해석한다. 브라우저는 서명키를 갖지 않으며, 로컬 디버그에서만
-무서명 헤더를 허용한다. 인증 모듈이 구현되면 이 함수 내부만 교체하도록 반환 타입
-(``SubjectContext``)은 고정한다.
+인터페이스 명세 9.1절에 따라 서버는 검증된 사용자 세션 또는 별도 게스트 세션에서
+tenant/event/profile을 파생한다. HMAC 사이트 컨텍스트와 profile/visit 식별자는 요청 무결성
+및 자원 선택에만 쓰며 principal을 만들 수 없다. 선택된 profile과 visit session의 소유권은
+항상 검증된 subject 범위와 DB에서 다시 확인한다.
 
 오류 응답에 대한 메모
 ----------------------
@@ -48,6 +44,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import VerifiedGuest, VerifiedPrincipal, get_verified_subject
 from app.core.config import get_settings
 from app.core.site_context import verify_site_context
 from app.db.session import get_db
@@ -64,6 +61,7 @@ from app.models.matching import (
     SlateItem,
     SlateResult,
 )
+from app.models.profile import UserProfile, VisitSession
 from app.schemas.recommendation import (
     AvailabilityView,
     Envelope,
@@ -213,7 +211,11 @@ def _optional_uuid_header(request: Request, name: str) -> uuid.UUID | None:
     raise AssertionError("unreachable")  # pragma: no cover
 
 
-def resolve_subject_context(request: Request) -> SubjectContext:
+async def resolve_subject_context(
+    request: Request,
+    db: AsyncSession,
+    verified: VerifiedPrincipal | VerifiedGuest,
+) -> SubjectContext:
     settings = get_settings()
     local_unsigned_context = settings.DEBUG and settings.ENV.lower() in {
         "local",
@@ -230,16 +232,60 @@ def resolve_subject_context(request: Request) -> SubjectContext:
                     "사이트 어댑터의 사용자 컨텍스트 서명을 확인할 수 없습니다."
                 )
             )
-    tenant_id = _require_uuid_header(request, "X-Tenant-Id")
-    event_id = _require_uuid_header(request, "X-Event-Id")
-    profile_id = _require_uuid_header(request, "X-Profile-Id")
-    visit_session_id = _optional_uuid_header(request, "X-Visit-Session-Id")
-    user_id = _optional_uuid_header(request, "X-User-Id")
-    guest_session_id = _optional_uuid_header(request, "X-Guest-Session-Id")
-    if (user_id is None) == (guest_session_id is None):
-        _raise_http(
-            auth_required("X-User-Id와 X-Guest-Session-Id 중 정확히 하나가 필요합니다.")
+    if isinstance(verified, VerifiedPrincipal):
+        tenant_id = verified.principal.tenant_id
+        event_id = verified.principal.event_id
+        user_id = verified.user_id
+        guest_session_id = None
+    else:
+        tenant_id = verified.tenant_id
+        event_id = verified.event_id
+        user_id = None
+        guest_session_id = verified.guest_session_id
+    if event_id is None:
+        _raise_http(auth_required("행사 세션 컨텍스트가 없습니다."))
+    owner_clause = (
+        UserProfile.user_id == user_id
+        if user_id is not None
+        else UserProfile.guest_session_id == guest_session_id
+    )
+    profile_id = await db.scalar(
+        select(UserProfile.profile_id)
+        .where(
+            UserProfile.tenant_id == tenant_id,
+            UserProfile.event_id == event_id,
+            owner_clause,
+            UserProfile.deleted_at.is_(None),
         )
+        .order_by(UserProfile.updated_at.desc())
+        .limit(1)
+    )
+    if profile_id is None:
+        _raise_http(auth_required("현재 행사 프로파일을 찾을 수 없습니다."))
+    for header_name, expected in (
+        ("X-Tenant-Id", tenant_id),
+        ("X-Event-Id", event_id),
+        ("X-Profile-Id", profile_id),
+    ):
+        supplied = _optional_uuid_header(request, header_name)
+        if supplied is not None and supplied != expected:
+            _raise_http(resource_forbidden("서버 세션 경계와 요청 컨텍스트가 다릅니다."))
+    visit_session_id = _optional_uuid_header(request, "X-Visit-Session-Id")
+    if visit_session_id is not None:
+        owned_visit = await db.scalar(
+            select(VisitSession.visit_session_id).where(
+                VisitSession.visit_session_id == visit_session_id,
+                VisitSession.tenant_id == tenant_id,
+                VisitSession.event_id == event_id,
+                (
+                    VisitSession.user_id == user_id
+                    if user_id is not None
+                    else VisitSession.guest_session_id == guest_session_id
+                ),
+            )
+        )
+        if owned_visit is None:
+            _raise_http(resource_forbidden("본인 소유의 방문 세션만 사용할 수 있습니다."))
     request_id = request.headers.get("X-Request-ID") or str(new_uuid7())
     idempotency_key = request.headers.get("Idempotency-Key")
     return SubjectContext(
@@ -253,6 +299,11 @@ def resolve_subject_context(request: Request) -> SubjectContext:
         idempotency_key=idempotency_key,
         server_time=datetime.now(UTC),
     )
+
+
+VerifiedSubject = Annotated[
+    VerifiedPrincipal | VerifiedGuest, Depends(get_verified_subject)
+]
 
 
 # ---------------------------------------------------------------------------
@@ -305,8 +356,9 @@ async def create_recommendation(
     payload: RecommendationRequest,
     request: Request,
     db: DbSession,
+    verified: VerifiedSubject,
 ) -> Envelope[RecommendationResponse]:
-    subject = resolve_subject_context(request)
+    subject = await resolve_subject_context(request, db, verified)
     # TODO(integration.idempotency_record 확정 후 구현): Idempotency-Key 재사용 시 동일 요청
     # 본문이면 최초 결과를 재사용하고, 다른 본문이면 409 IDEMPOTENCY_KEY_REUSED를 반환해야
     # 한다(인터페이스 명세 4.2절). 그 저장소가 이 작업 범위 밖이라 지금은 매번 새로 생성한다.
@@ -429,6 +481,7 @@ async def list_recommendation_session_items(
     recommendation_session_id: uuid.UUID,
     request: Request,
     db: DbSession,
+    verified: VerifiedSubject,
     object_type: Literal["BOOTH", "PRODUCT", "EXHIBITOR", "PROGRAM"] | None = Query(
         default=None, alias="type"
     ),
@@ -436,7 +489,7 @@ async def list_recommendation_session_items(
     cursor: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=50),
 ) -> Envelope[RecommendationSessionItemsResponse]:
-    subject = resolve_subject_context(request)
+    subject = await resolve_subject_context(request, db, verified)
 
     match_run = await db.get(MatchRun, recommendation_session_id)
     if (
@@ -677,8 +730,9 @@ async def submit_interaction_batch(
     payload: InteractionBatchRequest,
     request: Request,
     db: DbSession,
+    verified: VerifiedSubject,
 ) -> Envelope[InteractionBatchResponse]:
-    subject = resolve_subject_context(request)
+    subject = await resolve_subject_context(request, db, verified)
 
     results: list[InteractionEventResult] = []
     accepted = 0

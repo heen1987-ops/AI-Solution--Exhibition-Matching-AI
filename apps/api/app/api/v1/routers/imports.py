@@ -16,12 +16,10 @@ docs/2026-backju-ai-matching-service-design.md 8.3절은 `/v1/events/{eventId}/i
 이 router를 추가 prefix 없이 include해야 위 경로가 최종적으로 `<API_V1_PREFIX>/admin/imports/...`
 가 된다.
 
-인증에 대한 TODO
------------------
-인터페이스 명세 5절: "운영정보 변경: OPERATOR + 이벤트 스코프". 세션/인증 미들웨어는 아직
-다른 단계(개발 순서 1번, 인터페이스 명세 24절)의 책임이라 이 라우터는 실제 OPERATOR 권한
-검사를 하지 않는다. 통합 단계에서 이 파일의 엔드포인트에 OPERATOR 인증 Depends를 추가해야
-한다.
+인증·경계
+-----------
+모든 import 경로는 검증된 EVENT_ADMIN + 최근 MFA를 요구한다. 요청의 tenant/event는
+세션에서 로드한 명시적 역할 부여와 다시 대조하며, 헤더가 권한을 만들지 않는다.
 
 멱등·오류격리 구현
 -------------------
@@ -37,12 +35,23 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import VerifiedPrincipal, _fail, require_roles
 from app.db.session import get_db
 from app.models.integration import SyncJob, SyncRowError
 from app.schemas.imports import (
@@ -83,6 +92,25 @@ from app.services.ingestion import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+require_import_admin = require_roles("EVENT_ADMIN", fresh_mfa=True)
+ImportAdmin = Annotated[VerifiedPrincipal, Depends(require_import_admin)]
+Database = Annotated[AsyncSession, Depends(get_db)]
+
+
+def _require_import_scope(
+    http_request: Request,
+    principal: VerifiedPrincipal,
+    *,
+    tenant_id: UUID,
+    event_id: UUID,
+) -> None:
+    if not principal.has_role("EVENT_ADMIN", tenant_id=tenant_id, event_id=event_id):
+        raise _fail(
+            http_request,
+            403,
+            "SCOPE_FORBIDDEN",
+            "해당 행사의 import 권한이 없습니다.",
+        )
 
 
 async def _run_batch(
@@ -210,34 +238,46 @@ async def _run_batch(
 
 @router.post("/admin/imports/visitors", response_model=ImportBatchResult)
 async def import_visitors(
-    request: VisitorImportRequest, db: AsyncSession = Depends(get_db)
+    payload: VisitorImportRequest,
+    http_request: Request,
+    principal: ImportAdmin,
+    db: Database,
 ) -> ImportBatchResult:
     """방문객(관람객) 사전등록 배치 upsert. 설계문서 8.3절, 인터페이스 명세 18.1절."""
 
+    _require_import_scope(
+        http_request, principal, tenant_id=payload.tenant_id, event_id=payload.event_id
+    )
     return await _run_batch(
         db,
-        tenant_id=request.tenant_id,
-        event_id=request.event_id,
-        source_system_code=request.source_system_code,
+        tenant_id=payload.tenant_id,
+        event_id=payload.event_id,
+        source_system_code=payload.source_system_code,
         job_type="VISITOR_IMPORT",
-        rows=request.rows,
+        rows=payload.rows,
         upsert_one=upsert_visitor,
     )
 
 
 @router.post("/admin/imports/exhibitors", response_model=ImportBatchResult)
 async def import_exhibitors(
-    request: ExhibitorImportRequest, db: AsyncSession = Depends(get_db)
+    payload: ExhibitorImportRequest,
+    http_request: Request,
+    principal: ImportAdmin,
+    db: Database,
 ) -> ImportBatchResult:
     """참가업체 신청 배치 upsert."""
 
+    _require_import_scope(
+        http_request, principal, tenant_id=payload.tenant_id, event_id=payload.event_id
+    )
     return await _run_batch(
         db,
-        tenant_id=request.tenant_id,
-        event_id=request.event_id,
-        source_system_code=request.source_system_code,
+        tenant_id=payload.tenant_id,
+        event_id=payload.event_id,
+        source_system_code=payload.source_system_code,
         job_type="EXHIBITOR_IMPORT",
-        rows=request.rows,
+        rows=payload.rows,
         upsert_one=upsert_exhibitor,
     )
 
@@ -254,15 +294,17 @@ def _excel_sheet_summary(sheet: ParsedSheet) -> ExcelImportSheetSummary:
 
 @router.post("/admin/imports/excel", response_model=ExcelImportResponse)
 async def import_excel(
+    http_request: Request,
+    principal: ImportAdmin,
     tenant_id: UUID,
     event_id: UUID,
+    db: Database,
     source_system_code: str = Query(default="EXCEL_UPLOAD", max_length=50),
     dry_run: bool = Query(default=True),
     workbook_bytes: bytes = Body(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     ),
     content_type: str | None = Header(default=None, alias="Content-Type"),
-    db: AsyncSession = Depends(get_db),
 ) -> ExcelImportResponse:
     """Validate or import the published visitor/exhibitor XLSX workbook.
 
@@ -270,6 +312,9 @@ async def import_excel(
     ingestion path; the XLSX adapter does not bypass approval or matching eligibility policies.
     """
 
+    _require_import_scope(
+        http_request, principal, tenant_id=tenant_id, event_id=event_id
+    )
     expected_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     if content_type is None or content_type.split(";", 1)[0].strip() != expected_type:
         raise HTTPException(status_code=415, detail="EXCEL_CONTENT_TYPE_UNSUPPORTED")
@@ -354,8 +399,10 @@ async def import_excel(
     },
 )
 async def export_excel_matches(
-    request: ExcelMatchExportRequest,
-    db: AsyncSession = Depends(get_db),
+    payload: ExcelMatchExportRequest,
+    http_request: Request,
+    principal: ImportAdmin,
+    db: Database,
 ) -> Response:
     """Export canonical recommendations for selected imported preregistrants.
 
@@ -364,14 +411,17 @@ async def export_excel_matches(
     explanation, and persistence policies.
     """
 
+    _require_import_scope(
+        http_request, principal, tenant_id=payload.tenant_id, event_id=payload.event_id
+    )
     try:
         report = await run_batch_matching(
             db,
-            tenant_id=request.tenant_id,
-            event_id=request.event_id,
-            source_system_code=request.source_system_code,
-            source_record_ids=request.source_record_ids,
-            top_n=request.top_n,
+            tenant_id=payload.tenant_id,
+            event_id=payload.event_id,
+            source_system_code=payload.source_system_code,
+            source_record_ids=payload.source_record_ids,
+            top_n=payload.top_n,
         )
     except BatchMatchingExportError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.code) from None
@@ -390,28 +440,40 @@ async def export_excel_matches(
 
 @router.post("/admin/imports/products", response_model=ImportBatchResult)
 async def import_products(
-    request: ProductImportRequest, db: AsyncSession = Depends(get_db)
+    payload: ProductImportRequest,
+    http_request: Request,
+    principal: ImportAdmin,
+    db: Database,
 ) -> ImportBatchResult:
     """제품 배치 upsert. 부모 업체는 먼저 import_exhibitors로 연계되어 있어야 한다."""
 
+    _require_import_scope(
+        http_request, principal, tenant_id=payload.tenant_id, event_id=payload.event_id
+    )
     return await _run_batch(
         db,
-        tenant_id=request.tenant_id,
-        event_id=request.event_id,
-        source_system_code=request.source_system_code,
+        tenant_id=payload.tenant_id,
+        event_id=payload.event_id,
+        source_system_code=payload.source_system_code,
         job_type="PRODUCT_IMPORT",
-        rows=request.rows,
+        rows=payload.rows,
         upsert_one=upsert_product,
     )
 
 
 @router.get("/admin/imports/{import_id}", response_model=ImportStatusResponse)
 async def get_import_status(
-    import_id: UUID, db: AsyncSession = Depends(get_db)
+    import_id: UUID,
+    http_request: Request,
+    principal: ImportAdmin,
+    db: Database,
 ) -> ImportStatusResponse:
     job = await db.get(SyncJob, import_id)
     if job is None:
         raise HTTPException(status_code=404, detail="IMPORT_NOT_FOUND")
+    _require_import_scope(
+        http_request, principal, tenant_id=job.tenant_id, event_id=job.event_id
+    )
     return ImportStatusResponse(
         import_id=job.sync_job_id,
         job_type=job.job_type,
@@ -428,9 +490,11 @@ async def get_import_status(
 @router.get("/admin/imports/{import_id}/errors", response_model=ImportErrorListResponse)
 async def get_import_errors(
     import_id: UUID,
+    http_request: Request,
+    principal: ImportAdmin,
+    db: Database,
     cursor: str | None = Query(default=None, description="이전 응답의 next_cursor 값"),
     limit: int = Query(default=50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
 ) -> ImportErrorListResponse:
     """인터페이스 명세 4.1절 "불투명 Cursor Pagination"을 만족하는 최소 구현.
 
@@ -441,6 +505,9 @@ async def get_import_errors(
     job = await db.get(SyncJob, import_id)
     if job is None:
         raise HTTPException(status_code=404, detail="IMPORT_NOT_FOUND")
+    _require_import_scope(
+        http_request, principal, tenant_id=job.tenant_id, event_id=job.event_id
+    )
 
     offset = 0
     if cursor:

@@ -11,6 +11,8 @@ pydantic-settings의 BaseSettings로 환경변수와 .env 파일을 읽는다.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from functools import lru_cache
 from typing import Literal
 from uuid import UUID
@@ -95,6 +97,61 @@ class Settings(BaseSettings):
     def site_context_secret(self) -> str:
         return self.SITE_CONTEXT_SECRET or self.SECRET_KEY
 
+    # --- Authentication (CONTRACT-006) ---
+    AUTH_TOKEN_PEPPER: SecretStr | None = Field(default=None, repr=False)
+    AUTH_ENCRYPTION_KEY_B64: SecretStr | None = Field(default=None, repr=False)
+    AUTH_SESSION_COOKIE_NAME: str = "__Host-meet_ai_session"
+    AUTH_SESSION_ABSOLUTE_SECONDS: int = Field(default=43_200, ge=900, le=86_400)
+    AUTH_SESSION_IDLE_USER_SECONDS: int = Field(default=3_600, ge=300, le=14_400)
+    AUTH_SESSION_IDLE_ADMIN_SECONDS: int = Field(default=1_800, ge=300, le=7_200)
+    AUTH_MAGIC_LINK_TTL_SECONDS: int = Field(default=900, ge=60, le=900)
+    AUTH_MFA_CHALLENGE_TTL_SECONDS: int = Field(default=300, ge=60, le=600)
+    AUTH_MFA_FRESHNESS_SECONDS: int = Field(default=900, ge=60, le=1_800)
+    AUTH_WEBAUTHN_RP_ID: str = "localhost"
+    AUTH_WEBAUTHN_RP_NAME: str = "Meet AI"
+    AUTH_WEBAUTHN_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    AUTH_BROWSER_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    AUTH_JWT_ISSUER: str = "meet-ai"
+    AUTH_JWT_AUDIENCE: str = "meet-ai-api"
+    AUTH_JWT_PUBLIC_KEY_PEM: SecretStr | None = Field(default=None, repr=False)
+
+    @property
+    def auth_token_pepper(self) -> bytes:
+        configured = self.AUTH_TOKEN_PEPPER
+        value = configured.get_secret_value() if configured else self.SECRET_KEY
+        return value.encode("utf-8")
+
+    @property
+    def auth_encryption_key(self) -> bytes:
+        configured = self.AUTH_ENCRYPTION_KEY_B64
+        if configured:
+            try:
+                key = base64.urlsafe_b64decode(configured.get_secret_value())
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    "AUTH_ENCRYPTION_KEY_B64 must be URL-safe base64"
+                ) from exc
+            if len(key) != 32:
+                raise ValueError("AUTH_ENCRYPTION_KEY_B64 must decode to 32 bytes")
+            return key
+        return hashlib.sha256(self.SECRET_KEY.encode("utf-8")).digest()
+
+    @property
+    def auth_webauthn_origins(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.AUTH_WEBAUTHN_ORIGINS.split(",")
+            if item.strip()
+        ]
+
+    @property
+    def auth_browser_origins(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.AUTH_BROWSER_ORIGINS.split(",")
+            if item.strip()
+        ]
+
     # --- 공개 검색·익명 키오스크 ---
     SEARCH_SESSION_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
     SEARCH_EMBEDDING_ENABLED: bool = False
@@ -164,6 +221,23 @@ class Settings(BaseSettings):
                 )
             if not self.SITE_CONTEXT_SECRET:
                 raise ValueError("SITE_CONTEXT_SECRET must be configured in deployment")
+            if not self.AUTH_TOKEN_PEPPER:
+                raise ValueError("AUTH_TOKEN_PEPPER must be configured in deployment")
+            if not self.AUTH_ENCRYPTION_KEY_B64:
+                raise ValueError(
+                    "AUTH_ENCRYPTION_KEY_B64 must be configured in deployment"
+                )
+            origin_sets = {
+                "AUTH_BROWSER_ORIGINS": self.auth_browser_origins,
+                "AUTH_WEBAUTHN_ORIGINS": self.auth_webauthn_origins,
+            }
+            for setting_name, origins in origin_sets.items():
+                if not origins or any(
+                    not origin.startswith("https://") for origin in origins
+                ):
+                    raise ValueError(f"{setting_name} must contain only HTTPS origins")
+            if self.AUTH_WEBAUTHN_RP_ID == "localhost":
+                raise ValueError("AUTH_WEBAUTHN_RP_ID must be configured in deployment")
         return self
 
 

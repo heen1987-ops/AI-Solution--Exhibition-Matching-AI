@@ -24,6 +24,7 @@
  */
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import { ApiClientError, generateClientId, postCheckIn } from "@/lib/api-client";
@@ -306,9 +307,9 @@ function CheckInForm({
         {isSubmitting ? "저장 중..." : "저장하고 다음 추천"}
       </button>
 
-      <a href="/check-in/enter" className="w-fit text-sm underline" style={{ color: "var(--color-brand)" }}>
+      <Link href="/check-in/enter" className="w-fit text-sm underline" style={{ color: "var(--color-brand)" }}>
         카메라 대신 코드 직접 입력
-      </a>
+      </Link>
     </div>
   );
 }

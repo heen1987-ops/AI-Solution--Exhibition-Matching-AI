@@ -19,6 +19,21 @@ FIXTURES = Path(__file__).parent / "fixtures"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
+class _AllowedImportPrincipal:
+    def has_role(self, *args, **kwargs) -> bool:
+        del args, kwargs
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _authorized_import_admin():
+    app.dependency_overrides[imports_router.require_import_admin] = lambda: (
+        _AllowedImportPrincipal()
+    )
+    yield
+    app.dependency_overrides.pop(imports_router.require_import_admin, None)
+
+
 def _fixture(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 

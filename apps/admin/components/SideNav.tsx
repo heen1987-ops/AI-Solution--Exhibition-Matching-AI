@@ -3,21 +3,48 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { hasCapability, type AdminCapability } from "@/lib/auth-state";
+import { useSession } from "@/lib/use-session";
+
 /**
  * 작업 지시가 지정한 6개 화면 + 홈. §43절 A00~A15 화면군 중 이 작업 범위에 해당하는
  * 것만 연결한다(나머지는 ADMIN-002/003 등 후속 과제).
  */
-const NAV_ITEMS: { href: string; label: string }[] = [
+const NAV_ITEMS: {
+  href: string;
+  label: string;
+  capabilities?: AdminCapability[];
+}[] = [
   { href: "/dashboard", label: "관리자 홈" },
-  { href: "/events", label: "행사 관리" },
-  { href: "/exhibitors", label: "참가업체" },
-  { href: "/products", label: "제품·서비스" },
-  { href: "/booths", label: "부스" },
-  { href: "/audit", label: "감사로그" },
+  { href: "/events", label: "행사 관리", capabilities: ["EVENT_MANAGE"] },
+  {
+    href: "/exhibitors",
+    label: "참가업체",
+    capabilities: ["EXHIBITOR_REVIEW", "EXHIBITOR_EDIT_OWN"],
+  },
+  {
+    href: "/products",
+    label: "제품·서비스",
+    capabilities: ["PRODUCT_MANAGE_ANY", "PRODUCT_MANAGE_OWN"],
+  },
+  {
+    href: "/booths",
+    label: "부스",
+    capabilities: ["BOOTH_MANAGE", "BOOTH_STATUS_CHANGE"],
+  },
+  { href: "/audit", label: "감사로그", capabilities: ["AUDIT_VIEW"] },
 ];
 
 export default function SideNav() {
   const pathname = usePathname();
+  const [session] = useSession();
+  const visibleItems = session.role
+    ? NAV_ITEMS.filter(
+        (item) =>
+          !item.capabilities ||
+          item.capabilities.some((capability) => hasCapability(session.role, capability)),
+      )
+    : [];
 
   return (
     <nav
@@ -26,7 +53,7 @@ export default function SideNav() {
       style={{ width: "var(--side-nav-width)" }}
     >
       <ul className="flex flex-col gap-1 p-3">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const active = pathname === item.href || pathname?.startsWith(`${item.href}/`);
           return (
             <li key={item.href}>

@@ -7,11 +7,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
-
 from app.api.v1.routers import recommendations
+from app.core.auth import VerifiedGuest, get_verified_subject
 from app.core.config import Settings
 from app.core.site_context import sign_site_context, verify_site_context
 from app.db.session import get_db
@@ -33,6 +30,9 @@ from app.services.matching.types import (
     RecommendationOutcome,
     SubjectContext,
 )
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 
 def _subject_headers() -> dict[str, str]:
@@ -43,6 +43,46 @@ def _subject_headers() -> dict[str, str]:
         "X-Guest-Session-Id": str(uuid.uuid4()),
         "X-Request-ID": "req-api-contract-001",
     }
+
+
+@pytest.fixture(autouse=True)
+def _verified_subject_test_adapter(monkeypatch: pytest.MonkeyPatch):
+    """Keep pipeline tests focused while production resolves ownership from DB sessions."""
+
+    app.dependency_overrides[get_verified_subject] = lambda: VerifiedGuest(
+        guest_session_id=uuid.uuid4(), tenant_id=uuid.uuid4(), event_id=uuid.uuid4()
+    )
+
+    async def resolve_from_test_headers(request, db, verified):
+        del db, verified
+        tenant_id = recommendations._require_uuid_header(request, "X-Tenant-Id")
+        event_id = recommendations._require_uuid_header(request, "X-Event-Id")
+        profile_id = recommendations._require_uuid_header(request, "X-Profile-Id")
+        user_id = recommendations._optional_uuid_header(request, "X-User-Id")
+        guest_id = recommendations._optional_uuid_header(request, "X-Guest-Session-Id")
+        if (user_id is None) == (guest_id is None):
+            recommendations._raise_http(
+                recommendations.auth_required(
+                    "X-User-Id와 X-Guest-Session-Id 중 정확히 하나가 필요합니다."
+                )
+            )
+        return SubjectContext(
+            tenant_id=tenant_id,
+            event_id=event_id,
+            profile_id=profile_id,
+            visit_session_id=recommendations._optional_uuid_header(
+                request, "X-Visit-Session-Id"
+            ),
+            user_id=user_id,
+            guest_session_id=guest_id,
+            request_id=request.headers.get("X-Request-ID") or str(uuid.uuid4()),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            server_time=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(recommendations, "resolve_subject_context", resolve_from_test_headers)
+    yield
+    app.dependency_overrides.pop(get_verified_subject, None)
 
 
 def test_site_context_signature_detects_tampering_and_replay() -> None:
@@ -80,6 +120,11 @@ def test_production_configuration_rejects_the_local_default_secret() -> None:
         ENV="production",
         SECRET_KEY="configured-session-secret",
         SITE_CONTEXT_SECRET="configured-site-adapter-secret",
+        AUTH_TOKEN_PEPPER="configured-auth-token-pepper",
+        AUTH_ENCRYPTION_KEY_B64=("a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s="),
+        AUTH_BROWSER_ORIGINS="https://admin.example.test,https://event.example.test",
+        AUTH_WEBAUTHN_ORIGINS="https://admin.example.test",
+        AUTH_WEBAUTHN_RP_ID="admin.example.test",
     )
     assert settings.site_context_secret == "configured-site-adapter-secret"
 

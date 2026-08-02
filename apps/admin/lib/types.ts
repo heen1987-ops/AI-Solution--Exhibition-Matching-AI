@@ -94,20 +94,21 @@ export type ApiErrorCode = OpenEnum<
 >;
 
 // ---------------------------------------------------------------------------
-// §43 역할·세션 (실제 로그인/MFA API는 이 작업 범위 밖 - components/SessionSwitcher.tsx 참고)
+// §43 검증된 역할·서버 세션
 // ---------------------------------------------------------------------------
 
 /** 작업 지시가 지정한 세 역할. PROJECT_SCOPE.md/master-spec §46 RBAC 근거. */
 export type AdminRole = "EVENT_ADMIN" | "DATA_REVIEWER" | "EXHIBITOR_ADMIN";
 
 export interface AdminSession {
-  role: AdminRole;
-  /** apps/api partner.py의 X-Actor-User-Id 헤더로 그대로 전달되는 임시 인증 스텁 값.
-   * TODO(BACKEND 세션/JWT 도입 후 교체): 실제 로그인 붙기 전까지는 관리자가 직접 입력한다. */
+  role: AdminRole | null;
+  /** 검증된 서버 principal의 subject_id. 권한 헤더로는 전송하지 않는다. */
   actorUserId: string | null;
   /** EXHIBITOR_ADMIN 역할일 때만 의미 있다 - 자사 업체로 화면 범위를 제한한다. */
   exhibitorId: string | null;
   displayName: string;
+  state: "ANONYMOUS" | "AUTHENTICATED" | "MFA_PENDING" | "MFA_ENROLLMENT_REQUIRED";
+  csrfToken: string | null;
 }
 
 // ---------------------------------------------------------------------------

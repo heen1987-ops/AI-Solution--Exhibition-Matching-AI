@@ -77,12 +77,13 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import VerifiedGuest, VerifiedPrincipal, get_verified_subject
 from app.db.session import get_db
 from app.models.matching import MatchRun
 from app.models.profile import (
@@ -160,55 +161,31 @@ def _parse_uuid(value: str | None, field: str) -> uuid.UUID | None:
 
 
 async def get_current_subject(
-    x_tenant_id: str | None = Header(default=None, alias="X-Tenant-ID"),
-    x_event_id: str | None = Header(default=None, alias="X-Event-ID"),
-    x_user_id: str | None = Header(default=None, alias="X-User-ID"),
-    x_guest_session_id: str | None = Header(default=None, alias="X-Guest-Session-ID"),
+    verified: Annotated[
+        VerifiedPrincipal | VerifiedGuest, Depends(get_verified_subject)
+    ],
 ) -> CurrentSubject:
-    """현재 인증·익명 주체를 해석한다.
+    """서버가 검증한 세션에서만 현재 주체와 tenant/event 경계를 파생한다."""
 
-    TODO(세션/인증 도메인 통합, 이 작업 범위 밖): 인터페이스 명세 7.1~7.2절의 서명된 guest
-    cookie 발급과 Secure HttpOnly 세션 쿠키 검증은 별도 세션/인증 라우터의 책임이다(그
-    라우터도, main.py의 쿠키/미들웨어 설정도 이 작업 범위 밖). 지금은 다른 도메인 라우터와
-    동일한 계약으로 개발·검증할 수 있도록 신뢰할 수 없는 평문 헤더에서 주체를 읽는다.
-    운영 배포 전 반드시 다음으로 교체해야 한다:
-        - Authorization Bearer 토큰 또는 세션 쿠키 검증 -> user_id 해석
-        - 서명된 guest 쿠키 검증 -> guest_session_id 해석
-        - tenant_id/event_id는 클라이언트가 보낸 헤더가 아니라 서버측 세션 저장소에서 파생
-    """
-
-    tenant_id = _parse_uuid(x_tenant_id, "X-Tenant-ID")
-    event_id = _parse_uuid(x_event_id, "X-Event-ID")
-    if tenant_id is None or event_id is None:
-        raise api_error(
-            status.HTTP_401_UNAUTHORIZED,
-            "SESSION_EXPIRED",
-            "유효한 세션 컨텍스트(X-Tenant-ID, X-Event-ID)가 없습니다.",
+    if isinstance(verified, VerifiedPrincipal):
+        event_id = verified.principal.event_id
+        if event_id is None:
+            raise api_error(
+                status.HTTP_401_UNAUTHORIZED,
+                "SESSION_EXPIRED",
+                "행사 세션 컨텍스트가 없습니다.",
+            )
+        return CurrentSubject(
+            tenant_id=verified.principal.tenant_id,
+            event_id=event_id,
+            user_id=verified.user_id,
+            guest_session_id=None,
         )
-
-    user_id = _parse_uuid(x_user_id, "X-User-ID")
-    guest_session_id = _parse_uuid(x_guest_session_id, "X-Guest-Session-ID")
-
-    if user_id is not None and guest_session_id is not None:
-        # 인터페이스 명세 4.1절: "Authorization과 익명 세션 헤더는 동시에 보내지 않는다.
-        # 서버는 인증 세션을 우선하며 주체가 충돌하면 401 PRINCIPAL_CONFLICT를 반환한다."
-        raise api_error(
-            status.HTTP_401_UNAUTHORIZED,
-            "PRINCIPAL_CONFLICT",
-            "인증 세션과 익명 세션을 동시에 사용할 수 없습니다.",
-        )
-    if user_id is None and guest_session_id is None:
-        raise api_error(
-            status.HTTP_401_UNAUTHORIZED,
-            "AUTH_REQUIRED",
-            "인증 세션 또는 익명 세션이 필요합니다.",
-        )
-
     return CurrentSubject(
-        tenant_id=tenant_id,
-        event_id=event_id,
-        user_id=user_id,
-        guest_session_id=guest_session_id,
+        tenant_id=verified.tenant_id,
+        event_id=verified.event_id,
+        user_id=None,
+        guest_session_id=verified.guest_session_id,
     )
 
 

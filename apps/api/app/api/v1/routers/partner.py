@@ -22,14 +22,11 @@ POST /api/v1/admin/exhibitors/{exhibitor_id}/approve)은 이번 작업 지시가
 ("업체 프로파일 조회/수정, 제품 등록, 거래조건 등록, 희망 바이어 등록, 검수 제출")에 들어있지
 않아 이 파일에 포함하지 않는다 - 운영자(admin) 라우터 담당 에이전트의 몫이다.
 
-인증에 대한 TODO
------------------
-세션/인증 미들웨어(개발 순서 1번)가 아직 없어, 이 라우터는 `X-Actor-User-Id` 헤더로 전달된
-사용자 ID를 실제 인증 주체로 "일단" 신뢰하고 profile.user_role에서 EXHIBITOR/OPERATOR/ADMIN
-역할을 DB로 직접 확인하는 임시 방편을 쓴다(_require_exhibitor_access). 인터페이스 명세 5절의
-"ACCOUNT_AUTHENTICATED + EXHIBITOR + 해당 업체 소속" 요건 중 권한 검사 자체는 실제로
-수행하지만, "누가 X-Actor-User-Id인가"를 증명하는 세션 검증은 하지 않는다 - 통합 단계에서
-이 헤더 의존성을 실제 세션 기반 Depends로 교체해야 한다.
+인증 경계
+---------
+보호 경로는 검증된 서버 세션 또는 서비스 JWT에서 파생된 principal만 사용한다. 호출자가
+보내는 사용자 식별 헤더는 권한 판단에 사용하지 않으며, 업체 범위는 principal의 tenant/event와
+DB 소속 관계를 함께 확인한다.
 """
 
 from __future__ import annotations
@@ -41,15 +38,16 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import VerifiedPrincipal, get_verified_principal
 from app.db.session import get_db
 from app.models.exhibitor import (
+    EventProduct,
     Exhibitor,
     ExhibitorBusinessType,
     ExhibitorBuyerPreference,
     ExhibitorParticipation,
     ExhibitorProfile,
     ExhibitorStaff,
-    EventProduct,
     Product,
     ProductProfile,
     TradeCondition,
@@ -78,11 +76,11 @@ router = APIRouter()
 
 
 async def get_actor_user_id(
-    x_actor_user_id: UUID = Header(..., alias="X-Actor-User-Id"),
+    principal: VerifiedPrincipal = Depends(get_verified_principal),
 ) -> UUID:
-    """TODO(인증 계층): 모듈 docstring 참고. 실제 세션/JWT 검증으로 교체해야 한다."""
+    """검증된 세션/JWT principal에서만 행위자를 파생한다."""
 
-    return x_actor_user_id
+    return principal.user_id
 
 
 async def _require_exhibitor_access(

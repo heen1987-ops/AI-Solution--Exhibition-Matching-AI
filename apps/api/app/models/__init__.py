@@ -2,6 +2,7 @@
 
 from app.models import (
     ai,
+    auth,
     cold_start,
     consent,
     conversation,
@@ -21,6 +22,7 @@ from app.models import (
 
 __all__ = [
     "ai",
+    "auth",
     "cold_start",
     "consent",
     "conversation",

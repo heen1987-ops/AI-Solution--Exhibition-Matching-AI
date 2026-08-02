@@ -7,10 +7,10 @@
   "scripts": {
     "dev:user-web": "pnpm --filter backju-ai-sherpa-frontend dev",
     "dev:admin": "pnpm --filter backju-admin dev",
-    "lint": "pnpm --filter=!backju-kiosk -r --if-present run lint",
-    "typecheck": "pnpm --filter=!backju-kiosk -r --if-present run typecheck && tsc --noEmit",
-    "test": "pnpm --filter=!backju-kiosk -r --if-present run test",
-    "build": "pnpm --filter=!backju-kiosk -r --if-present run build"
+    "lint": "pnpm -r --if-present run lint",
+    "typecheck": "pnpm -r --if-present run typecheck && tsc --noEmit",
+    "test": "pnpm -r --if-present run test",
+    "build": "pnpm -r --if-present run build"
   },
   "dependencies": {
     "@netlify/functions": "4.3.0",

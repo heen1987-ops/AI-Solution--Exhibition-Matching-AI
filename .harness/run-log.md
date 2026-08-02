@@ -447,3 +447,27 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   72 tests passed; API 219 tests passed with 2 skipped; `git diff --check` passed.
 - BACKEND-010 is next. Personal My Event HTML and Kakao sending remain downstream of its verified
   session principal and a separate notification delivery contract.
+
+## 2026-08-03 — BACKEND-010 and ADMIN-001 verified authentication foundation
+
+- Implemented 0018 persistence for digest-only personal links and sessions, explicit scoped role
+  grants, WebAuthn/TOTP authenticators, short-lived challenges, and one-time recovery codes. Secret
+  values use keyed digests or AES-GCM authenticated encryption; contact/message encryption now
+  fails closed on tampering or legacy plaintext.
+- Added one-time personal-link exchange, session read/revoke, MFA enrollment/challenge/verification,
+  RS256 service JWT validation, shared role/fresh-MFA dependencies, and OpenAPI security schemes.
+  Magic-link plus TOTP is not treated as AAL2.
+- Removed caller-provided identity headers from protected profile, recommendation, partner, meeting,
+  and Excel import boundaries. Browser-cookie mutations require an allowlisted Origin and a
+  session-bound CSRF token; guest continuity remains a separate non-authenticating cookie.
+- Replaced the admin localStorage role switcher with server session projection, opaque-link exchange,
+  WebAuthn enrollment/step-up, logout, and role-scoped navigation. Kiosk remains excluded from the
+  active workspace and no kiosk feature was added.
+- Upgraded active Next/React dependencies and patched PostCSS, Sharp, and esbuild. Production pnpm
+  audit reports no known vulnerabilities.
+- Verification: common engine 72 passed; API 236 passed/2 skipped; auth-focused 17 passed; active
+  web 5 passed, lint/typecheck/build PASS on clean NTFS; Alembic has one head and the full offline
+  upgrade renders successfully; fatal Ruff, pip check, and diff check PASS. The two PostgreSQL
+  integration tests remain skipped because POSTGRES_TEST_DATABASE_URL is not configured.
+- BACKEND-007 is now READY. Live PostgreSQL, production WebAuthn RP/origin, and deployment key
+  rotation validation remain release-gate work rather than inferred success.

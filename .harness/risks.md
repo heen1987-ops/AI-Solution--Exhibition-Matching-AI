@@ -38,6 +38,15 @@ CR-006과 OpenAPI 0.2.0이 서버 세션·서비스 JWT 검증, tenant/event/res
 WebAuthn/TOTP/복구를 저장하지 못하며, 검토된 0018 마이그레이션과 spoofing 회귀시험 전에는
 보호 API·관리자 기능·G3 권한시험을 완료 처리할 수 없다.
 
+### 2026-08-03 update — IMPLEMENTATION MITIGATED / LIVE VALIDATION PENDING
+
+BACKEND-010과 ADMIN-001이 0018 credential/session 저장소, opaque 링크 교환, 검증된 세션/JWT
+principal, event/exhibitor 범위 RBAC, WebAuthn/TOTP/복구, 역할별 관리자 화면을 구현했다. 보호
+라우터는 호출자 제공 identity 헤더를 principal로 사용하지 않으며, 쿠키 기반 변경 요청은 허용
+Origin과 세션 결합 CSRF를 함께 검증한다. 자동 회귀시험과 OpenAPI/Alembic 검증은 통과했다.
+실제 PostgreSQL·실제 WebAuthn RP/브라우저·운영 키 회전 검증은 배포 환경이 준비될 때까지
+남아 있으므로 G3 출시 위험을 완전히 닫지는 않는다.
+
 ## RISK-004: 매칭 점수 산식 이중화
 
 기존 12단계 문서(바이어 B2B 매칭점수, 10요소 상세 가중치)와 재설계 §34~35(단순화된 웹

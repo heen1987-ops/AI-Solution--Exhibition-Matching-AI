@@ -2,9 +2,8 @@
  * 관리자 앱 공용 API 클라이언트.
  *
  * apps/user-web/lib/api-client.ts와 동일한 요청/오류 처리 골격(성공 봉투 언랩, 다양한
- * FastAPI 오류 모양 흡수)을 따르되, 관리자 화면은 apps/api/app/api/v1/routers/partner.py의
- * `X-Actor-User-Id` 임시 인증 스텁을 사용하는 요청이 많아 세션(lib/auth-state.ts)에서 값을
- * 읽어 자동으로 헤더에 실어 보낸다.
+ * FastAPI 오류 모양 흡수)을 따른다. 관리자 인증은 HttpOnly 서버 세션으로만
+ * 수행하며 브라우저가 사용자 ID/역할 헤더를 만들지 않는다.
  *
  * 이 파일은 두 그룹으로 나뉜다:
  *   1. "실제 구현됨" - apps/api/app/api/v1/routers/{exhibitors,partner}.py가 이미 등록한
@@ -16,7 +15,7 @@
  *      상태를 보여줘야 한다(작업 지시 "가짜 성공 표시 금지").
  */
 
-import { getStoredSession } from "./auth-state";
+import { getRuntimeSession } from "./auth-state";
 import type {
   AdminBoothCreateRequest,
   AdminBoothListItem,
@@ -65,8 +64,7 @@ export interface RequestOptions {
   idempotencyKey?: string;
   requestId?: string;
   signal?: AbortSignal;
-  /** 기본은 true - 세션의 actorUserId를 X-Actor-User-Id 헤더로 자동 첨부한다.
-   * 공개(비인증) 엔드포인트 호출에서만 명시적으로 false로 끈다. */
+  /** 하위 호환 필드. 인증 헤더는 더 이상 첨부하지 않는다. */
   attachActor?: boolean;
 }
 
@@ -135,7 +133,8 @@ function isSuccessEnvelope<T>(payload: unknown): payload is ApiSuccessEnvelope<T
 function extractErrorBody(payload: unknown): Partial<ApiErrorBody> | null {
   if (typeof payload !== "object" || payload === null) return null;
   const record = payload as Record<string, unknown>;
-  const candidate = record.error ?? record.detail;
+  const candidate =
+    record.error ?? record.detail ?? (typeof record.code === "string" ? record : undefined);
   if (candidate === undefined || candidate === null) return null;
 
   if (typeof candidate === "string") {
@@ -195,11 +194,9 @@ async function apiRequest<T>(
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
 
-  if (options.attachActor !== false) {
-    const session = getStoredSession();
-    if (session?.actorUserId) {
-      headers["X-Actor-User-Id"] = session.actorUserId;
-    }
+  if (method !== "GET") {
+    const csrf = getRuntimeSession().csrfToken;
+    if (csrf) headers["X-CSRF-Token"] = csrf;
   }
 
   let response: Response;
@@ -337,7 +334,7 @@ export function getPublicBooth(
 
 // ===========================================================================
 // 실제 구현됨 - apps/api/app/api/v1/routers/partner.py (08 28절)
-// 인증 스텁: X-Actor-User-Id 헤더가 apiRequest에서 세션값으로 자동 첨부된다.
+// 보호 API는 Secure/HttpOnly 서버 세션으로 인증하며 호출자가 identity 헤더를 붙이지 않는다.
 // ===========================================================================
 
 /** 08 28.1절 - 공개(PUBLIC 등급) 프로파일 조회. 인증 불필요. */
