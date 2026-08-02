@@ -14,12 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.profile import InferredPreference
+from app.services.matching.engine_adapter import execute_directional_score
 from app.services.matching.ontology_support import (
     Catalog,
     get_catalog,
     max_match_strength,
 )
 from app.services.matching.types import MatchCandidate, ResolvedProfile
+from meet_ai.engine import MatchingMode
 from meet_ai.scoring import (
     BUYER_SCORE_V1,
     CONSUMER_SCORE_V1,
@@ -27,7 +29,6 @@ from meet_ai.scoring import (
     EligibilityDecision,
     ScoreValidationError,
     ScoringPolicy,
-    calculate_directional_score,
 )
 
 
@@ -271,12 +272,21 @@ def score_candidate(
         profile_completeness=profile.completeness,
         candidate_trust=candidate_trust,
     )
-    result = calculate_directional_score(
-        policy,
-        components,
+    engine_result = execute_directional_score(
+        candidate_id=str(candidate.public_object_id or candidate.object_id),
+        exhibitor_id=str(candidate.exhibitor_id),
+        mode=(
+            MatchingMode.BUYER_TO_EXHIBITOR
+            if policy is BUYER_SCORE_V1
+            else MatchingMode.GENERAL_VISITOR
+        ),
+        components=components,
         eligibility=eligibility,
         confidence=confidence,
     )
+    result = engine_result.directional_result
+    if result is None:
+        raise ScoreValidationError("directional engine result is missing provenance")
     _apply_directional_result(candidate, result, policy=policy)
     return result
 

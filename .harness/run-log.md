@@ -196,3 +196,21 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   `python -m` invocation is the verified local command.
 - This is a deterministic regression baseline, not a claim of production relevance. Human-judged
   event data, real provider/pgvector recall, latency, cost, and ANN-vs-exact checks remain G3 work.
+
+## 2026-08-02 — AIENGINE-003 common matching-engine facade
+
+- Published provider/DB-independent `matching-engine-command-v1.0` and
+  `matching-engine-result-v1.0` contracts for catalog search, general visitor, buyer-to-exhibitor,
+  and reciprocal modes. The facade owns policy selection, eligibility exclusion, stable ranking,
+  version provenance, and canonical input/result fingerprints.
+- Moved the frozen kiosk search coefficients into the pure engine and changed kiosk, directional,
+  and reciprocal backend adapters to call the facade. Existing Hard Filter, missing-signal
+  renormalization, reciprocal caps, grades, statuses, actions, and public API contracts are unchanged.
+- Upgraded the offline evaluator to `matching-evaluator-v1.1`; every golden scenario is now one
+  facade command and records engine contract/input/result fingerprints. Baseline remains 3/3 PASS,
+  Recall@3 1.0, NDCG@3 1.0, fallback Recall@3 0.666667, with zero filter/explanation violations.
+- Verification: root `42 passed`; backend `180 passed, 2 skipped`; focused facade/evaluator `18
+  passed`; focused backend adapter/scoring/search `17 passed`; compileall, pip check, and diff check
+  pass. Live PostgreSQL/provider behavior remains deferred to the existing G3 operational checks.
+- AISEARCH-003 is next for a change-controlled decision on the redesign's simplified formula. No
+  published formula was changed in this unit.

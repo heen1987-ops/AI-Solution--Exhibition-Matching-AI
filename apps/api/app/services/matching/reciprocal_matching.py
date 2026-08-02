@@ -4,16 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from app.services.matching.engine_adapter import execute_reciprocal_score
 from app.services.matching.types import MatchCandidate, ResolvedProfile
 from meet_ai.scoring import (
     EXHIBITOR_SCORE_V1,
-    RECIPROCAL_SCORE_V1,
     DirectionalScoreResult,
     EligibilityDecision,
     ScoreCap,
     ScoreValidationError,
-    calculate_directional_score,
-    calculate_reciprocal_score,
 )
 
 _RECIPROCAL_OBJECT_TYPES = ("EXHIBITOR", "BOOTH", "PRODUCT")
@@ -122,15 +120,6 @@ def apply_reciprocal_matching(
             profile_completeness=profile.completeness,
             preference_profile_available=preference_profile_available,
         )
-        exhibitor_result = calculate_directional_score(
-            EXHIBITOR_SCORE_V1,
-            components,
-            eligibility=eligibility,
-            confidence=exhibitor_confidence,
-            caps=_directional_caps(components),
-        )
-        _attach_exhibitor_result(candidate, exhibitor_result)
-
         buyer_confidence = candidate.directional_confidence
         if buyer_confidence is None:
             raise ScoreValidationError(
@@ -145,16 +134,23 @@ def apply_reciprocal_matching(
         if not preference_profile_available:
             reciprocal_caps = (ScoreCap("EXHIBITOR_PREFERENCE_UNCONFIRMED", 80),)
 
-        reciprocal = calculate_reciprocal_score(
-            buyer_to_exhibitor_score=candidate.normalized_score * 100.0,
-            exhibitor_to_buyer_score=exhibitor_result.final_score,
+        engine_result = execute_reciprocal_score(
+            candidate_id=str(candidate.public_object_id or candidate.object_id),
+            exhibitor_id=str(candidate.exhibitor_id),
+            buyer_components=candidate.directional_components,
+            exhibitor_components=components,
             buyer_confidence=buyer_confidence,
             exhibitor_confidence=exhibitor_confidence,
             acceptance_capacity_score=acceptance_capacity,
             eligibility=eligibility,
-            policy=RECIPROCAL_SCORE_V1,
-            caps=reciprocal_caps,
+            exhibitor_caps=_directional_caps(components),
+            score_caps=reciprocal_caps,
         )
+        exhibitor_result = engine_result.exhibitor_directional_result
+        reciprocal = engine_result.reciprocal_result
+        if exhibitor_result is None or reciprocal is None:
+            raise ScoreValidationError("reciprocal engine result is missing provenance")
+        _attach_exhibitor_result(candidate, exhibitor_result)
 
         candidate.buyer_to_exhibitor = float(reciprocal.buyer_to_exhibitor_score)
         candidate.exhibitor_to_buyer = float(reciprocal.exhibitor_to_buyer_score)

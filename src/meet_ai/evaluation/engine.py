@@ -17,6 +17,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
+from meet_ai.engine import (
+    MATCHING_ENGINE_RESULT_V1,
+    MatchingCandidateCommand,
+    MatchingEngineCommand,
+    MatchingMode,
+    execute_matching,
+)
 from meet_ai.ontology import load_catalog
 from meet_ai.scoring import (
     BUYER_SCORE_V1,
@@ -26,12 +33,10 @@ from meet_ai.scoring import (
     EligibilityDecision,
     ScoreCap,
     ScoreValidationError,
-    calculate_directional_score,
-    calculate_reciprocal_score,
 )
 
 GOLDEN_SET_SCHEMA_VERSION = "matching-golden-set-v1"
-EVALUATOR_VERSION = "matching-evaluator-v1.0"
+EVALUATOR_VERSION = "matching-evaluator-v1.1"
 
 EvaluationMode = Literal[
     "GENERAL_VISITOR",
@@ -153,6 +158,9 @@ class ScenarioEvaluation:
     exhibitor_hhi_at_k: float
     ranked_candidates: tuple[RankedCandidate, ...]
     failures: tuple[str, ...]
+    engine_contract_version: str
+    engine_input_fingerprint: str
+    engine_result_fingerprint: str
     result_fingerprint: str
 
 
@@ -502,79 +510,28 @@ def _scoring_eligibility(
     )
 
 
-def _score_candidate(
+def _engine_candidate(
     scenario: GoldenScenario, candidate: GoldenCandidate
-) -> _ScoredCandidate | None:
-    if not candidate.recall_channels or not candidate.observed_eligibility.passed:
-        return None
-    eligibility = _scoring_eligibility(scenario, candidate)
-    explanation_fingerprint = _fingerprint(
-        [asdict(explanation) for explanation in candidate.explanations]
-    )
-
-    if scenario.mode == "GENERAL_VISITOR":
-        result = calculate_directional_score(
-            CONSUMER_SCORE_V1,
-            candidate.components,
-            eligibility=eligibility,
-            caps=candidate.score_caps,
-            confidence=candidate.confidence,
-        )
-        return _ScoredCandidate(
-            candidate,
-            result.final_score,
-            result.calculation_fingerprint,
-            explanation_fingerprint,
-        )
-    if scenario.mode == "BUYER_TO_EXHIBITOR":
-        result = calculate_directional_score(
-            BUYER_SCORE_V1,
-            candidate.components,
-            eligibility=eligibility,
-            caps=candidate.score_caps,
-            confidence=candidate.confidence,
-        )
-        return _ScoredCandidate(
-            candidate,
-            result.final_score,
-            result.calculation_fingerprint,
-            explanation_fingerprint,
-        )
-
-    buyer = calculate_directional_score(
-        BUYER_SCORE_V1,
-        candidate.buyer_components,
-        eligibility=eligibility,
-        confidence=candidate.buyer_confidence,
-    )
-    exhibitor = calculate_directional_score(
-        EXHIBITOR_SCORE_V1,
-        candidate.exhibitor_components,
-        eligibility=eligibility,
-        confidence=candidate.exhibitor_confidence,
-    )
-    reciprocal = calculate_reciprocal_score(
-        buyer_to_exhibitor_score=buyer.final_score,
-        exhibitor_to_buyer_score=exhibitor.final_score,
+) -> MatchingCandidateCommand:
+    return MatchingCandidateCommand(
+        candidate_id=candidate.candidate_id,
+        exhibitor_id=candidate.exhibitor_id,
+        eligibility=_scoring_eligibility(scenario, candidate),
+        recalled=bool(candidate.recall_channels),
+        recall_channels=candidate.recall_channels,
+        components=candidate.components,
+        buyer_components=candidate.buyer_components,
+        exhibitor_components=candidate.exhibitor_components,
+        confidence=candidate.confidence,
         buyer_confidence=candidate.buyer_confidence,
         exhibitor_confidence=candidate.exhibitor_confidence,
-        acceptance_capacity_score=candidate.acceptance_capacity_score,
-        eligibility=eligibility,
+        acceptance_capacity_score=(
+            Decimal("0.5")
+            if candidate.acceptance_capacity_score is None
+            else candidate.acceptance_capacity_score
+        ),
         policy_adjustment=candidate.policy_adjustment,
-        caps=candidate.score_caps,
-    )
-    combined_fingerprint = _fingerprint(
-        {
-            "buyer": buyer.calculation_fingerprint,
-            "exhibitor": exhibitor.calculation_fingerprint,
-            "reciprocal": reciprocal.calculation_fingerprint,
-        }
-    )
-    return _ScoredCandidate(
-        candidate,
-        reciprocal.final_reciprocal_score,
-        combined_fingerprint,
-        explanation_fingerprint,
+        score_caps=candidate.score_caps,
     )
 
 
@@ -641,23 +598,49 @@ def _rounded(value: float) -> float:
 
 
 def evaluate_scenario(
-    scenario: GoldenScenario, *, thresholds: EvaluationThresholds
+    scenario: GoldenScenario,
+    *,
+    thresholds: EvaluationThresholds,
+    taxonomy_version: str | None = None,
 ) -> ScenarioEvaluation:
     try:
-        scored = [
-            result
-            for candidate in scenario.candidates
-            if (result := _score_candidate(scenario, candidate)) is not None
-        ]
+        engine_result = execute_matching(
+            MatchingEngineCommand(
+                mode=MatchingMode(scenario.mode),
+                taxonomy_version=taxonomy_version or load_catalog().version,
+                candidates=tuple(
+                    _engine_candidate(scenario, candidate)
+                    for candidate in scenario.candidates
+                ),
+            )
+        )
     except ScoreValidationError as exc:
         raise GoldenSetValidationError(
             f"scenario {scenario.scenario_id} contains invalid score input: {exc}"
         ) from exc
-    ranked = _rank(scored)
+    candidates_by_id = {
+        candidate.candidate_id: candidate for candidate in scenario.candidates
+    }
+    ranked = [
+        _ScoredCandidate(
+            candidate=candidates_by_id[result.candidate_id],
+            score=result.score_100,
+            score_fingerprint=result.calculation_fingerprint,
+            explanation_fingerprint=_fingerprint(
+                [
+                    asdict(explanation)
+                    for explanation in candidates_by_id[
+                        result.candidate_id
+                    ].explanations
+                ]
+            ),
+        )
+        for result in engine_result.ranked_candidates
+    ]
     fallback_ranked = _rank(
         [
             item
-            for item in scored
+            for item in ranked
             if set(item.candidate.recall_channels) & _FALLBACK_CHANNELS
         ]
     )
@@ -731,6 +714,9 @@ def evaluate_scenario(
         "evaluator_version": EVALUATOR_VERSION,
         "scenario_id": scenario.scenario_id,
         "mode": scenario.mode,
+        "engine_contract_version": engine_result.contract_version,
+        "engine_input_fingerprint": engine_result.input_fingerprint,
+        "engine_result_fingerprint": engine_result.result_fingerprint,
         "ranked_candidates": [asdict(item) for item in ranked_candidates],
         "metrics": {
             "recall_at_k": _rounded(recall),
@@ -767,13 +753,20 @@ def evaluate_scenario(
         exhibitor_hhi_at_k=_rounded(hhi),
         ranked_candidates=ranked_candidates,
         failures=tuple(failures),
+        engine_contract_version=MATCHING_ENGINE_RESULT_V1,
+        engine_input_fingerprint=engine_result.input_fingerprint,
+        engine_result_fingerprint=engine_result.result_fingerprint,
         result_fingerprint=_fingerprint(result_payload),
     )
 
 
 def evaluate_golden_set(golden_set: GoldenSet) -> EvaluationReport:
     scenarios = tuple(
-        evaluate_scenario(scenario, thresholds=golden_set.thresholds)
+        evaluate_scenario(
+            scenario,
+            thresholds=golden_set.thresholds,
+            taxonomy_version=golden_set.taxonomy_version,
+        )
         for scenario in golden_set.scenarios
     )
     failures = tuple(

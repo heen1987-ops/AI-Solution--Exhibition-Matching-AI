@@ -30,6 +30,7 @@
     "AISEARCH-002",
     "AIENGINE-001",
     "AIENGINE-002",
+    "AIENGINE-003",
     "QA-003"
   ],
   "blocked_tasks": [
@@ -41,8 +42,8 @@
     "ADMIN-003(BACKEND-007 의존)",
     "QA-001(FND-002 의존)"
   ],
-  "next_recommended_task": "AIENGINE-003",
-  "last_successful_run": "2026-08-02T19:10:50+09:00",
+  "next_recommended_task": "AISEARCH-003 (formula replacement decision via change control)",
+  "last_successful_run": "2026-08-02T20:09:06+09:00",
   "scope_status": "LOCKED",
   "contract_status": "FROZEN",
   "mvp_progress_percent": 70,
@@ -59,6 +60,8 @@
     "The pnpm lock now resolves Rollup 4.62.3 and explicitly permits only esbuild and unrs-resolver install scripts, satisfying the active minimum-release-age supply-chain policy.",
     "Every implementation unit rechecks the living ChatGPT roadmap conversation, but .harness gate evidence controls execution order so future Wave 2D/2E/3 and v1.1 plans cannot be started early.",
     "DECISION-008 makes the common deterministic matching engine the immediate priority; web, kiosk, and platform surfaces remain consumers. CONTRACT-005 is deferred.",
-    "AIENGINE-002 publishes a versioned visitor/buyer/reciprocal golden set and offline quality gate. AIENGINE-003 is next: extract a provider/DB-independent command/result facade shared by service adapters."
+    "AIENGINE-002 publishes a versioned visitor/buyer/reciprocal golden set and offline quality gate.",
+    "AIENGINE-003 publishes matching-engine-command/result-v1.0 for catalog search, visitor, buyer, and reciprocal modes; kiosk and recommendation adapters plus matching-evaluator-v1.1 now execute through that pure facade.",
+    "AISEARCH-003 is next and must decide any simplified-formula replacement through change control; the published formulas remain unchanged until then."
   ]
 }

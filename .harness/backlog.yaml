@@ -497,7 +497,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-002]
     owned_paths:
       - "src/meet_ai/engine/**"
@@ -510,6 +510,8 @@ tasks:
       - "웹·키오스크 어댑터는 동일 정책을 호출하며 점수 산식을 재구현하지 않음"
       - "eligibility 평가 ID, 택소노미·정책·모델 버전, 입력·결과 지문을 결과에 보존"
       - "AIENGINE-002 골든셋이 facade 출력의 회귀 계약으로 동작"
+
+    evidence: "matching-engine-command/result-v1.0 facade and four modes published; kiosk, directional, and reciprocal adapters call it without owning weights. matching-evaluator-v1.1 runs the golden set through facade commands. Root 42 passed; backend 180 passed/2 skipped; golden set 3/3 PASS."
 
   - id: QA-003
     title: Wave 2 계약·범위·보안 기준선 감사
