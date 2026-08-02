@@ -182,3 +182,17 @@ UNKNOWN, approval, evidence, and contact-sharing contracts do not change. See
 `VALIDATED_PROPOSAL_ONLY` 상태일 뿐 Hard Filter나 점수 입력으로 자동 승격되지 않는다. 현재
 `weighted-v1` 검색·추천 순위는 변경하지 않는다. 상세 증거는
 `.harness/reports/integration/intent-normalization-20260803.md`를 따른다.
+
+## DECISION-016 (2026-08-03) — 확정 의도만 검색·Hard Filter 계획에 투영
+
+`intent-projection-v1.0`은 확정된 `PREFER`를 `STRUCTURED_ONTOLOGY` 후보회수 feature로만
+투영하고, 확정된 `MUST`와 `EXCLUDE`만 검증 가능한 후보 필드의 Hard Filter constraint로
+투영한다. 이 단계는 검색을 실행하거나 점수·순위·적격성을 계산하지 않는다.
+
+공개 카탈로그에서는 거래지역·유통채널·OEM/PB/수출 등 검증 바이어 전용 필드를 계획에
+포함하지 않는다. 해당 조건은 `CATALOG_SCOPE_RESTRICTED`로 보존한다. 검증 필드 바인딩이 없는
+필수조건은 `INFORMATION_REQUIRED`이며 자동 적격 처리하지 않는다. constraint의 후보 관측값이
+UNKNOWN 또는 MISSING인 경우에도 후속 평가기가 반드시 `INFORMATION_REQUIRED`로 처리하도록
+계약에 명시한다. 의도 단계의 UNKNOWN, UNRESOLVED, LLM proposal은 모두 deferred 상태로 남아
+검색조건·불일치·0점으로 변환되지 않는다. `weighted-v1` 공개순위는 그대로 유지한다. 상세
+증거는 `.harness/reports/integration/intent-projection-20260803.md`를 따른다.

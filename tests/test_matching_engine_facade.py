@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import inspect
+import json
+from dataclasses import replace
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -12,13 +15,16 @@ from meet_ai.engine import (
     MATCHING_ENGINE_COMMAND_V1,
     MATCHING_ENGINE_COMMAND_V1_1,
     MATCHING_ENGINE_RESULT_V1_1,
+    PUBLISHED_RANKING_STATE,
     REASON_CLAIM_POLICY_VERSION,
     CandidateSignalDiagnostics,
     CanonicalProfileIntentCommand,
+    CatalogScope,
     CatalogSearchSignals,
     HybridRrfShadowCommand,
     HybridShadowValidationError,
     IntentNormalizationValidationError,
+    IntentProjectionValidationError,
     MatchingCandidateCommand,
     MatchingEngineCommand,
     MatchingEngineValidationError,
@@ -30,8 +36,16 @@ from meet_ai.engine import (
     execute_matching,
     normalize_canonical_profile_intent,
     normalize_natural_language_intent,
+    project_intent,
 )
 from meet_ai.scoring import EligibilityDecision
+
+INTENT_PROJECTION_FIXTURE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "matching"
+    / "intent-projection.v1.json"
+)
 
 
 def _eligibility(candidate_id: str, passed: bool = True) -> EligibilityDecision:
@@ -170,6 +184,155 @@ def test_unpublished_or_malformed_intent_inputs_fail_closed() -> None:
             NaturalLanguageIntentCommand("선물"),
             proposal_adapter=InvalidProposalAdapter(),
         )
+
+
+def _projection_intent(source: str, command: dict[str, object]) -> object:
+    if source == "NATURAL_LANGUAGE":
+        return normalize_natural_language_intent(
+            NaturalLanguageIntentCommand(
+                query=str(command["query"]),
+                locale=str(command.get("locale", "ko-KR")),
+                context=str(command.get("context", "ANY")),
+            )
+        )
+    return normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(
+            must_codes=tuple(command.get("must_codes", ())),
+            prefer_codes=tuple(command.get("prefer_codes", ())),
+            exclude_codes=tuple(command.get("exclude_codes", ())),
+            unknown_fields=tuple(command.get("unknown_fields", ())),
+        )
+    )
+
+
+def _projection_summary(plan: object) -> dict[str, object]:
+    return {
+        "retrieval_codes": [item.concept_code for item in plan.retrieval_features],
+        "constraints": [
+            {
+                "concept_code": item.concept_code,
+                "operator": item.operator.value,
+                "candidate_field": item.candidate_field,
+                "verification_mode": item.verification_mode.value,
+            }
+            for item in plan.hard_filter_constraints
+        ],
+        "information_required": [
+            {
+                "concept_code": item.concept_code,
+                "reason_code": item.reason_code,
+            }
+            for item in plan.information_required
+        ],
+        "deferred_reasons": [item.reason_code for item in plan.deferred],
+    }
+
+
+def test_projection_fixture_preserves_excel_natural_parity_and_filter_boundaries() -> None:
+    payload = json.loads(INTENT_PROJECTION_FIXTURE.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "intent-projection-fixture-v1.0"
+    groups: dict[str, list[str]] = {}
+
+    for scenario in payload["scenarios"]:
+        intent = _projection_intent(scenario["source"], scenario["command"])
+        plan = project_intent(intent, catalog_scope=scenario["catalog_scope"])
+        assert _projection_summary(plan) == scenario["expected"], scenario["scenario_id"]
+        assert plan.ranking_state == PUBLISHED_RANKING_STATE
+        assert len(plan.semantic_input_fingerprint) == 64
+        assert len(plan.plan_fingerprint) == 64
+        assert len(plan.result_fingerprint) == 64
+        if scenario.get("parity_group"):
+            groups.setdefault(scenario["parity_group"], []).append(
+                plan.plan_fingerprint
+            )
+
+    assert groups
+    assert all(len(values) == 2 and len(set(values)) == 1 for values in groups.values())
+
+
+def test_unknown_unresolved_and_model_proposals_remain_outside_projection() -> None:
+    class ProposalAdapter:
+        def propose(self, **_: object) -> dict[str, object]:
+            return {
+                "schema_version": INTENT_PROPOSAL_SCHEMA_V1,
+                "items": [
+                    {"concept_code": "USE.GIFT", "requirement": "PREFER"}
+                ],
+            }
+
+    natural = normalize_natural_language_intent(
+        NaturalLanguageIntentCommand("unmapped person@example.com", locale="en-US"),
+        proposal_adapter=ProposalAdapter(),
+    )
+    profile = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(unknown_fields=("MOQ",))
+    )
+    natural_plan = project_intent(
+        natural, catalog_scope=CatalogScope.PUBLIC_CATALOG
+    )
+    profile_plan = project_intent(
+        profile, catalog_scope=CatalogScope.VERIFIED_BUYER_CATALOG
+    )
+
+    assert natural_plan.retrieval_features == ()
+    assert natural_plan.hard_filter_constraints == ()
+    assert {item.kind for item in natural_plan.deferred} == {
+        "PROPOSAL_ONLY",
+        "UNRESOLVED",
+    }
+    assert {item.reason_code for item in natural_plan.deferred} == {
+        "MODEL_PROPOSAL_NOT_CONFIRMED",
+        "NO_PUBLISHED_MAPPING",
+    }
+    assert "person@example.com" not in str(natural_plan.to_dict())
+    assert profile_plan.retrieval_features == ()
+    assert profile_plan.hard_filter_constraints == ()
+    assert profile_plan.deferred[0].kind == "UNKNOWN"
+    assert profile_plan.deferred[0].reason_code == "SUBJECT_VALUE_UNKNOWN"
+
+
+def test_public_scope_never_projects_buyer_only_preferences() -> None:
+    intent = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(prefer_codes=("CHANNEL.EXPORT",))
+    )
+    public_plan = project_intent(intent, catalog_scope=CatalogScope.PUBLIC_CATALOG)
+    buyer_plan = project_intent(
+        intent, catalog_scope=CatalogScope.VERIFIED_BUYER_CATALOG
+    )
+
+    assert public_plan.retrieval_features == ()
+    assert public_plan.deferred[0].reason_code == "CATALOG_SCOPE_RESTRICTED"
+    assert [item.concept_code for item in buyer_plan.retrieval_features] == [
+        "CHANNEL.EXPORT"
+    ]
+
+
+def test_projection_rejects_tampered_intent_and_never_calls_ranking() -> None:
+    intent = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(prefer_codes=("ALCOHOL.TAKJU",))
+    )
+    with pytest.raises(IntentProjectionValidationError, match="fingerprint"):
+        project_intent(
+            replace(intent, result_fingerprint="invalid"),
+            catalog_scope=CatalogScope.PUBLIC_CATALOG,
+        )
+
+    source = inspect.getsource(project_intent)
+    assert "execute_matching" not in source
+    assert "score_catalog_search" not in source
+
+
+def test_hard_constraint_declares_unknown_and_missing_as_information_required() -> None:
+    intent = normalize_canonical_profile_intent(
+        CanonicalProfileIntentCommand(must_codes=("BIZ_GOAL.OEM",))
+    )
+    plan = project_intent(
+        intent, catalog_scope=CatalogScope.VERIFIED_BUYER_CATALOG
+    )
+
+    constraint = plan.hard_filter_constraints[0]
+    assert constraint.unknown_outcome == "INFORMATION_REQUIRED"
+    assert constraint.missing_outcome == "INFORMATION_REQUIRED"
 
 
 def test_catalog_search_mode_preserves_frozen_formula_and_provenance() -> None:

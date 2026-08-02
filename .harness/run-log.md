@@ -334,3 +334,23 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   skipped; Ruff, compileall, pip check, and diff check PASS.
 - AIENGINE-007 is next: project confirmed intent into retrieval and Hard Filter plans without
   changing the published weighted-v1 order.
+
+## 2026-08-03 — AIENGINE-007 intent retrieval/filter projection
+
+- Published `intent-projection-result-v1.0`, `intent-projection-v1.0`, and
+  `candidate-capability-v1.0` as a pure plan boundary after intent normalization and before any
+  retrieval, Hard Filter decision, or score call.
+- Confirmed PREFER codes become `STRUCTURED_ONTOLOGY` recall-only features. Confirmed MUST and
+  EXCLUDE codes become REQUIRE_MATCH/FORBID_MATCH constraints only when a versioned candidate field
+  binding exists.
+- Public catalog plans do not project verified-buyer trade fields. Restricted or unbound hard
+  conditions become INFORMATION_REQUIRED instead of automatic pass or silent relaxation.
+- Every constraint fixes UNKNOWN and MISSING outcomes to INFORMATION_REQUIRED. Intent UNKNOWN,
+  UNRESOLVED, and validated model proposals remain deferred and never become retrieval features,
+  filter mismatches, or numeric zeroes.
+- Seven fixture scenarios cover natural/Excel plan parity, public preference, buyer OEM MUST,
+  unbound MUST, public-scope restriction, and explicit EXCLUDE. Verification: focused facade 25
+  passed; root 67 passed; backend 197 passed/2 skipped; Ruff, compileall, pip check, and diff check
+  PASS.
+- AIENGINE-008 is next: evaluate constraints against verified candidate observations and admit
+  scoring only for fully eligible candidates.

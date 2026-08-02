@@ -38,6 +38,7 @@
     "AIENGINE-004",
     "AIENGINE-005",
     "AIENGINE-006",
+    "AIENGINE-007",
     "BACKEND-011",
     "BACKEND-012",
     "QA-003"
@@ -50,11 +51,11 @@
     "ADMIN-002(BACKEND-007 의존)",
     "QA-001(re-audit after CR-009 web-first pivot)"
   ],
-  "next_recommended_task": "AIENGINE-007 (project normalized intent into retrieval and Hard Filter plans without changing weighted-v1 ranks)",
-  "last_successful_run": "2026-08-03T00:28:27+09:00",
+  "next_recommended_task": "AIENGINE-008 (evaluate projected constraints against verified candidate observations with explicit INFORMATION_REQUIRED)",
+  "last_successful_run": "2026-08-03T00:38:16+09:00",
   "scope_status": "LOCKED_WEB_FIRST_CR009",
   "contract_status": "FROZEN",
-  "mvp_progress_percent": 84,
+  "mvp_progress_percent": 86,
   "monorepo_migration": "DONE (DECISION-006, updated by CR-009): canonical apps/* pnpm workspace remains materialized. Active default validation/build covers apps/user-web and apps/admin; apps/kiosk is retained as inactive compatibility source and excluded by root scripts. Latest clean-NTFS active web typecheck/build and frozen install pass.",
   "notes": [
     "The approved 259-concept Backjudaegan alcohol ontology remains canonical (DECISION-004).",
@@ -77,6 +78,7 @@
     "BACKEND-012 publishes meet-ai-batch-match-export-v1.0: selected imported preregistrants execute the canonical EXHIBITOR recommendation pipeline and receive a privacy-minimized Top-N XLSX with scores, grounded reasons, policy provenance, and isolated status codes.",
     "AIENGINE-005 publishes shadow-only hybrid-rrf-shadow-v1.0. VECTOR AVAILABLE improves the labeled fixture without regression; UNAVAILABLE/NOT_INVOKED preserves the published weighted-v1 order exactly. UNKNOWN/MISSING remain explicit diagnostics, and promotion is prohibited.",
     "AIENGINE-006 publishes matching-intent-command/result-v1.0 and intent-normalization-v1.0. Natural-language and canonical Excel/profile inputs share deterministic MUST/PREFER/EXCLUDE plus explicit UNKNOWN/UNRESOLVED; ambiguous published terms are never guessed, PII is redacted before fingerprints/provider calls, and validated AI output remains proposal-only.",
-    "AIENGINE-007 is next: project only confirmed normalized intent into retrieval and Hard Filter plans while preserving UNKNOWN/UNRESOLVED and the existing weighted-v1 public ranking."
+    "AIENGINE-007 publishes intent-projection-result-v1.0 and candidate-capability-v1.0. Confirmed PREFER is recall-only, verifiable MUST/EXCLUDE becomes a Hard Filter constraint, public scope blocks buyer-only trade fields, and UNKNOWN/UNRESOLVED/proposal-only remains outside retrieval, filtering, and scoring.",
+    "AIENGINE-008 is next: evaluate projected constraints only against verified candidate observations and separate ELIGIBLE, FILTERED_OUT, and INFORMATION_REQUIRED before any score call."
   ]
 }

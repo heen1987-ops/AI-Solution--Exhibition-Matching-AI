@@ -641,7 +641,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-006, AIENGINE-003]
     owned_paths:
       - "src/meet_ai/engine/**"
@@ -656,6 +656,28 @@ tasks:
       - "자연어와 canonical Excel profile의 동일 semantic intent가 동일한 retrieval/filter plan을 생성"
       - "게시 온톨로지·정책 버전과 입력·결과 fingerprint를 보존하고 현재 weighted-v1 공개순위를 변경하지 않음"
       - "검증 가능한 후보 필드가 없는 MUST는 자동 적격 처리하지 않고 INFORMATION_REQUIRED로 분리"
+    evidence: "intent-projection-result-v1.0, intent-projection-v1.0, and candidate-capability-v1.0 published. Confirmed PREFER becomes structured recall-only features; verifiable MUST/EXCLUDE becomes filter constraints whose UNKNOWN/MISSING outcome is INFORMATION_REQUIRED. Public scope blocks buyer-only trade features, unbound requirements stay information-required, and UNKNOWN/UNRESOLVED/proposal-only stay deferred. Seven-scenario fixture PASS with natural/Excel plan parity; weighted-v1 remains unchanged. Root 67 passed; backend 197 passed/2 skipped."
+
+  - id: AIENGINE-008
+    title: 후보 관측값 기반 Hard Filter 판정·정보확인 분리
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-007]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "투영된 constraint를 검증된 후보 관측값에만 적용해 ELIGIBLE, FILTERED_OUT, INFORMATION_REQUIRED를 결정론적으로 구분"
+      - "UNKNOWN/MISSING/STALE 후보값은 MUST와 EXCLUDE 모두 자동 통과·불일치·0점 처리하지 않고 INFORMATION_REQUIRED"
+      - "ONTOLOGY_MATCH, DERIVED_BAND_MATCH, TRADE_STATUS 판정을 게시 온톨로지와 capability version으로 재현"
+      - "모든 필수 constraint가 ELIGIBLE일 때만 기존 scoring EligibilityDecision으로 변환 가능"
+      - "평가 지문·reason code·evidence ref를 제공하되 PII·원문 질의·비공개 필드값은 결과에 포함하지 않음"
 
   - id: BACKEND-011
     title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿
