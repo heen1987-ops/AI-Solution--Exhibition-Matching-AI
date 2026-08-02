@@ -30,6 +30,10 @@
 
 후보 검색(RRF, 여러 채널 융합)과 점수 계산(가중합, 웹은 `ScoringPolicy`, 키오스크는 `KIOSK_SEARCH_SCORE_V1`)을 서로 다른 계층으로 유지하고 하나가 다른 하나를 대체하지 않는다(`docs/redesign-v2/common/C-4-search-recommendation-engine.md` §1).
 
+## DEC-010: WAVE 2B·2C 프롬프트를 받았으나 착수하지 않는다 - Wave 1이 아직 끝나지 않음
+
+사용자가 WAVE 2B(사전등록 개인화)·WAVE 2C(바이어 매칭·상담) 실행 프롬프트를 Wave 1(G1_CONTRACT_FREEZE)이 끝나기 전에 전달했다. 두 프롬프트 모두 자체 §3("진입 조건")에서 "진입 조건이 실패하면 이 Wave를 시작하지 말고 이전 Gate 실패부터 복구한다"고 명시한다. 이 시점 실제 상태: G0_BOOTSTRAP도 완전히 끝나지 않았고(Docker 헬스체크 NOT_RUN), G1_CONTRACT_FREEZE는 CTR-002/003/004/005/008과 AIS-001/005/006, QAS-003/004/005가 전부 미완료다. 두 프롬프트가 전제하는 `G2A_CATALOG_SEARCH_COMPLETE`/`G2B_PERSONALIZATION_COMPLETE` 게이트는 존재하지도 않는다. 따라서 프롬프트 자신의 규칙에 따라 착수하지 않고, 전체 내용을 `.harness/future-waves.md`에 보존한 뒤 Wave 1을 계속 진행한다.
+
 ## DEC-009: CI 부트스트랩 중 발견한 기존 lint/의존성 결함은 좁게 즉시 수정한다
 
 `FND-003`(CI 파이프라인 구축) 실행 중 실제로 로컬 검증을 해보니 (a) 11건의 import 순서 위반(ruff, CONTRACTS/BACKEND/QA_SECURITY 트랙 소유 파일에 걸쳐 분포)과 (b) `backend/pyproject.toml`에 `greenlet` 의존성 누락이 발견됐다. 두 건 모두 순수 기계적 수정(자동 import 정렬, 의존성 한 줄 추가)으로 로직 변경이 전혀 없고, 현재 다른 트랙 에이전트가 그 파일들을 동시에 편집하고 있지 않아 충돌 위험이 없으므로, `AGENTS.md` §4의 "다른 트랙 소유 경로 직접 수정 금지" 원칙의 좁은 예외로 즉시 수정했다. 일반적으로는 이런 발견도 별도 Change Request/handoff로 넘겨야 한다 - 이번은 규모(12줄)와 위험(0)이 예외를 정당화할 만큼 작다고 판단한 경우로 한정한다.

@@ -36,6 +36,28 @@
 
 확인 필요 시점: CTR-003(온톨로지 계약) 완료 후 packages/ontology의 정확한 타입 목록을 확정할 때.
 
+## ASSUMPTION-009
+
+결정: WAVE 1 프롬프트 §4가 권장하는 `git worktree`+트랙별 브랜치(`wave1/contracts` 등) 실제 물리적 분리 대신, 지금까지 써온 Agent 도구 기반 동일 작업트리 병렬 실행을 계속 사용한다 - CONTRACTS/AI_SEARCH/QA_SECURITY 세 트랙이 이번에 편집하는 파일 집합이 서로 완전히 겹치지 않는다는 것을 `locks.yaml`로 이미 보장하고 있어, worktree 분리가 주는 추가 안전성이 이 상황에서는 한계효용이 낮다.
+
+근거: worktree+브랜치+병합순서 관리는 실제 파일 충돌 시에만 이득이 크다 - 지금처럼 트랙별 owned_paths가 애초에 배타적이면 병합 충돌이 구조적으로 발생하지 않으므로, 추가 브랜치 관리 오버헤드(§16 "병합 순서") 없이 동일 결과를 더 적은 절차로 얻을 수 있다.
+
+되돌릴 수 있는가: 그렇다 - 실제로 두 트랙이 같은 파일을 동시에 수정해야 하는 상황이 생기면 그때 worktree 격리(Agent 도구의 `isolation: "worktree"` 옵션)를 사용한다.
+
+확인 필요 시점: 두 트랙이 동일 경로를 동시에 편집해야 하는 요구가 실제로 발생할 때.
+
+## ASSUMPTION-010
+
+결정: WAVE 1 프롬프트 §7.1(CONTRACT-001)이 나열한 엔터티 목록(Event/RegisteredUser/Exhibitor/Booth/ProductService/SearchSession/MeetingRequest 등)과 §7.8(CONTRACT-003)의 플랫 테이블 목록(`events`/`registered_users`/`exhibitors`/`booths` 등)을 "처음부터 새로 만들 대상 목록"이 아니라 "이미 완료된 CTR-001(`​.harness/contracts/domain-model.md`)과 대조해 이름을 맞추고, 정말 없는 것만 신규로 만들 대상 목록"으로 해석한다.
+
+근거: CTR-001이 이미 검증·커밋된 상태로 존재하며, 그 문서가 "`exhibition.Exhibitor`/`exhibition.Booth`/`matching.RecommendationSession`/`profile.GuestSession` 등은 이미 구현되어 있고 재작성이 아니라 재발견이 필요했다"는 것을 실제 코드 대조로 확인했다. 이 프롬프트의 목록을 문자 그대로 새 테이블로 구현하면 기존 스키마와 이름만 다른 중복 테이블(예: 기존 `exhibition.exhibitor` 옆에 새 `exhibitors` 테이블)이 생겨 정확히 CTR-001이 막으려던 문제(스키마 분기)가 재발한다. 저장소 내 근거(CTR-001 자체)가 명확히 존재하므로 Blocker Score의 "저장소 내 근거 부재" 항목이 낮아 사용자에게 묻지 않고 이 문서에 근거해 처리한다.
+
+영향: CONTRACT-001/003 작업은 "신규 도메인 모델 작성"이 아니라 "CTR-001 대비 이름 크로스워크 작성 + 진짜 신규분(SearchSession 계열, KioskDevice/KioskConfig 등 CTR-001이 다루지 않은 것으로 확인되면)만 마이그레이션"으로 재정의해 진행한다.
+
+되돌릴 수 있는가: 그렇다 - 크로스워크 문서일 뿐, 기존 스키마에 영향 없음.
+
+확인 필요 시점: 크로스워크 작성 중 정말 대응이 안 되는 엔터티가 나오면 그 항목만 신규 마이그레이션으로 등록(CTR-001의 CTR-007 등록 방식과 동일 패턴).
+
 ## ASSUMPTION-008
 
 결정: `.harness/state.json`의 필드 형태를 이번에 받은 더 구체적인 예시에 맞춰 조정한다 - `gate_status`를 게이트별 객체가 아니라 최상위 문자열로, `next_recommended_task`(단수)를 `next_recommended_tasks`(복수 배열)로 변경한다. 게이트별 세부 판정은 정보 손실 없이 `.harness/quality-gates.yaml`(이미 게이트별 세부 criteria를 담당)에 그대로 유지한다 - state.json은 "지금 어느 게이트인지"만 한 줄로, 세부는 quality-gates.yaml이 담당하는 역할 분리로 재정리.

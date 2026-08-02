@@ -192,6 +192,10 @@ tasks:
       - "OpenAPI 3.x 유효 문서"
       - "docs/redesign-v2/web/W-8-api-and-db-changes.md §5, common/C-5-common-api.md §1의 엔드포인트 목록을 모두 포함"
       - "기존 /api/v1/ontology/* 엔드포인트도 문서화에 포함"
+      - "WAVE-1 프롬프트 §7.4의 엔드포인트 목록(시스템/프로파일/업체·부스/검색/추천/관심목록/바이어매칭/상담/키오스크/관리자)을 실제 스키마 이름(domain-model.md 크로스워크 기준)으로 매핑해 포함"
+      - "모든 엔드포인트에 operationId·권한·요청/응답 Schema·공통 오류 응답·Pagination·공개범위·멱등성 여부 명시, operationId 중복 없음"
+      - "오류 응답은 {error:{code,message,request_id,details}} 구조로 통일"
+      - "검색 요청/응답 Schema는 WAVE-1 §7.6/§7.7 예시를 실제 온톨로지 코드 체계(CTR-003)와 정합되게 반영"
 
   - id: CTR-003
     title: 온톨로지 계약 파일 작성 (.harness/contracts/ontology.yaml)
@@ -205,6 +209,8 @@ tasks:
     acceptance:
       - "src/meet_ai/ontology/catalog.v1.json의 concept_type 체계를 요약 참조"
       - "docs/redesign-v2/common/C-3-ontology.md의 6개 카테고리 매핑 표를 계약 형식으로 반영"
+      - "WAVE-1 §7.10의 8개 카테고리(INDUSTRY/TECH/PRODUCT/SERVICE/GOAL/CHANNEL/TRADE/REGION)와 예시 코드를 기존 concept_type·attribute_code 접두어 체계로 매핑(REGION은 C-3 매핑표에 명시적 언급이 없었음 - 신규 매핑 필요 여부 확인)"
+      - "코드별 한국어/영어 라벨·설명·상위코드·동의어·상태·버전 필드 정의"
 
   - id: CTR-004
     title: 오류코드 정의 (.harness/contracts/error-codes.yaml)
@@ -218,6 +224,7 @@ tasks:
     acceptance:
       - "기존 EligibilityDecision/filter_result 상태값 어휘(PASS/FAIL/UNKNOWN/CONDITIONAL_PASS/MANUAL_REVIEW/TEMPORARY_BLOCK/POLICY_BLOCK/USER_EXCLUDED)를 HTTP 오류코드 체계로 매핑"
       - "각 오류코드에 사용자 노출 메시지 정책(개인정보 미노출) 명시"
+      - "WAVE-1 §7.11 최소 오류코드 목록(VALIDATION_ERROR ~ INTERNAL_ERROR)을 포함, 기존 어휘와 중복되지 않게 통합"
 
   - id: CTR-005
     title: 이벤트 카탈로그 초안 (.harness/contracts/event-catalog.yaml)
@@ -231,6 +238,25 @@ tasks:
     acceptance:
       - "content_approval 확정, meeting 상태 변경, guest 회원전환 등 최소 이벤트만 정의"
       - "Kafka 등 스트리밍 인프라를 전제하지 않는 워커 큐잉(RQ/Celery) 수준 이벤트로 한정"
+      - "WAVE-1 §7.11 최소 이벤트 목록(PROFILE.CONFIRMED ~ ADMIN.BOOTH_STATUS_CHANGED)을 포함"
+
+  - id: CTR-008
+    title: WAVE-1 신규 엔터티 크로스워크 + 진짜 신규분만 마이그레이션(SearchSession 계열, KioskDevice/KioskConfig 등)
+    wave: 1
+    track: CONTRACTS
+    priority: P0
+    status: READY
+    depends_on: ["CTR-001"]
+    owned_paths:
+      - ".harness/contracts/domain-model.md"
+      - "backend/alembic/versions/**"
+      - "backend/app/models/**"
+    acceptance:
+      - "WAVE-1 §7.1/§7.8이 나열한 전체 엔터티를 domain-model.md §13 상태표와 1:1 대조한 크로스워크 표 작성(ASSUMPTION-010)"
+      - "이미 존재하는 엔터티(Event→core.Event, Exhibitor→exhibition.Exhibitor 등)는 마이그레이션하지 않는다 - 이름만 매핑"
+      - "domain-model.md에 없거나 진짜 없는 것으로 확인된 엔터티만(예: SearchSession/SearchQuery/SearchResult, KioskDevice/KioskConfig - GuestSession과 다른 디바이스 프로비저닝 개념인지 확인) 신규 마이그레이션 설계"
+      - "alembic upgrade/downgrade 왕복 성공(신규분 있을 경우)"
+    note: "ASSUMPTION-010 참고 - 이 태스크가 실질적으로 이번 WAVE-1 CONTRACT-001/003을 대체한다."
 
   - id: CTR-006
     title: profile.saved_recommendable 마이그레이션
@@ -284,7 +310,7 @@ tasks:
     wave: 1
     track: ADMIN
     priority: P2
-    status: READY
+    status: DONE
     depends_on: ["FND-002"]
     owned_paths:
       - "apps/admin/**"
@@ -293,6 +319,11 @@ tasks:
       - "'/' 준비 화면, '/health' 관리자 앱 상태 화면 제공(실제 인증 기능은 이번 Wave에 없음)"
       - "apps/admin/.env.example 제공"
       - "빌드·컴포넌트 테스트 통과"
+    completed_note: >
+      Next.js 16/React 19/TS/Tailwind 4, npm workspace 멤버 @backju/admin.
+      '/','/health','/console'(14개 미래 관리영역 nav-listing, 실 라우트 아님) 구현.
+      typecheck/lint/test(vitest, 4파일 5건)/build 전부 실제 실행 통과.
+      핸드오프: .harness/handoffs/admin/ADM-001.md.
 
   - id: BAC-001
     title: 공통 Health Check API (/health/live, /health/ready, /api/v1/system/info) + apps/worker 골격
@@ -314,17 +345,50 @@ tasks:
       - "Worker 샘플 작업 실행 테스트, 실패 시 제한된 재시도 테스트, 민감정보 로그 미노출 테스트 포함"
 
   - id: AIS-001
-    title: 검색·추천 Gold Set 초안 작성
+    title: 검색·추천 Gold Set 구조 + 초기 샘플 (ai/evaluation/**)
     wave: 1
     track: AI_SEARCH
     priority: P1
     status: READY
     depends_on: ["CTR-001"]
     owned_paths:
-      - "backend/tests/fixtures/gold_set/**"
+      - "ai/evaluation/**"
     acceptance:
-      - "질의-기대결과 쌍이 최소 20건 이상 정의된다"
+      - "ai/evaluation/{queries,expected,schemas}/ 구조(WAVE-1 §11.1)로 생성 - 이전에 계획했던 backend/tests/fixtures/gold_set/ 대신 이미 만들어둔 ai/evaluation/(FND-005)을 사용"
+      - "queries/{consumer-ko,buyer-ko,kiosk-ko,multilingual}.jsonl에 WAVE-1 §11.2 최소 샘플(키오스크 5건, 웹 3건, 바이어 4건) 포함"
+      - "각 샘플에 입력·예상 의도·예상 코드·필수조건·금지 추론·기대 검색 대상 기록"
       - "웹(프로파일 있음)·키오스크(프로파일 없음) 케이스가 모두 포함된다"
+      - "expected/{intent,ontology-mapping,search-relevance}.jsonl에 대응 기대값 기록"
+
+  - id: AIS-005
+    title: 자연어 질의 출력 Schema (Pydantic)
+    wave: 1
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: ["CTR-003"]
+    owned_paths:
+      - "ai/schemas/**"
+    acceptance:
+      - "WAVE-1 §11.3 필드(intent/target_type/concept_codes/required_conditions/preferred_conditions/excluded_concept_codes/confidence/clarification_required/clarification_question) Pydantic 모델로 정의"
+      - "§11.4 검증 규칙(허용 온톨로지 코드만 사용, 입력에 없는 조건 생성 금지, confidence 0~1, 개인정보 필드 금지, 업체 ID·추천순위 직접 생성 금지)을 Pydantic validator로 강제"
+      - "유닛 테스트로 각 검증 규칙 위반 케이스가 실제로 거부되는지 확인"
+
+  - id: AIS-006
+    title: 하이브리드 검색 Provider 인터페이스 (Protocol + Mock)
+    wave: 1
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: ["AIS-005"]
+    owned_paths:
+      - "backend/app/services/matching/search_provider.py"
+    acceptance:
+      - "WAVE-1 §11.5 SearchProvider Protocol(async search(query, limit) -> list[SearchCandidate]) 정의"
+      - "StructuredSearchProvider/KeywordSearchProvider/VectorSearchProvider/HybridSearchService는 이번 Wave에 Protocol·DTO·Mock Provider·후보 결합 인터페이스까지만 - 실제 구현은 Wave 2(AIS-GROUP-001)"
+      - "§11.6 점수 결과 인터페이스(structured_score/keyword_score/semantic_score/data_quality_score/availability_score/final_score/reason_codes) DTO로 정의 - 실제 가중치 계산은 Wave 2"
+      - "기존 candidate_generator.py의 reciprocal_rank_fusion과 이 Protocol의 관계를 문서화(대체가 아니라 이 Protocol이 향후 그 함수를 감싸는 형태)"
+      - "Mock Provider로 유닛 테스트 통과"
 
   - id: AIS-002
     title: 온톨로지 유사어 해석 테스트셋
@@ -384,6 +448,46 @@ tasks:
       QA_SECURITY가 CI를 고쳐야 하면 직접 수정하지 말고 FOUNDATION에 핸드오프 요청하는
       것으로 원칙을 재확인(아래 owned_paths는 이번 1회의 실제 이력 기록으로 남기되,
       locks.yaml 자체는 변경하지 않는다). 핸드오프: .harness/handoffs/qa/QAS-001.md.
+
+  - id: QAS-003
+    title: 계약 검증 하네스 (OpenAPI/Migration/타입 일치)
+    wave: 1
+    track: QA_SECURITY
+    priority: P0
+    status: READY
+    depends_on: ["CTR-002", "CTR-003", "CTR-004", "CTR-005", "CTR-008"]
+    owned_paths:
+      - "tests/api/**"
+    acceptance:
+      - "WAVE-1 §12.1 항목 자동화: OpenAPI Syntax, operationId 중복, Schema 참조, 오류응답 구조, 온톨로지 YAML, 이벤트 Catalog, 오류코드 중복, DB Migration Upgrade/Downgrade"
+      - "infra/scripts/validate-harness와 중복되지 않게 역할 분리(validate-harness는 하네스 자체, 이 태스크는 계약 내용)"
+
+  - id: QAS-004
+    title: 프런트 기본 E2E 하네스 (Playwright smoke)
+    wave: 1
+    track: QA_SECURITY
+    priority: P1
+    status: BLOCKED
+    depends_on: ["WEB-001", "KSK-001", "ADM-001"]
+    owned_paths:
+      - "tests/e2e/**"
+    acceptance:
+      - "WAVE-1 §12.2 3개 앱 smoke 시나리오(user-web /home→검색→상세, kiosk 대기→검색→결과→상세→처음으로, admin 목록→상세→검수탭)"
+    note: "WEB-001/KSK-001/ADM-001이 아직 완료되지 않아 실제 라우트가 없으므로 BLOCKED - 그 3개 완료 후 착수."
+
+  - id: QAS-005
+    title: 범위위반 탐지 확장 - 키오스크 개인정보 입력필드 검사
+    wave: 1
+    track: QA_SECURITY
+    priority: P0
+    status: BLOCKED
+    depends_on: ["KSK-001"]
+    owned_paths:
+      - "infra/scripts/scope-violation-check"
+    acceptance:
+      - "WAVE-1 §12.4: name/phone/mobile/email/address/company_contact이 키오스크 코드에 '입력 요소'로 존재하면 실패 - 업체정보 표시용 필드(읽기 전용)와 사용자 입력 필드를 구분"
+      - "문서에서 제외범위를 설명하는 문자열은 실패시키지 않는다(이미 FND-005 scope-violation-check가 이 원칙을 따름)"
+    note: "apps/kiosk가 아직 없어(KSK-001 진행 중) 검사 대상 코드가 없음 - KSK-001 완료 후 착수."
 
   - id: AIS-002-followup
     title: "(참고) 온톨로지 영어(en) 유사어 데이터 공백"

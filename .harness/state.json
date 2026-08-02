@@ -7,7 +7,6 @@
   "active_tasks": [
     "WEB-001",
     "KSK-001",
-    "ADM-001",
     "BAC-001"
   ],
   "completed_tasks": [
@@ -17,7 +16,8 @@
     "FND-005",
     "CTR-001",
     "QAS-001",
-    "AIS-002"
+    "AIS-002",
+    "ADM-001"
   ],
   "blocked_tasks": [
     "FND-004 (Docker unavailable in this execution environment)"

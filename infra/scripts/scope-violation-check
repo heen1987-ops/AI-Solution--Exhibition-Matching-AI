@@ -29,13 +29,47 @@ FORBIDDEN_PATTERNS: dict[str, str] = {
     "automatic model retraining": r"auto(matic)?\s+model\s+retrain",
 }
 
-EXCLUDED_DIR_PARTS = {".git", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".tmp-venv"}
+EXCLUDED_DIR_PARTS = {
+    ".git", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".tmp-venv",
+    # 빌드 산출물 - 사람이 작성한 코드가 아니라 컴파일러가 주석·코드를 뒤섞어 재배치한
+    # 결과물이라 코멘트 스트리핑으로 오탐을 걸러낼 수 없다. 소스 파일 자체를 검사하므로
+    # 여기서 제외해도 실제 코드 검사 커버리지에는 영향이 없다.
+    ".next", "dist", "build", "out", ".turbo", ".vercel",
+}
 EXCLUDED_SUFFIXES = {".md"}  # 문서는 "하지 않는다"는 설명 위주라 검사하지 않음
 EXCLUDED_PATHS = {
     Path("infra/scripts/scope-violation-check"),  # 이 스크립트 자신(키워드 목록 포함)
 }
 # 실제 코드/의존성으로 취급할 확장자만 검사한다 - 나머지(설정 예시, 스크린샷 등)는 제외.
 CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".toml", ".json", ".yml", ".yaml"}
+
+# 주석/문서 문자열 제거용 패턴. 제외범위를 "설명"하는 주석은 실패시키지 않는다는
+# 원칙(WAVE-1 §12.3/§20)을 코드 파일에도 동일하게 적용하기 위해, 실제 코드를 보기
+# 전에 주석을 먼저 지운다. 문자열 리터럴 내부의 // 등을 오인식할 수 있는 단순
+# 정규식 기반 스트리핑이라 완벽하지 않지만("설명 주석은 통과, 실제 사용은 실패"라는
+# 목적에는 충분), 문자열이 정교하게 이스케이프된 극단적 케이스까지는 다루지 않는다.
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_LINE_COMMENT_C = re.compile(r"//[^\n]*")
+_LINE_COMMENT_PY = re.compile(r"#[^\n]*")
+_PY_DOCSTRING = re.compile(r'("""|\'\'\')(?:(?!\1).)*\1', re.DOTALL)
+
+# 매치 주변(±40자)에 이런 부정 표현이 있으면 "설명"으로 보고 통과시킨다 - 화면
+# 안내문구("~는 제공하지 않습니다")처럼 주석이 아닌 렌더링 텍스트에도 적용된다.
+NEGATION_NEARBY = re.compile(
+    r"(하지\s*않|제공하지\s*않|없습니다|없다|구현하지\s*않|제외범위|제외\s*대상|범위\s*밖|"
+    r"not\s+(implement|provide|support)|no\s+(indoor|kiosk)|아직\s*없|out\s+of\s+scope)",
+    re.IGNORECASE,
+)
+
+
+def strip_comments(text: str, suffix: str) -> str:
+    if suffix in {".py"}:
+        text = _PY_DOCSTRING.sub("", text)
+        text = _LINE_COMMENT_PY.sub("", text)
+    elif suffix in {".ts", ".tsx", ".js", ".jsx"}:
+        text = _BLOCK_COMMENT.sub("", text)
+        text = _LINE_COMMENT_C.sub("", text)
+    return text
 
 
 def iter_files() -> list[Path]:
@@ -62,13 +96,19 @@ def main() -> None:
     violations: list[str] = []
     for path in iter_files():
         try:
-            text = path.read_text(errors="ignore")
+            raw_text = path.read_text(errors="ignore")
         except Exception:  # noqa: BLE001
             continue
+        # 줄 번호는 원본 기준으로 보고해야 하므로, 코드 검사는 주석 제거본으로 하되
+        # 라인 번호 계산은 원본 텍스트에서의 매치 위치 기준으로 별도 처리한다.
+        stripped = strip_comments(raw_text, path.suffix)
         for label, pattern in FORBIDDEN_PATTERNS.items():
-            for m in re.finditer(pattern, text, re.IGNORECASE):
-                line_no = text.count("\n", 0, m.start()) + 1
-                violations.append(f"{path.relative_to(ROOT)}:{line_no} - '{label}' 패턴 발견")
+            for m in re.finditer(pattern, stripped, re.IGNORECASE):
+                window = stripped[max(0, m.start() - 40) : m.end() + 40]
+                if NEGATION_NEARBY.search(window):
+                    continue  # 화면 안내문구 등 "제공하지 않는다"는 설명 - 실제 구현 아님
+                line_no = stripped.count("\n", 0, m.start()) + 1
+                violations.append(f"{path.relative_to(ROOT)}:{line_no} - '{label}' 패턴 발견 (주석 제외 후)")
 
     if violations:
         print(f"FAIL: {len(violations)}건의 범위위반 의심 항목 발견")
