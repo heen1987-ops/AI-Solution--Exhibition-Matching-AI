@@ -663,7 +663,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-007]
     owned_paths:
       - "src/meet_ai/engine/**"
@@ -678,6 +678,28 @@ tasks:
       - "ONTOLOGY_MATCH, DERIVED_BAND_MATCH, TRADE_STATUS 판정을 게시 온톨로지와 capability version으로 재현"
       - "모든 필수 constraint가 ELIGIBLE일 때만 기존 scoring EligibilityDecision으로 변환 가능"
       - "평가 지문·reason code·evidence ref를 제공하되 PII·원문 질의·비공개 필드값은 결과에 포함하지 않음"
+
+    evidence: "constraint-evaluation-result-v1.0 deterministically evaluates verified observations into ELIGIBLE, FILTERED_OUT, or INFORMATION_REQUIRED. ONTOLOGY_MATCH, DERIVED_BAND_MATCH, and TRADE_STATUS plus UNKNOWN/MISSING/STALE/CONDITIONAL/NEGOTIABLE boundaries are covered by 14 fixture scenarios. Only fully ELIGIBLE results convert to scoring EligibilityDecision; private observed values are omitted. Root 72 passed; backend 197 passed/2 skipped; touched Ruff, compileall, pip check, and diff check PASS."
+
+  - id: AIENGINE-009
+    title: Canonical candidate observation adapter and runtime shadow parity
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-008]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "apps/api/app/services/matching/**"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/fixtures/matching/**"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "Map approved public catalog and verified buyer supply fields into CandidateFieldObservation without exposing private values"
+      - "Run the three-state constraint evaluator in shadow beside the existing runtime Hard Filter and report parity by stable reason codes"
+      - "UNKNOWN, MISSING, STALE, CONDITIONAL, and NEGOTIABLE never enter scoring through an automatic pass, mismatch, or zero"
+      - "Do not change the published weighted-v1 formula, public API response, database schema, or stored rank"
+      - "Define a separate change-controlled promotion gate for any runtime enforcement difference"
 
   - id: BACKEND-011
     title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿

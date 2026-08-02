@@ -11,16 +11,21 @@ import pytest
 import meet_ai.engine.facade as facade_module
 from meet_ai.engine import (
     CATALOG_SEARCH_POLICY_VERSION,
+    CONSTRAINT_EVALUATION_RESULT_V1,
     INTENT_PROPOSAL_SCHEMA_V1,
     MATCHING_ENGINE_COMMAND_V1,
     MATCHING_ENGINE_COMMAND_V1_1,
     MATCHING_ENGINE_RESULT_V1_1,
     PUBLISHED_RANKING_STATE,
     REASON_CLAIM_POLICY_VERSION,
+    CandidateEligibilityState,
+    CandidateFieldObservation,
     CandidateSignalDiagnostics,
     CanonicalProfileIntentCommand,
     CatalogScope,
     CatalogSearchSignals,
+    ConstraintEvaluationValidationError,
+    EligibilityAdmissionError,
     HybridRrfShadowCommand,
     HybridShadowValidationError,
     IntentNormalizationValidationError,
@@ -30,13 +35,16 @@ from meet_ai.engine import (
     MatchingEngineValidationError,
     MatchingMode,
     NaturalLanguageIntentCommand,
+    ObservationState,
     RecallChannelRanking,
     RecallChannelState,
+    evaluate_candidate_constraints,
     execute_hybrid_rrf_shadow,
     execute_matching,
     normalize_canonical_profile_intent,
     normalize_natural_language_intent,
     project_intent,
+    to_scoring_eligibility,
 )
 from meet_ai.scoring import EligibilityDecision
 
@@ -45,6 +53,9 @@ INTENT_PROJECTION_FIXTURE = (
     / "fixtures"
     / "matching"
     / "intent-projection.v1.json"
+)
+CONSTRAINT_EVALUATION_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "matching" / "constraint-evaluation.v1.json"
 )
 
 
@@ -333,6 +344,220 @@ def test_hard_constraint_declares_unknown_and_missing_as_information_required() 
     constraint = plan.hard_filter_constraints[0]
     assert constraint.unknown_outcome == "INFORMATION_REQUIRED"
     assert constraint.missing_outcome == "INFORMATION_REQUIRED"
+
+
+def _candidate_observation(
+    payload: dict[str, object],
+) -> CandidateFieldObservation:
+    numeric_value = payload.get("numeric_value")
+    assert numeric_value is None or (
+        isinstance(numeric_value, (int, float)) and not isinstance(numeric_value, bool)
+    )
+    status_value = payload.get("status_value")
+    assert status_value is None or isinstance(status_value, str)
+    return CandidateFieldObservation(
+        candidate_field=str(payload["candidate_field"]),
+        state=str(payload["state"]),
+        ontology_codes=tuple(str(item) for item in payload.get("ontology_codes", ())),
+        numeric_value=numeric_value,
+        status_value=status_value,
+        evidence_refs=tuple(str(item) for item in payload["evidence_refs"]),
+    )
+
+
+def test_constraint_evaluation_fixture_preserves_three_state_boundaries() -> None:
+    payload = json.loads(CONSTRAINT_EVALUATION_FIXTURE.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "constraint-evaluation-fixture-v1.0"
+
+    for scenario in payload["scenarios"]:
+        intent = normalize_canonical_profile_intent(
+            CanonicalProfileIntentCommand(
+                must_codes=tuple(scenario["command"].get("must_codes", ())),
+                exclude_codes=tuple(scenario["command"].get("exclude_codes", ())),
+            )
+        )
+        plan = project_intent(intent, catalog_scope=scenario["catalog_scope"])
+        evaluation = evaluate_candidate_constraints(
+            plan,
+            candidate_ref=scenario["candidate_ref"],
+            observations=tuple(
+                _candidate_observation(item) for item in scenario["observations"]
+            ),
+        )
+
+        assert evaluation.contract_version == CONSTRAINT_EVALUATION_RESULT_V1
+        assert evaluation.outcome.value == scenario["expected_outcome"], scenario[
+            "scenario_id"
+        ]
+        assert list(evaluation.reason_codes) == scenario["expected_reason_codes"]
+        assert evaluation.evidence_refs
+        assert len(evaluation.plan_fingerprint) == 64
+        assert len(evaluation.input_fingerprint) == 64
+        assert len(evaluation.result_fingerprint) == 64
+        assert evaluation.evaluation_id == (
+            f"intent-filter:{evaluation.result_fingerprint}"
+        )
+
+
+def test_only_fully_eligible_constraint_evaluation_can_enter_scoring() -> None:
+    plan = project_intent(
+        normalize_canonical_profile_intent(
+            CanonicalProfileIntentCommand(must_codes=("ALCOHOL.TAKJU",))
+        ),
+        catalog_scope=CatalogScope.PUBLIC_CATALOG,
+    )
+    eligible = evaluate_candidate_constraints(
+        plan,
+        candidate_ref="candidate:eligible",
+        observations=(
+            CandidateFieldObservation(
+                "candidate.category_codes",
+                ObservationState.KNOWN,
+                ontology_codes=("ALCOHOL.TAKJU",),
+                evidence_refs=("catalog:eligible:categories",),
+            ),
+        ),
+    )
+    information_required = evaluate_candidate_constraints(
+        plan,
+        candidate_ref="candidate:unknown",
+        observations=(
+            CandidateFieldObservation(
+                "candidate.category_codes",
+                ObservationState.UNKNOWN,
+                evidence_refs=("catalog:unknown:categories",),
+            ),
+        ),
+    )
+
+    decision = to_scoring_eligibility(eligible)
+    assert decision.passed is True
+    assert decision.evaluation_id == eligible.evaluation_id
+    with pytest.raises(EligibilityAdmissionError, match="only ELIGIBLE"):
+        to_scoring_eligibility(information_required)
+    with pytest.raises(EligibilityAdmissionError, match="only ELIGIBLE"):
+        to_scoring_eligibility(
+            replace(eligible, outcome=CandidateEligibilityState.INFORMATION_REQUIRED)
+        )
+
+
+def test_filtered_out_has_priority_over_an_information_required_constraint() -> None:
+    plan = project_intent(
+        normalize_canonical_profile_intent(
+            CanonicalProfileIntentCommand(must_codes=("ALCOHOL.TAKJU", "BIZ_GOAL.OEM"))
+        ),
+        catalog_scope=CatalogScope.VERIFIED_BUYER_CATALOG,
+    )
+    evaluation = evaluate_candidate_constraints(
+        plan,
+        candidate_ref="candidate:mixed-state",
+        observations=(
+            CandidateFieldObservation(
+                "candidate.category_codes",
+                ObservationState.KNOWN,
+                ontology_codes=("ALCOHOL.YAKJU",),
+                evidence_refs=("catalog:mixed-state:categories",),
+            ),
+            CandidateFieldObservation(
+                "supply_profile.trade_profile.oem_status",
+                ObservationState.UNKNOWN,
+                evidence_refs=("supply-profile:mixed-state:oem-status",),
+            ),
+        ),
+    )
+
+    assert evaluation.outcome is CandidateEligibilityState.FILTERED_OUT
+    assert {item.outcome for item in evaluation.constraint_decisions} == {
+        CandidateEligibilityState.FILTERED_OUT,
+        CandidateEligibilityState.INFORMATION_REQUIRED,
+    }
+
+
+def test_candidate_private_values_are_absent_and_fingerprints_are_reproducible() -> (
+    None
+):
+    plan = project_intent(
+        normalize_canonical_profile_intent(
+            CanonicalProfileIntentCommand(must_codes=("BIZ_GOAL.OEM",))
+        ),
+        catalog_scope=CatalogScope.VERIFIED_BUYER_CATALOG,
+    )
+    first_observation = CandidateFieldObservation(
+        "supply_profile.trade_profile.oem_status",
+        ObservationState.KNOWN,
+        status_value="YES",
+        evidence_refs=("source:b", "source:a"),
+    )
+    second_observation = CandidateFieldObservation(
+        "supply_profile.trade_profile.oem_status",
+        ObservationState.KNOWN,
+        status_value="YES",
+        evidence_refs=("source:a", "source:b"),
+    )
+
+    first = evaluate_candidate_constraints(
+        plan,
+        candidate_ref="candidate:private-value",
+        observations=(first_observation,),
+    )
+    second = evaluate_candidate_constraints(
+        plan,
+        candidate_ref="candidate:private-value",
+        observations=(second_observation,),
+    )
+    serialized = str(first.to_dict())
+
+    assert first.input_fingerprint == second.input_fingerprint
+    assert first.result_fingerprint == second.result_fingerprint
+    assert "status_value" not in serialized
+    assert "'YES'" not in serialized
+
+
+def test_constraint_observations_fail_closed_on_invalid_or_surplus_data() -> None:
+    plan = project_intent(
+        normalize_canonical_profile_intent(
+            CanonicalProfileIntentCommand(must_codes=("ALCOHOL.TAKJU",))
+        ),
+        catalog_scope=CatalogScope.PUBLIC_CATALOG,
+    )
+    with pytest.raises(ConstraintEvaluationValidationError, match="does not match"):
+        evaluate_candidate_constraints(
+            replace(plan, plan_fingerprint="0" * 64),
+            candidate_ref="candidate:tampered-plan",
+        )
+    with pytest.raises(ConstraintEvaluationValidationError, match="published ontology"):
+        evaluate_candidate_constraints(
+            plan,
+            candidate_ref="candidate:invalid-code",
+            observations=(
+                CandidateFieldObservation(
+                    "candidate.category_codes",
+                    ObservationState.KNOWN,
+                    ontology_codes=("MADE.UP",),
+                    evidence_refs=("catalog:invalid-code:categories",),
+                ),
+            ),
+        )
+    with pytest.raises(ConstraintEvaluationValidationError, match="outside"):
+        evaluate_candidate_constraints(
+            plan,
+            candidate_ref="candidate:surplus",
+            observations=(
+                CandidateFieldObservation(
+                    "candidate.aroma_codes",
+                    ObservationState.KNOWN,
+                    ontology_codes=("AROMA.FRUIT",),
+                    evidence_refs=("catalog:surplus:aroma",),
+                ),
+            ),
+        )
+    with pytest.raises(ConstraintEvaluationValidationError, match="non-known"):
+        CandidateFieldObservation(
+            "candidate.category_codes",
+            ObservationState.STALE,
+            ontology_codes=("ALCOHOL.TAKJU",),
+            evidence_refs=("catalog:stale:categories",),
+        )
 
 
 def test_catalog_search_mode_preserves_frozen_formula_and_provenance() -> None:

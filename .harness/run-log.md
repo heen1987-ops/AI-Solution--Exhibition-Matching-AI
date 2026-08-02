@@ -354,3 +354,22 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   PASS.
 - AIENGINE-008 is next: evaluate constraints against verified candidate observations and admit
   scoring only for fully eligible candidates.
+
+## 2026-08-03 — AIENGINE-008 verified candidate constraint evaluation
+
+- Published `constraint-evaluation-result-v1.0` and `constraint-evaluation-v1.0` after intent
+  projection and before the existing scoring facade.
+- Candidate observations carry an explicit KNOWN/UNKNOWN/MISSING/STALE state and mode-specific
+  ontology, numeric, or trade-status values. Non-known observations cannot carry values.
+- ONTOLOGY_MATCH uses the published catalog graph, DERIVED_BAND_MATCH uses the published alcohol
+  band policy, and TRADE_STATUS preserves CONDITIONAL/NEGOTIABLE as INFORMATION_REQUIRED.
+- MUST and EXCLUDE never auto-pass on unknown, missing, stale, or absent observations. Only a fully
+  ELIGIBLE evaluation converts to the existing `EligibilityDecision`; filtered and information-
+  required results fail closed at the scoring admission boundary.
+- Evaluation results expose reason codes, opaque evidence refs, and canonical fingerprints but not
+  raw observed business values. Projection-plan fingerprints are revalidated before evaluation.
+- Fourteen fixture scenarios pass. Verification: focused facade 30 passed; root 72 passed; backend
+  197 passed/2 skipped; touched Ruff, compileall, pip check, and diff check PASS. Repository-wide
+  Ruff still reports 117 pre-existing findings outside this task's changed paths.
+- AIENGINE-009 is next: map canonical runtime candidates into observations and compare this evaluator
+  with the existing Hard Filter in shadow before any enforcement change.

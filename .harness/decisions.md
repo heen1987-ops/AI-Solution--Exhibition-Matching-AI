@@ -196,3 +196,19 @@ UNKNOWN 또는 MISSING인 경우에도 후속 평가기가 반드시 `INFORMATIO
 계약에 명시한다. 의도 단계의 UNKNOWN, UNRESOLVED, LLM proposal은 모두 deferred 상태로 남아
 검색조건·불일치·0점으로 변환되지 않는다. `weighted-v1` 공개순위는 그대로 유지한다. 상세
 증거는 `.harness/reports/integration/intent-projection-20260803.md`를 따른다.
+
+## DECISION-017 (2026-08-03) — Three-state eligibility precedes scoring
+
+`constraint-evaluation-v1.0` evaluates only the hard constraints emitted by the verified intent
+projection plan and only against explicit candidate observations. Each observation is `KNOWN`,
+`UNKNOWN`, `MISSING`, or `STALE`; trade values `CONDITIONAL` and `NEGOTIABLE` also remain
+information-required. These states are never coerced into a pass, mismatch, or numeric zero.
+
+The overall candidate result is `ELIGIBLE`, `FILTERED_OUT`, or `INFORMATION_REQUIRED`. A proven
+constraint violation takes precedence in the overall state while every per-constraint diagnostic
+is retained. Only a fully `ELIGIBLE` evaluation may become the existing scoring
+`EligibilityDecision`. Results expose stable reason codes, opaque evidence references, and
+fingerprints, but omit raw query text and observed private field values. The published weighted-v1
+formula, public APIs, database schema, and runtime rank are unchanged. Runtime adoption requires
+AIENGINE-009 shadow parity evidence. See
+`.harness/reports/integration/constraint-evaluation-20260803.md`.
