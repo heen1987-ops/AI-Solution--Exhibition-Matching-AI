@@ -10,14 +10,14 @@
     "G3_MVP_RELEASE": "NOT_STARTED"
   },
   "active_tasks": [
-    "CTR-001",
     "QAS-001",
     "AIS-002"
   ],
   "completed_tasks": [
     "FND-001",
     "FND-002",
-    "FND-003"
+    "FND-003",
+    "CTR-001"
   ],
   "blocked_tasks": [
     "FND-004 (Docker unavailable in this execution environment)",

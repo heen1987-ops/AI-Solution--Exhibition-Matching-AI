@@ -104,7 +104,7 @@ tasks:
     wave: 1
     track: CONTRACTS
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["FND-001"]
     owned_paths:
       - ".harness/contracts/domain-model.md"
@@ -112,6 +112,32 @@ tasks:
       - "docs/redesign-v2/ 26개 문서 + backend/app/models/*.py 기존 스키마를 근거로 단일 도메인 모델 문서가 존재한다"
       - "엔티티별로 실재 테이블(스키마.테이블)과 신규 필요 테이블이 구분 표기된다"
       - "각 엔티티가 W-1~W-10/K-1~K-8/C-1~C-8 중 어느 문서에서 결정됐는지 출처가 표기된다"
+    completed_note: >
+      CONTRACTS 워커 에이전트가 완료. 14개 절 + 엔티티 상태 요약표(§13, 16행)로 구성.
+      핵심 발견: 진짜 신규 스키마는 `profile.saved_recommendable`(CTR-006, 이미 backlog에
+      있음)과 신규 `ai` 스키마 6테이블(§11) 두 곳뿐 - 후자를 담당할 CONTRACTS 태스크가
+      backlog에 없었다는 공백을 발견해 CTR-007로 신규 등록(아래). 핸드오프:
+      .harness/handoffs/contracts/CTR-001.md.
+
+  - id: CTR-007
+    title: ai.* 신규 스키마 마이그레이션 (source_document/extracted_attribute/content_approval/ai_execution_log/embedding_document/embedding_vector) + pgvector 확장
+    wave: 1
+    track: CONTRACTS
+    priority: P1
+    status: READY
+    depends_on: ["CTR-001"]
+    owned_paths:
+      - "backend/alembic/versions/**"
+      - "backend/app/models/ai.py"
+    acceptance:
+      - ".harness/contracts/domain-model.md §11의 6개 테이블 스키마대로 마이그레이션 생성"
+      - "pgvector 확장 활성화(CREATE EXTENSION) 포함"
+      - "alembic upgrade/downgrade 왕복 성공"
+      - "SCHEMA_AI 상수(backend/app/db/base.py에 이미 존재)를 재사용, 새 스키마 상수 추가하지 않음"
+    note: >
+      CTR-001 실행 중 발견된 공백(도메인 모델 문서 §11, §14) - AI_SEARCH 트랙(AIS-GROUP-001,
+      Wave 2)의 키워드·벡터 검색 구현이 이 마이그레이션에 의존하므로 Wave 2 착수 전에
+      완료돼야 한다. C-2/C-4 문서(docs/redesign-v2/common/)가 스키마 설계의 1차 근거.
 
   - id: CTR-002
     title: OpenAPI 초안 작성 (.harness/contracts/openapi.yaml)
