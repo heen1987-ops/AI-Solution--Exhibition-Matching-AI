@@ -373,3 +373,21 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
   Ruff still reports 117 pre-existing findings outside this task's changed paths.
 - AIENGINE-009 is next: map canonical runtime candidates into observations and compare this evaluator
   with the existing Hard Filter in shadow before any enforcement change.
+
+## 2026-08-03 — AIENGINE-009 candidate observation adapter and runtime shadow
+
+- Published `candidate-observation-adapter-v1.0` and `hard-filter-shadow-v1.0` beside the existing
+  runtime Hard Filter. Shadow enforcement is explicitly false.
+- Confirmed profile MUST/PREFER/EXCLUDE values reuse the AIENGINE-006/007 intent contracts. Only
+  requested approved public fields and approved buyer supply fields become observations.
+- Candidate category, taste, aroma, usage, feature, service, alcohol band, channel, region, trade
+  type, and OEM/PB/export status map to the AIENGINE-008 three-state evaluator.
+- Shadow comparisons emit privacy-minimized PARITY, SAFETY_GAP, DIVERGENCE, NOT_COMPARABLE,
+  NOT_APPLICABLE, or ADAPTER_ERROR results with stable reason codes and fingerprints.
+- Seven fixed OEM scenarios prove YES/NO parity and preserve UNKNOWN/MISSING/STALE/CONDITIONAL/
+  NEGOTIABLE as information-required safety gaps. Public EXCLUDE, unapproved data, malformed
+  observations, deterministic ordering, value omission, and synthetic divergence are also covered.
+- Verification: focused 21 passed; root 72 passed; backend 211 passed/2 skipped; touched Ruff,
+  compileall, pip check, JSON/YAML, and diff check PASS. A 150-candidate local diagnostic run took
+  approximately 55 ms; this is evidence only, not a production performance guarantee.
+- AIENGINE-010 is next: aggregate versioned shadow quality metrics and define a promotion gate.

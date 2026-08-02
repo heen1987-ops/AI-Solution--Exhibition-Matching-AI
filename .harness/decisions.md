@@ -212,3 +212,23 @@ fingerprints, but omit raw query text and observed private field values. The pub
 formula, public APIs, database schema, and runtime rank are unchanged. Runtime adoption requires
 AIENGINE-009 shadow parity evidence. See
 `.harness/reports/integration/constraint-evaluation-20260803.md`.
+
+## DECISION-018 (2026-08-03) — Runtime constraint evaluation remains shadow-only
+
+`candidate-observation-adapter-v1.0` maps only fields requested by a verified intent plan. Public
+product observations require explicit public approval, and buyer trade observations additionally
+require an approved supply profile. Missing, stale, unknown, conditional, and negotiable values
+retain their information state. Raw candidate values exist only inside the evaluator input and are
+absent from the shadow result.
+
+`hard-filter-shadow-v1.0` runs after the existing Hard Filter decision and classifies the comparison
+as `PARITY`, `SAFETY_GAP`, `DIVERGENCE`, `NOT_COMPARABLE`, `NOT_APPLICABLE`, or `ADAPTER_ERROR`.
+The legacy decision remains authoritative and the enforcement constant is fixed to false. Current
+fixtures intentionally expose safety gaps where the legacy filter passes unknown or non-final trade
+conditions, plus a public EXCLUDE condition that legacy filtering does not own. These findings are
+evidence for a later promotion decision, not permission to change admission now.
+
+Promotion requires a separate approved Change Request, zero divergence and adapter errors, a
+versioned aggregate quality gate, a sufficient runtime sample, regression evidence, and rollback.
+The weighted-v1 formula, API response, database schema, persistence, and rank remain unchanged. See
+`.harness/reports/integration/runtime-constraint-shadow-20260803.md`.

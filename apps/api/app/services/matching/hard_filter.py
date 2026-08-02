@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.common import new_uuid7
 from app.models.filtering import FilterEvaluation, FilterResult
 from app.services.matching import errors
+from app.services.matching.constraint_shadow import evaluate_runtime_constraint_shadow
 from app.services.matching.ontology_support import get_catalog, max_match_strength
 from app.services.matching.types import (
     FilterOutcome,
@@ -520,6 +521,11 @@ def evaluate_hard_filters(
         completed_at=datetime.now(UTC),
         eligible_candidates=eligible,
         outcomes=outcomes,
+        constraint_shadow=evaluate_runtime_constraint_shadow(
+            profile=profile,
+            candidates=candidates,
+            legacy_outcomes=outcomes,
+        ),
     )
 
 

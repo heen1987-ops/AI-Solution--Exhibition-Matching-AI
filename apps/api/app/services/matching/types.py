@@ -22,8 +22,9 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 # docs/frontend-backend-ai-interface-spec.md 9.1절.
@@ -350,6 +351,34 @@ class FilterOutcome:
     candidate_fingerprint: str = ""
 
 
+class ShadowParityState(StrEnum):
+    PARITY = "PARITY"
+    SAFETY_GAP = "SAFETY_GAP"
+    DIVERGENCE = "DIVERGENCE"
+    NOT_COMPARABLE = "NOT_COMPARABLE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    ADAPTER_ERROR = "ADAPTER_ERROR"
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateHardFilterShadow:
+    contract_version: str
+    adapter_version: str
+    enforcement_enabled: bool
+    candidate_ref: str
+    legacy_passed: bool
+    legacy_filter_code: str | None
+    projected_outcome: str | None
+    parity_state: ShadowParityState
+    reason_codes: tuple[str, ...]
+    plan_fingerprint: str | None
+    constraint_evaluation_id: str | None
+    shadow_fingerprint: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 @dataclass
 class HardFilterEvaluation:
     """One reproducible stage-10 run and its admitted candidate set."""
@@ -361,6 +390,7 @@ class HardFilterEvaluation:
     completed_at: datetime
     eligible_candidates: list[MatchCandidate]
     outcomes: list[FilterOutcome]
+    constraint_shadow: tuple[CandidateHardFilterShadow, ...] = ()
 
     @property
     def rejected_count(self) -> int:

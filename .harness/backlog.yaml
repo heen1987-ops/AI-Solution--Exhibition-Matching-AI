@@ -686,7 +686,7 @@ tasks:
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: [AIENGINE-008]
     owned_paths:
       - "src/meet_ai/engine/**"
@@ -700,6 +700,28 @@ tasks:
       - "UNKNOWN, MISSING, STALE, CONDITIONAL, and NEGOTIABLE never enter scoring through an automatic pass, mismatch, or zero"
       - "Do not change the published weighted-v1 formula, public API response, database schema, or stored rank"
       - "Define a separate change-controlled promotion gate for any runtime enforcement difference"
+
+    evidence: "candidate-observation-adapter-v1.0 and hard-filter-shadow-v1.0 map only approved public and verified buyer data into the AIENGINE-008 observation contract. The existing Hard Filter remains authoritative while PARITY, SAFETY_GAP, DIVERGENCE, NOT_COMPARABLE, NOT_APPLICABLE, and ADAPTER_ERROR are measured with privacy-minimized fingerprints. Seven fixture scenarios preserve UNKNOWN/MISSING/STALE/CONDITIONAL/NEGOTIABLE; focused 21 passed, root 72 passed, backend 211 passed/2 skipped. Enforcement remains false."
+
+  - id: AIENGINE-010
+    title: Constraint shadow quality gate and promotion evidence
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: READY
+    depends_on: [AIENGINE-009]
+    owned_paths:
+      - "src/meet_ai/evaluation/**"
+      - "apps/api/app/services/matching/constraint_shadow.py"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/fixtures/matching/**"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "Aggregate versioned PARITY, SAFETY_GAP, DIVERGENCE, ADAPTER_ERROR, and NOT_COMPARABLE metrics without candidate private values"
+      - "Fail promotion on any DIVERGENCE or ADAPTER_ERROR and keep safety gaps visible by stable reason code"
+      - "Publish a reproducible offline gate over fixed fixtures and runtime-safe aggregate inputs"
+      - "Do not enable three-state enforcement or change the published weighted-v1 rank until a separate approved promotion decision"
+      - "Record the minimum runtime sample and rollback evidence required for a later enforcement Change Request"
 
   - id: BACKEND-011
     title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿
