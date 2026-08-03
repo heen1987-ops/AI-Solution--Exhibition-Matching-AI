@@ -26,6 +26,7 @@ import { parseLocalPersonalizationPreview } from "@/lib/personalization-preview"
 import type { MeetingResponse, ProfileView, RecommendationResponse } from "@/lib/types";
 
 import KakaoTestPreview from "@/components/KakaoTestPreview";
+import CatalogExplorer from "@/components/CatalogExplorer";
 import LocalRecommendationCard from "@/components/LocalRecommendationCard";
 import RecommendationCard from "@/components/RecommendationCard";
 import OperatingStatusBadge from "@/components/OperatingStatusBadge";
@@ -330,6 +331,8 @@ export default function MyEventDashboard() {
         )}
       </section>
 
+      <CatalogExplorer embedded />
+
       <section aria-labelledby="recommended-booths-heading" className="space-y-3">
         <h2 id="recommended-booths-heading" className="backju-section-title text-lg font-bold">
           {preview ? "내 기준으로 우선 확인할 참가업체" : "지금 방문하면 좋은 부스"}
@@ -408,11 +411,11 @@ export default function MyEventDashboard() {
 
       <div className="flex flex-wrap gap-2">
         <Link
-          href="/profile/conversation"
+          href="#catalog-explorer"
           className="tap-target inline-flex rounded-lg px-4 text-sm font-bold"
           style={{ backgroundColor: "var(--color-brand)", color: "var(--color-brand-contrast)" }}
         >
-          대화로 조건 설정
+          원하는 업체 탐색
         </Link>
         <Link
           href="/profile/preferences"

@@ -127,11 +127,11 @@ export default function PersonalizationProof({
           반영 기준 수정
         </Link>
         <Link
-          href="/profile/conversation"
+          href="#catalog-explorer"
           className="tap-target inline-flex rounded-full border px-4 text-sm font-semibold"
           style={{ borderColor: "var(--color-border)" }}
         >
-          원하는 조건 말로 추가
+          원하는 업체 바로 찾기
         </Link>
       </div>
     </section>
