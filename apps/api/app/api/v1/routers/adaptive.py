@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.routers.recommendations import resolve_subject_context
+from app.api.v1.routers.recommendations import VerifiedSubject, resolve_subject_context
 from app.db.session import get_db
 from app.models.cold_start import QuestionDefinition, QuestionResponse
 from app.models.learning import ProfileInference
@@ -43,8 +43,13 @@ router = APIRouter()
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
-def _assert_profile_scope(profile_id: uuid.UUID, request: Request):
-    subject = resolve_subject_context(request)
+async def _assert_profile_scope(
+    profile_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession,
+    verified: VerifiedSubject,
+):
+    subject = await resolve_subject_context(request, db, verified)
     if profile_id != subject.profile_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -54,8 +59,13 @@ def _assert_profile_scope(profile_id: uuid.UUID, request: Request):
 
 
 @router.get("/profiles/{profile_id}/cold-start", response_model=ColdStartStatusView)
-async def get_cold_start_status(profile_id: uuid.UUID, request: Request, db: DbSession):
-    subject = _assert_profile_scope(profile_id, request)
+async def get_cold_start_status(
+    profile_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    verified: VerifiedSubject,
+):
+    subject = await _assert_profile_scope(profile_id, request, db, verified)
     profile = await resolve_profile(db, subject=subject)
     evidence = await resolve_evidence(db, subject=subject, profile=profile)
     decision = evaluate_cold_start(profile, evidence)
@@ -78,8 +88,9 @@ async def submit_cold_start_answers(
     payload: ColdStartAnswersRequest,
     request: Request,
     db: DbSession,
+    verified: VerifiedSubject,
 ):
-    _assert_profile_scope(profile_id, request)
+    await _assert_profile_scope(profile_id, request, db, verified)
     profile = await db.get(UserProfile, profile_id)
     if profile is None or profile.current_version != payload.profile_version:
         raise HTTPException(
@@ -120,8 +131,13 @@ async def submit_cold_start_answers(
 
 
 @router.get("/profiles/{profile_id}/next-best-question", response_model=NextBestQuestionView)
-async def get_next_best_question(profile_id: uuid.UUID, request: Request, db: DbSession):
-    _assert_profile_scope(profile_id, request)
+async def get_next_best_question(
+    profile_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    verified: VerifiedSubject,
+):
+    await _assert_profile_scope(profile_id, request, db, verified)
     profile = await db.get(UserProfile, profile_id)
     if profile is None:
         raise HTTPException(
@@ -160,8 +176,13 @@ async def get_next_best_question(profile_id: uuid.UUID, request: Request, db: Db
 
 
 @router.post("/internal/learning/events/process", response_model=BehaviorProcessResponse)
-async def process_learning_event(payload: BehaviorProcessRequest, request: Request, db: DbSession):
-    subject = resolve_subject_context(request)
+async def process_learning_event(
+    payload: BehaviorProcessRequest,
+    request: Request,
+    db: DbSession,
+    verified: VerifiedSubject,
+):
+    subject = await resolve_subject_context(request, db, verified)
     result = await process_behavior_event(
         db,
         subject=subject,
@@ -207,8 +228,14 @@ async def process_learning_event(payload: BehaviorProcessRequest, request: Reque
 
 
 @router.post("/profiles/{profile_id}/inferences/{inference_id}/confirm", response_model=InferenceActionResponse)
-async def confirm_inference(profile_id: uuid.UUID, inference_id: uuid.UUID, request: Request, db: DbSession):
-    _assert_profile_scope(profile_id, request)
+async def confirm_inference(
+    profile_id: uuid.UUID,
+    inference_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    verified: VerifiedSubject,
+):
+    await _assert_profile_scope(profile_id, request, db, verified)
     inference = await db.get(ProfileInference, inference_id)
     if inference is None or inference.profile_id != profile_id or inference.status == "DELETED":
         raise HTTPException(
@@ -222,8 +249,14 @@ async def confirm_inference(profile_id: uuid.UUID, inference_id: uuid.UUID, requ
 
 
 @router.delete("/profiles/{profile_id}/inferences/{inference_id}", response_model=InferenceActionResponse)
-async def delete_inference(profile_id: uuid.UUID, inference_id: uuid.UUID, request: Request, db: DbSession):
-    subject = _assert_profile_scope(profile_id, request)
+async def delete_inference(
+    profile_id: uuid.UUID,
+    inference_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    verified: VerifiedSubject,
+):
+    subject = await _assert_profile_scope(profile_id, request, db, verified)
     inference = await db.get(ProfileInference, inference_id)
     if inference is None or inference.profile_id != profile_id:
         raise HTTPException(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 def test_all_implemented_v1_domains_are_mounted() -> None:
@@ -35,3 +36,20 @@ def test_conversation_routes_use_the_public_success_envelope() -> None:
             "content"
         ]["application/json"]["schema"]
         assert response_schema["$ref"] == f"#/components/schemas/{schema_name}"
+
+
+def test_conversation_start_requires_a_verified_subject() -> None:
+    response = TestClient(app, raise_server_exceptions=False).post(
+        "/api/v1/conversations",
+        json={"language": "ko"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_adaptive_routes_require_a_verified_subject() -> None:
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/api/v1/profiles/11111111-1111-4111-8111-111111111111/cold-start"
+    )
+
+    assert response.status_code == 401

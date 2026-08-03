@@ -19,7 +19,7 @@ from app.api.v1.routers.profile import (
     _bump_version,
     _invalidate_active_recommendations,
 )
-from app.api.v1.routers.recommendations import resolve_subject_context
+from app.api.v1.routers.recommendations import VerifiedSubject, resolve_subject_context
 from app.db.session import get_db
 from app.models.conversation import (
     ConversationMessage,
@@ -70,9 +70,12 @@ def _forbidden() -> HTTPException:
 
 
 async def _scoped_conversation(
-    db: AsyncSession, conversation_id: uuid.UUID, request: Request
+    db: AsyncSession,
+    conversation_id: uuid.UUID,
+    request: Request,
+    verified: VerifiedSubject,
 ) -> tuple[ConversationSession, UserProfile]:
-    subject = resolve_subject_context(request)
+    subject = await resolve_subject_context(request, db, verified)
     conversation = await db.get(ConversationSession, conversation_id)
     if conversation is None:
         raise HTTPException(
@@ -99,9 +102,12 @@ async def _scoped_conversation(
     response_model=Envelope[ConversationStartResponse],
 )
 async def start_conversation(
-    payload: ConversationStartRequest, request: Request, db: DbSession
+    payload: ConversationStartRequest,
+    request: Request,
+    db: DbSession,
+    verified: VerifiedSubject,
 ) -> Envelope[ConversationStartResponse]:
-    subject = resolve_subject_context(request)
+    subject = await resolve_subject_context(request, db, verified)
     profile = await db.get(UserProfile, subject.profile_id)
     if profile is None or profile.deleted_at is not None:
         raise HTTPException(
@@ -160,8 +166,11 @@ async def add_conversation_message(
     payload: ConversationMessageRequest,
     request: Request,
     db: DbSession,
+    verified: VerifiedSubject,
 ) -> Envelope[ConversationMessageResponse]:
-    conversation, profile = await _scoped_conversation(db, conversation_id, request)
+    conversation, profile = await _scoped_conversation(
+        db, conversation_id, request, verified
+    )
     if conversation.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -281,8 +290,11 @@ async def decide_extraction(
     payload: ExtractionDecisionRequest,
     request: Request,
     db: DbSession,
+    verified: VerifiedSubject,
 ) -> Envelope[ExtractionDecisionResponse]:
-    conversation, profile = await _scoped_conversation(db, conversation_id, request)
+    conversation, profile = await _scoped_conversation(
+        db, conversation_id, request, verified
+    )
     extraction = await db.get(EntityExtraction, extraction_id)
     if extraction is None:
         raise HTTPException(
