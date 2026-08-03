@@ -25,7 +25,6 @@ import { ApiClientError, getProfile, getRecommendations, listMeetings } from "@/
 import { parseLocalPersonalizationPreview } from "@/lib/personalization-preview";
 import type { MeetingResponse, ProfileView, RecommendationResponse } from "@/lib/types";
 
-import KakaoTestPreview from "@/components/KakaoTestPreview";
 import CatalogExplorer from "@/components/CatalogExplorer";
 import LocalRecommendationCard from "@/components/LocalRecommendationCard";
 import RecommendationCard from "@/components/RecommendationCard";
@@ -88,7 +87,7 @@ function ErrorGuidance({ error, onRetry }: { error: ApiClientError | null; onRet
       <div className="rounded-2xl border p-4" style={{ borderColor: "var(--color-border)" }}>
         <p className="font-semibold">나의 추천 업체를 준비하고 있어요.</p>
         <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
-          추천 계산과 화면 전달은 분리되어 있어요. 준비가 끝나면 이 화면에서 바로 확인할 수 있습니다.
+          추천이 준비되면 이 화면에서 바로 확인할 수 있습니다.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -271,7 +270,7 @@ export default function MyEventDashboard() {
         </a>
       </p>
 
-      <PersonalizationProof preview={preview} profile={profile} recommendation={data} />
+      <PersonalizationProof preview={preview} profile={profile} />
 
       <nav className="grid grid-cols-3 gap-2" aria-label="나의 행사 바로가기">
         <Link
@@ -339,8 +338,7 @@ export default function MyEventDashboard() {
         </h2>
         {preview ? (
           <p className="text-sm leading-6" style={{ color: "var(--color-text-muted)" }}>
-            실제 참가업체 등록자료를 개인화 화면에 연결한 검수 결과입니다. 운영 매칭 엔진의 확정 Snapshot과 외부 발송은
-            아직 실행하지 않았습니다.
+            사전등록 관심분야와 관람목적을 기준으로 먼저 살펴볼 참가업체입니다.
           </p>
         ) : null}
 
@@ -406,8 +404,6 @@ export default function MyEventDashboard() {
           </Link>
         </section>
       ) : null}
-
-      {preview ? <KakaoTestPreview preview={preview} /> : null}
 
       <div className="flex flex-wrap gap-2">
         <Link

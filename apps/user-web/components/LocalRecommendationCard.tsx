@@ -17,7 +17,7 @@ export default function LocalRecommendationCard({
   if (dismissed) {
     return (
       <div className="backju-panel border p-4 text-sm" role="status" style={{ borderColor: "var(--color-border)" }}>
-        관심 없음으로 화면에만 반영했습니다. 실제 발송이나 추천 Snapshot은 변경하지 않았습니다.
+        관심 없음으로 반영했습니다. 이 화면에서는 해당 업체를 숨깁니다.
       </div>
     );
   }
