@@ -287,13 +287,23 @@ export default function MyEventDashboard() {
             오늘의 추천을 준비하고 있어요.
           </p>
         )}
-        <Link
-          href="/route"
-          className="tap-target mt-4 inline-flex rounded-full px-5 text-sm font-bold"
-          style={{ backgroundColor: "#ffffff", color: "var(--color-brand)" }}
-        >
-          추천 경로 시작
-        </Link>
+        {state === "loaded" && visibleItems.length > 0 ? (
+          <Link
+            href="/route?source=recommendations"
+            className="tap-target mt-4 inline-flex rounded-full px-5 text-sm font-bold"
+            style={{ backgroundColor: "#ffffff", color: "var(--color-brand)" }}
+          >
+            추천 동선 확인
+          </Link>
+        ) : (
+          <Link
+            href="/recommendations"
+            className="tap-target mt-4 inline-flex rounded-full px-5 text-sm font-bold"
+            style={{ backgroundColor: "#ffffff", color: "var(--color-brand)" }}
+          >
+            추천 업체 확인
+          </Link>
+        )}
       </section>
 
       <section aria-labelledby="recommended-booths-heading" className="space-y-3">
