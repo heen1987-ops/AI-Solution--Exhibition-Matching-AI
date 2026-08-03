@@ -1,17 +1,65 @@
 export const BOOTH_LAYOUT_STATUS = "DRAFT_REFERENCE" as const;
+export const BOOTH_LAYOUT_SCOPE = "EXCO_HALL_3_SINGLE_HALL" as const;
 
-export type ProvisionalBoothZone = {
-  id: string;
-  title: string;
-  detail: string;
+export type ProvisionalBoothCell = {
+  code: string;
+  width: "SINGLE" | "DOUBLE";
   status: "PROVISIONAL";
 };
 
-export const PROVISIONAL_BOOTH_ZONES: readonly ProvisionalBoothZone[] = [
-  { id: "A", title: "우리술", detail: "탁주 · 약주 · 청주 · 증류주", status: "PROVISIONAL" },
-  { id: "B", title: "기타주류", detail: "과실주 · 와인 · 맥주", status: "PROVISIONAL" },
-  { id: "C", title: "연관제품", detail: "술잔 · 옹기 · 식품 · 서비스", status: "PROVISIONAL" },
-  { id: "D", title: "양조·유통 기술", detail: "발효 · 전후공정 · 유통", status: "PROVISIONAL" },
-  { id: "E", title: "가맹·비즈니스", detail: "주점 · 바틀샵 · K-PUB", status: "PROVISIONAL" },
-  { id: "F", title: "지역문화", detail: "농업 · 음식 · 관광", status: "PROVISIONAL" },
+export type ProvisionalBoothColumn = {
+  id: "Q" | "R" | "S";
+  label: string;
+  booths: readonly ProvisionalBoothCell[];
+};
+
+function booth(code: string, width: ProvisionalBoothCell["width"] = "SINGLE"): ProvisionalBoothCell {
+  return { code, width, status: "PROVISIONAL" };
+}
+
+export const PROVISIONAL_BOOTH_COLUMNS: readonly ProvisionalBoothColumn[] = [
+  {
+    id: "Q",
+    label: "Q 부스열",
+    booths: [
+      booth("Q-31", "DOUBLE"),
+      booth("Q-25", "DOUBLE"),
+      booth("Q-19", "DOUBLE"),
+      booth("Q-16"), booth("Q-18"),
+      booth("Q-13"), booth("Q-15"),
+      booth("Q-09"), booth("Q-10"),
+      booth("Q-07"), booth("Q-08"),
+      booth("Q-01"), booth("Q-04"),
+      booth("Q-02", "DOUBLE"),
+    ],
+  },
+  {
+    id: "R",
+    label: "R 부스열",
+    booths: [
+      booth("R-31", "DOUBLE"),
+      booth("R-25", "DOUBLE"),
+      booth("R-22"), booth("R-23"),
+      booth("R-19"), booth("R-20"),
+      booth("R-16"), booth("R-17"),
+      booth("R-14"), booth("R-15"),
+      booth("R-07"), booth("R-08"),
+      booth("R-05"), booth("R-06"),
+      booth("R-01", "DOUBLE"),
+    ],
+  },
+  {
+    id: "S",
+    label: "S 부스열",
+    booths: [
+      booth("S-31", "DOUBLE"),
+      booth("S-25", "DOUBLE"),
+      booth("S-19", "DOUBLE"),
+      booth("S-18", "DOUBLE"),
+      booth("S-14", "DOUBLE"),
+      booth("S-13", "DOUBLE"),
+      booth("S-07", "DOUBLE"),
+      booth("S-01", "DOUBLE"),
+    ],
+  },
 ] as const;
