@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import NaverVenueMap from "@/components/NaverVenueMap";
 import {
   buildNaverRouteUrl,
   detectNaverLaunchTarget,
@@ -29,11 +30,11 @@ function IconCar() {
   );
 }
 
-function IconPin() {
+function IconWalk() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
-      <circle cx="12" cy="10" r="2.5" />
+      <circle cx="13" cy="4" r="2" />
+      <path d="m10 22 1.5-7-3-2 2-5 4 2 3 3M11.5 15l4 2 2 5M8.5 13 5 16" />
     </svg>
   );
 }
@@ -62,19 +63,7 @@ export default function VenueDirections() {
 
   return (
     <section aria-labelledby="venue-directions-heading" className="overflow-hidden border border-[var(--color-border)] bg-white backju-panel">
-      <div className="venue-map-visual" aria-label="대구 EXCO 서관 3홀 도착지 안내">
-        <div className="venue-map-grid" aria-hidden="true" />
-        <div className="venue-map-route venue-map-route-a" aria-hidden="true" />
-        <div className="venue-map-route venue-map-route-b" aria-hidden="true" />
-        <div className="venue-map-marker">
-          <span className="venue-map-marker-icon"><IconPin /></span>
-          <span className="venue-map-marker-copy">
-            <strong>도착지</strong>
-            <span>EXCO 서관 3홀</span>
-          </span>
-        </div>
-        <div className="venue-map-caption">DAEGU · EXCO WEST WING</div>
-      </div>
+      <NaverVenueMap />
 
       <div className="p-5 md:p-7">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -88,7 +77,16 @@ export default function VenueDirections() {
           <span className="rounded-full bg-[#cde2cd] px-3 py-1 text-xs font-bold text-[#294b2d]">도착지 고정</span>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => openDirections("walk")}
+            className="tap-target justify-start gap-3 rounded-sm bg-[#cde2cd] px-4 py-4 text-left font-extrabold text-[#294b2d] transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
+            disabled={launchState === "opening"}
+          >
+            <span className="h-7 w-7"><IconWalk /></span>
+            <span><strong className="block">도보 길찾기</strong><small className="font-medium">현재 위치 → EXCO 3홀</small></span>
+          </button>
           <button
             type="button"
             onClick={() => openDirections("public")}
@@ -110,7 +108,7 @@ export default function VenueDirections() {
         </div>
 
         <p className="mt-5 text-base leading-7 text-[#4d4a43]">
-          출발지는 네이버 지도가 현재 위치로 설정합니다. 교통수단을 선택하면 별도 입력 없이 EXCO 서관 3홀까지의 경로를 확인할 수 있어요.
+          지도에서 행사장과 현재 위치를 확인할 수 있습니다. 실제 도보·대중교통·차량 경로는 교통수단을 선택하면 네이버 지도의 길찾기 화면에서 이어집니다.
         </p>
 
         <div className="mt-4 flex flex-col gap-2 border-l-4 border-[#eee0b7] bg-[#faf7f0] px-4 py-3 text-sm text-[#5c574f] sm:flex-row sm:items-center sm:justify-between">

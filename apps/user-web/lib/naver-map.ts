@@ -1,4 +1,4 @@
-export type NaverTravelMode = "public" | "car";
+export type NaverTravelMode = "walk" | "public" | "car";
 export type NaverLaunchTarget = "android" | "ios" | "web";
 
 /**
@@ -15,7 +15,12 @@ export const EXCO_HALL_3 = {
 
 export const NAVER_MAP_WEB_FALLBACK = `https://map.naver.com/p/search/${encodeURIComponent(EXCO_HALL_3.name)}`;
 
+export function buildNaverMapScriptUrl(ncpKeyId: string): string {
+  return `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(ncpKeyId)}`;
+}
+
 const ROUTE_PATH: Record<NaverTravelMode, string> = {
+  walk: "route/walk",
   public: "route/public",
   car: "route/car",
 };

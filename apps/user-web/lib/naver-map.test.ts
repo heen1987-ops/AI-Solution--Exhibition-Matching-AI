@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildNaverMapScriptUrl,
   buildNaverRouteUrl,
   detectNaverLaunchTarget,
   EXCO_HALL_3,
@@ -8,6 +9,12 @@ import {
 } from "./naver-map";
 
 describe("Naver map directions", () => {
+  it("loads the official Web Dynamic Map SDK with the public ncpKeyId", () => {
+    expect(buildNaverMapScriptUrl("public key")).toBe(
+      "https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=public%20key",
+    );
+  });
+
   it("uses EXCO West Wing Hall 3 as the fixed destination without collecting a start location", () => {
     const url = buildNaverRouteUrl("public", "ios", "https://match.backju.kr");
 
@@ -25,6 +32,10 @@ describe("Naver map directions", () => {
     expect(url).toContain("intent://route/car?");
     expect(url).toContain("package=com.nhn.android.nmap");
     expect(url).toContain("scheme=nmap");
+  });
+
+  it("supports the official walking route action", () => {
+    expect(buildNaverRouteUrl("walk", "ios", "https://match.backju.kr")).toContain("nmap://route/walk?");
   });
 
   it("falls back to a Naver Map web search on desktop", () => {
