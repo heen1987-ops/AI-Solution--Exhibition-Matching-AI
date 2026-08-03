@@ -11,41 +11,19 @@
  * API: 인터페이스 명세 8.3절 `PUT /api/v1/profiles/me/buyer-needs`
  * (`postAnswers({step:"BUYER_NEEDS"})`).
  *
- * 코드값 메모: 6단계 온톨로지 문서가 아직 없어 라벨→코드 매핑은 인터페이스 명세 8.3절
- * 예시(`BOTTLE_SHOP`, `ONLINE_MALL`, `DISTILLED_LIQUOR`, `SEOUL`, `GYEONGGI`,
- * `REGULAR_SMALL`)와 최대한 맞추고, 예시에 없는 값은 이 화면이 잠정 정의했다
- * (TODO: 온톨로지 확정 후 대조).
+ * 채널·제품군·공급지역은 PUBLISHED 온톨로지의 assignable concept를 사용한다.
  */
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ApiClientError, postAnswers, postInteraction } from "@/lib/api-client";
+import { BUYER_CHANNEL_OPTIONS, PRODUCT_CATEGORY_OPTIONS, SUPPLY_REGION_OPTIONS } from "@/lib/profile-options";
 import type { ExpectedOrderVolume, PriceBasis, TargetPrice } from "@/lib/types";
 import { loadOnboardingState, saveOnboardingState } from "@/lib/onboarding-state";
 
 import ChoiceChip from "../_components/ChoiceChip";
 import OnboardingShell from "../_components/OnboardingShell";
-
-const CHANNEL_OPTIONS = [
-  { code: "DEPARTMENT_STORE", label: "백화점" },
-  { code: "MART", label: "마트" },
-  { code: "BOTTLE_SHOP", label: "바틀샵" },
-  { code: "ONLINE_MALL", label: "온라인" },
-  { code: "FOOD_SERVICE", label: "외식" },
-  { code: "EXPORT", label: "수출" },
-  { code: "OEM_PB", label: "OEM·PB" },
-  { code: "OTHER", label: "기타" },
-];
-
-// U-05 관람객 취향 화면과 같은 제품군 코드를 재사용한다.
-const CATEGORY_OPTIONS = [
-  { code: "TAKJU", label: "탁주" },
-  { code: "YAKJU_CHEONGJU", label: "약주·청주" },
-  { code: "DISTILLED_LIQUOR", label: "증류주" },
-  { code: "FRUIT_WINE", label: "과실주" },
-  { code: "OTHER_LIQUOR", label: "기타주류" },
-];
 
 type PriceBand = "UNDER_20K" | "20_50K" | "50_100K" | "OVER_100K";
 const PRICE_BAND_OPTIONS: { code: PriceBand; label: string; min: number | null; max: number | null }[] = [
@@ -65,18 +43,6 @@ const VOLUME_OPTIONS: { code: VolumeOption; label: string }[] = [
   { code: "SAMPLE", label: "샘플" },
   { code: "SMALL_LOT", label: "소량" },
   { code: "REGULAR_SMALL", label: "정기" },
-];
-
-const REGION_OPTIONS = [
-  { code: "SEOUL", label: "서울" },
-  { code: "GYEONGGI", label: "경기" },
-  { code: "INCHEON", label: "인천" },
-  { code: "CHUNGCHEONG", label: "충청" },
-  { code: "JEOLLA", label: "전라" },
-  { code: "GYEONGSANG", label: "경상" },
-  { code: "GANGWON", label: "강원" },
-  { code: "JEJU", label: "제주" },
-  { code: "NATIONWIDE", label: "전국" },
 ];
 
 function friendlyErrorMessage(error: unknown): string {
@@ -176,7 +142,7 @@ export default function BuyerNeedsPage() {
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-bold">사업·유통 채널</h2>
         <div className="flex flex-wrap gap-2">
-          {CHANNEL_OPTIONS.map((option) => (
+          {BUYER_CHANNEL_OPTIONS.map((option) => (
             <ChoiceChip
               key={option.code}
               label={option.label}
@@ -190,7 +156,7 @@ export default function BuyerNeedsPage() {
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-bold">희망 제품군 (복수 선택)</h2>
         <div className="flex flex-wrap gap-2">
-          {CATEGORY_OPTIONS.map((option) => (
+          {PRODUCT_CATEGORY_OPTIONS.map((option) => (
             <ChoiceChip
               key={option.code}
               label={option.label}
@@ -242,7 +208,7 @@ export default function BuyerNeedsPage() {
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-bold">공급 희망지역</h2>
         <div className="flex flex-wrap gap-2">
-          {REGION_OPTIONS.map((option) => (
+          {SUPPLY_REGION_OPTIONS.map((option) => (
             <ChoiceChip
               key={option.code}
               label={option.label}

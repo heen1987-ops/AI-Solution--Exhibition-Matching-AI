@@ -19,13 +19,17 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiClientError, getRecommendations, listMeetings } from "@/lib/api-client";
-import type { MeetingResponse, RecommendationResponse } from "@/lib/types";
+import { ApiClientError, getProfile, getRecommendations, listMeetings } from "@/lib/api-client";
+import { parseLocalPersonalizationPreview } from "@/lib/personalization-preview";
+import type { MeetingResponse, ProfileView, RecommendationResponse } from "@/lib/types";
 
+import KakaoTestPreview from "@/components/KakaoTestPreview";
+import LocalRecommendationCard from "@/components/LocalRecommendationCard";
 import RecommendationCard from "@/components/RecommendationCard";
 import OperatingStatusBadge from "@/components/OperatingStatusBadge";
+import PersonalizationProof from "@/components/PersonalizationProof";
 
 type LoadState = "loading" | "loaded" | "empty" | "error";
 
@@ -179,17 +183,29 @@ function LoadingSkeleton() {
 }
 
 export default function MyEventDashboard() {
+  const preview = useMemo(() => parseLocalPersonalizationPreview(), []);
   const [state, setState] = useState<LoadState>("loading");
   const [data, setData] = useState<RecommendationResponse | null>(null);
+  const [profile, setProfile] = useState<ProfileView | null>(null);
   const [error, setError] = useState<ApiClientError | null>(null);
   const [nextMeeting, setNextMeeting] = useState<MeetingResponse | null>(null);
 
   const load = useCallback(async () => {
     setState("loading");
     setError(null);
+    if (preview) {
+      setData(null);
+      setProfile(null);
+      setState(preview.recommendations.length > 0 ? "loaded" : "empty");
+      return;
+    }
     try {
-      const response = await getRecommendations();
+      const [response, loadedProfile] = await Promise.all([
+        getRecommendations(),
+        getProfile().catch(() => null),
+      ]);
       setData(response);
+      setProfile(loadedProfile);
       setState(response.items.length === 0 ? "empty" : "loaded");
     } catch (err) {
       if (err instanceof ApiClientError && err.code === "NO_CANDIDATE") {
@@ -200,7 +216,7 @@ export default function MyEventDashboard() {
       setError(err instanceof ApiClientError ? err : null);
       setState("error");
     }
-  }, []);
+  }, [preview]);
 
   useEffect(() => {
     void load();
@@ -209,6 +225,7 @@ export default function MyEventDashboard() {
   // U-08 "다음 일정" - 확정된 상담이 있으면 보여준다. 상담 조회 실패는 홈 전체를 막지
   // 않도록 조용히 섹션만 숨긴다(다른 블록은 정상 동작해야 하므로 - 1.1절 UX 원칙 7).
   useEffect(() => {
+    if (preview) return;
     let cancelled = false;
     async function loadNextMeeting() {
       try {
@@ -222,11 +239,12 @@ export default function MyEventDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [preview]);
 
   const boothItems = data?.items.filter((item) => item.object_type === "BOOTH") ?? [];
   const visibleItems = (boothItems.length > 0 ? boothItems : (data?.items ?? [])).slice(0, 10);
   const meetingActionCount = data?.items.filter((item) => item.recommended_action === "REQUEST_MEETING").length ?? 0;
+  const recommendationCount = preview?.recommendations.length ?? visibleItems.length;
 
   return (
     <div className="mx-auto max-w-screen-content space-y-7 px-4 py-4 md:space-y-10 md:py-7">
@@ -234,9 +252,13 @@ export default function MyEventDashboard() {
         <div className="backju-hero-content">
           <div className="backju-personal-panel">
             <p className="backju-eyebrow">AI PERSONAL MATCH</p>
-            <h1 className="mt-1 text-2xl font-extrabold tracking-tight md:text-3xl">나의 행사</h1>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight md:text-3xl">
+              {preview ? `${preview.displayName} 님의 행사` : "나의 행사"}
+            </h1>
             <p className="mt-1 max-w-xl text-sm text-white/90 md:text-base">
-              관심 분야에 맞춘 업체와 오늘의 방문 동선을 확인하세요.
+              {preview
+                ? "사전등록 관심분야와 관람목적이 추천에 어떻게 반영됐는지 바로 확인하세요."
+                : "관심 분야에 맞춘 업체와 오늘의 방문 동선을 확인하세요."}
             </p>
           </div>
         </div>
@@ -247,6 +269,8 @@ export default function MyEventDashboard() {
           대한민국 백주대간 공식 홈페이지
         </a>
       </p>
+
+      <PersonalizationProof preview={preview} profile={profile} recommendation={data} />
 
       <nav className="grid grid-cols-3 gap-2" aria-label="나의 행사 바로가기">
         <Link
@@ -276,9 +300,9 @@ export default function MyEventDashboard() {
         <h2 id="today-todo-heading" className="backju-section-title text-lg font-bold">
           지금 할 일
         </h2>
-        {state === "loaded" && data ? (
+        {state === "loaded" ? (
           <p className="mt-1 text-sm text-white/80">
-            추천 부스 {boothItems.length}곳
+            추천 업체 {recommendationCount}곳
             {meetingActionCount > 0 ? ` · 상담 제안 ${meetingActionCount}건` : ""}
             {nextMeeting ? " · 확정 상담 1건" : ""}
           </p>
@@ -287,13 +311,13 @@ export default function MyEventDashboard() {
             오늘의 추천을 준비하고 있어요.
           </p>
         )}
-        {state === "loaded" && visibleItems.length > 0 ? (
+        {state === "loaded" && recommendationCount > 0 ? (
           <Link
-            href="/route?source=recommendations"
+            href={preview ? "#recommended-booths-heading" : "/route?source=recommendations"}
             className="tap-target mt-4 inline-flex rounded-full px-5 text-sm font-bold"
             style={{ backgroundColor: "#ffffff", color: "var(--color-brand)" }}
           >
-            추천 동선 확인
+            {preview ? "추천 결과 확인" : "추천 동선 확인"}
           </Link>
         ) : (
           <Link
@@ -308,12 +332,27 @@ export default function MyEventDashboard() {
 
       <section aria-labelledby="recommended-booths-heading" className="space-y-3">
         <h2 id="recommended-booths-heading" className="backju-section-title text-lg font-bold">
-          지금 방문하면 좋은 부스
+          {preview ? "내 기준으로 우선 확인할 참가업체" : "지금 방문하면 좋은 부스"}
         </h2>
+        {preview ? (
+          <p className="text-sm leading-6" style={{ color: "var(--color-text-muted)" }}>
+            실제 참가업체 등록자료를 개인화 화면에 연결한 검수 결과입니다. 운영 매칭 엔진의 확정 Snapshot과 외부 발송은
+            아직 실행하지 않았습니다.
+          </p>
+        ) : null}
 
         {state === "loading" ? <LoadingSkeleton /> : null}
         {state === "error" ? <ErrorGuidance error={error} onRetry={() => void load()} /> : null}
         {state === "empty" ? <EmptyRecommendations /> : null}
+        {state === "loaded" && preview
+          ? preview.recommendations.map((item, index) => (
+              <LocalRecommendationCard
+                key={`${item.exhibitorName}-${item.productName}`}
+                item={item}
+                rank={index + 1}
+              />
+            ))
+          : null}
         {state === "loaded" && data
           ? visibleItems.map((item) => (
               <RecommendationCard
@@ -364,6 +403,8 @@ export default function MyEventDashboard() {
           </Link>
         </section>
       ) : null}
+
+      {preview ? <KakaoTestPreview preview={preview} /> : null}
 
       <div className="flex flex-wrap gap-2">
         <Link

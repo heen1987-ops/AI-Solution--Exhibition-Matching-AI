@@ -8,17 +8,15 @@
  * API: 인터페이스 명세 8.2절 `PUT /api/v1/profiles/me/consumer-preferences`
  * (`postAnswers({step:"CONSUMER_PREFERENCES"})`).
  *
- * 코드값 메모: 6단계 온톨로지 문서가 아직 없어 아래 라벨→코드 매핑 중 `주종`·`맛·향`은
- * 인터페이스 명세 8.2절 예시(`DISTILLED_LIQUOR`, `YAKJU_CHEONGJU`, `DRY`, `AROMATIC`,
- * `SMOOTH`)와 최대한 맞추고, 예시에 없는 값은 이 화면이 잠정 정의했다
- * (TODO: 온톨로지 확정 후 대조). `도수`·`가격`은 자유 수치 필드라 구간 경계값도 잠정
- * 기본값이다(TODO: 정책 확정 후 조정).
+ * 주종·맛·향은 PUBLISHED 온톨로지의 assignable concept를 사용한다. 도수·가격은 화면
+ * 구간을 API 범위값으로 변환한다.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ApiClientError, postAnswers, postInteraction } from "@/lib/api-client";
+import { PRODUCT_CATEGORY_OPTIONS, TASTE_OPTIONS } from "@/lib/profile-options";
 import type { AlcoholPercentageRange, PriceRange, PurchaseIntent } from "@/lib/types";
 import { loadOnboardingState, saveOnboardingState } from "@/lib/onboarding-state";
 
@@ -26,24 +24,6 @@ import ChoiceChip from "../_components/ChoiceChip";
 import OnboardingShell from "../_components/OnboardingShell";
 
 const UNKNOWN = "UNKNOWN" as const;
-
-// TODO(온톨로지 확정 후 실제 concept_code로 교체).
-const CATEGORY_OPTIONS = [
-  { code: "TAKJU", label: "탁주" },
-  { code: "YAKJU_CHEONGJU", label: "약주·청주" },
-  { code: "DISTILLED_LIQUOR", label: "증류주" },
-  { code: "FRUIT_WINE", label: "과실주" },
-  { code: "OTHER_LIQUOR", label: "기타주류" },
-];
-
-const TASTE_OPTIONS = [
-  { code: "SWEET", label: "달콤" },
-  { code: "DRY", label: "드라이" },
-  { code: "REFRESHING", label: "산뜻" },
-  { code: "FULL_BODIED", label: "묵직" },
-  { code: "AROMATIC", label: "향이 강함" },
-  { code: "SMOOTH", label: "부드러움" },
-];
 
 type AlcoholOption = "LOW" | "MID" | "HIGH" | "ANY";
 const ALCOHOL_OPTIONS: { code: AlcoholOption; label: string; range: AlcoholPercentageRange | null }[] = [
@@ -67,11 +47,10 @@ const PRICE_OPTIONS: {
   { code: "NO_PLAN", label: "구매 계획 없음", range: null, intent: "UNLIKELY" },
 ];
 
-// 8.2절 예시("preferred_activities": ["TASTING", "ON_SITE_PURCHASE"])와 맞추기 위해
-// U-04에서 고른 방문 목적을 재사용한다.
+// U-04에서 고른 방문 목적을 공개 BOOTH_SERVICE 코드로 투영한다.
 const GOAL_TO_ACTIVITY: Record<string, string> = {
-  TASTING: "TASTING",
-  PURCHASE: "ON_SITE_PURCHASE",
+  "GOAL.TASTING": "SERVICE.TASTING",
+  "GOAL.ON_SITE_PURCHASE": "SERVICE.PURCHASE",
 };
 
 function friendlyErrorMessage(error: unknown): string {
@@ -207,7 +186,7 @@ export default function TastePage() {
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-bold">주종</h2>
         <div className="flex flex-wrap gap-2">
-          {CATEGORY_OPTIONS.map((option) => (
+          {PRODUCT_CATEGORY_OPTIONS.map((option) => (
             <ChoiceChip
               key={option.code}
               label={option.label}

@@ -8,15 +8,18 @@
  * 변환 결과를 다음 화면에서 확인·수정할 수 있어야 한다"는 설명.
  * API: 인터페이스 명세 8.1절 `PUT /api/v1/profiles/me/goals` (`postAnswers({step:"GOALS"})`).
  *
- * 코드값 메모: 6단계 매칭 온톨로지 문서가 아직 없어 아래 라벨→코드 매핑은 이 화면이 잠정
- * 정의한 값이다 (`GoalItem.code`는 `frontend/lib/types.ts`에서 임의 문자열을 허용하는
- * 구조). TODO(온톨로지 확정 후 실제 concept_code로 교체).
+ * 코드값은 PUBLISHED 온톨로지의 VISIT_GOAL/BUSINESS_GOAL assignable concept를 사용한다.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ApiClientError, postAnswers, postInteraction } from "@/lib/api-client";
+import {
+  BUYER_GOAL_OPTIONS,
+  canonicalizeLegacyProfileCode,
+  VISITOR_GOAL_OPTIONS,
+} from "@/lib/profile-options";
 import type { SuggestedAttribute } from "@/lib/types";
 import { loadOnboardingState, saveOnboardingState } from "@/lib/onboarding-state";
 
@@ -24,18 +27,6 @@ import ChoiceChip from "../_components/ChoiceChip";
 import OnboardingShell from "../_components/OnboardingShell";
 
 const MAX_GOALS = 3;
-
-// TODO(6단계 온톨로지 확정 후 실제 concept_code로 교체).
-const GOAL_OPTIONS: { code: string; label: string }[] = [
-  { code: "TASTING", label: "시음" },
-  { code: "PURCHASE", label: "현장구매" },
-  { code: "GIFT_SEARCH", label: "선물찾기" },
-  { code: "LOCAL_LIQUOR_EXPLORATION", label: "지역술 탐색" },
-  { code: "EVENT_EXPERIENCE", label: "행사체험" },
-  { code: "BREWING_TECHNOLOGY", label: "양조기술" },
-  { code: "TRADE_CONSULTATION", label: "거래상담" },
-  { code: "MARKET_RESEARCH", label: "시장조사" },
-];
 
 function friendlyErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) return error.message;
@@ -66,7 +57,7 @@ export default function GoalsPage() {
       return;
     }
     setUserType(state.userType);
-    setSelectedCodes(state.goals.map((goal) => goal.code));
+    setSelectedCodes(state.goals.map((goal) => canonicalizeLegacyProfileCode(goal.code)));
     setFreeText(state.freeTextGoal);
     setReady(true);
   }, [router]);
@@ -75,6 +66,7 @@ export default function GoalsPage() {
     () => (userType === "BUYER" ? "/onboarding/buyer-needs" : "/onboarding/taste"),
     [userType],
   );
+  const goalOptions = userType === "BUYER" ? BUYER_GOAL_OPTIONS : VISITOR_GOAL_OPTIONS;
 
   function toggleGoal(code: string) {
     setSelectedCodes((prev) => {
@@ -145,7 +137,7 @@ export default function GoalsPage() {
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        {GOAL_OPTIONS.map((option) => (
+        {goalOptions.map((option) => (
           <ChoiceChip
             key={option.code}
             label={option.label}
