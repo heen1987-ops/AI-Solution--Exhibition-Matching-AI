@@ -24,12 +24,12 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          50: "#fdf4ec",
-          100: "#f8e3cd",
-          300: "#e8ad70",
-          500: "#c97a2b",
-          600: "#a65f1e",
-          700: "#804a18",
+          50: "#f5f1e8",
+          100: "#eee8dc",
+          300: "#c9b98f",
+          500: "#927a49",
+          600: "#7a663d",
+          700: "#5d4d2e",
         },
       },
       spacing: {

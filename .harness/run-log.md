@@ -528,6 +528,22 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
 - Added provider-neutral bounded rendering and dispatch policy. A successful Alimtalk stops the
   chain; failure proceeds to SMS and then email. Provider exceptions become allowlisted codes and
   raw responses are not persisted. No production provider implementation or credentials exist.
+
+## 2026-08-03 — USERWEB-008 Backju official-site visual language alignment
+
+- Rechecked the living product conversation and approved presentation-only CR-013 from the user's
+  explicit request to align with `backju.kr`.
+- Inspected the official home and visitor information pages in-browser. The active user web now uses
+  the observed white header, centered official lockup, bronze/ivory base, mint/blush/light-blue
+  shortcuts, thin rules, generous spacing, and capsule action language.
+- My Event and guest search reference the official common sub-page photograph with contrast overlay
+  and visible source credit. `BRAND_ASSETS.md` records the source and all-rights-reserved production
+  permission check; no remote binary was committed.
+- Matching calculation, persisted snapshot delivery, personal-link mapping, approval filters,
+  authentication, Alimtalk delivery, and kiosk exclusion remain unchanged.
+- Clean NTFS frozen install, user-web 5 tests, typecheck, lint, and 21-route production build passed.
+  Local browser verification confirmed the logo/hero, semantic landmarks, shortcuts, five-tab
+  navigation, and zero console warnings/errors.
 - Added SKIP LOCKED claims, expiring worker leases, append-only retry sequences, and first-click
   attribution during personal-link exchange without another tracking token.
 - Verification: notification-focused 9 passed; API 257 passed/2 PostgreSQL environment skips;

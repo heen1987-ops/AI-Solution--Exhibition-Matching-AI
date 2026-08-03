@@ -229,43 +229,49 @@ export default function MyEventDashboard() {
   const meetingActionCount = data?.items.filter((item) => item.recommended_action === "REQUEST_MEETING").length ?? 0;
 
   return (
-    <div className="mx-auto max-w-screen-content space-y-6 px-4 py-4">
-      <header>
-        <p className="text-sm font-semibold" style={{ color: "var(--color-brand)" }}>
-          백주대간 전시회
-        </p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">나의 행사</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
-          추천 업체, 관심목록과 상담 일정을 한곳에서 확인하세요.
-        </p>
+    <div className="mx-auto max-w-screen-content space-y-6 px-4 py-4 md:py-6">
+      <header className="backju-hero">
+        <div className="backju-hero-content">
+          <p className="backju-eyebrow">2026 대한민국 백주대간</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight md:text-4xl">나의 행사</h1>
+          <p className="mt-2 max-w-xl text-sm text-white/90 md:text-base">
+            추천 업체, 관심목록과 상담 일정을 한곳에서 확인하세요.
+          </p>
+        </div>
       </header>
+      <p className="backju-asset-credit -mt-4 text-right">
+        행사 이미지 출처: {" "}
+        <a href="https://www.backju.kr/" target="_blank" rel="noreferrer">
+          대한민국 백주대간 공식 홈페이지
+        </a>
+      </p>
 
       <nav className="grid grid-cols-3 gap-2" aria-label="나의 행사 바로가기">
         <Link
           href="/recommendations"
-          className="tap-target rounded-xl border px-3 py-3 text-center text-sm font-semibold"
+          className="backju-shortcut tap-target px-3 py-3 text-center text-sm font-semibold"
           style={{ borderColor: "var(--color-border)" }}
         >
           추천 업체
         </Link>
         <Link
           href="/saved"
-          className="tap-target rounded-xl border px-3 py-3 text-center text-sm font-semibold"
+          className="backju-shortcut tap-target px-3 py-3 text-center text-sm font-semibold"
           style={{ borderColor: "var(--color-border)" }}
         >
           관심 업체
         </Link>
         <Link
           href="/schedule"
-          className="tap-target rounded-xl border px-3 py-3 text-center text-sm font-semibold"
+          className="backju-shortcut tap-target px-3 py-3 text-center text-sm font-semibold"
           style={{ borderColor: "var(--color-border)" }}
         >
           상담 일정
         </Link>
       </nav>
 
-      <section aria-labelledby="today-todo-heading" className="rounded-2xl border p-4" style={{ borderColor: "var(--color-border)" }}>
-        <h2 id="today-todo-heading" className="text-lg font-bold">
+      <section aria-labelledby="today-todo-heading" className="backju-panel border bg-white p-5 dark:bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
+        <h2 id="today-todo-heading" className="backju-section-title text-lg font-bold">
           지금 할 일
         </h2>
         {state === "loaded" && data ? (
@@ -281,7 +287,7 @@ export default function MyEventDashboard() {
         )}
         <Link
           href="/route"
-          className="tap-target mt-3 inline-flex rounded-lg px-4 text-sm font-bold"
+          className="tap-target mt-4 inline-flex rounded-full px-5 text-sm font-bold"
           style={{ backgroundColor: "var(--color-brand)", color: "var(--color-brand-contrast)" }}
         >
           추천 경로 시작
@@ -289,7 +295,7 @@ export default function MyEventDashboard() {
       </section>
 
       <section aria-labelledby="recommended-booths-heading" className="space-y-3">
-        <h2 id="recommended-booths-heading" className="text-lg font-bold">
+        <h2 id="recommended-booths-heading" className="backju-section-title text-lg font-bold">
           지금 방문하면 좋은 부스
         </h2>
 
@@ -320,8 +326,8 @@ export default function MyEventDashboard() {
       </section>
 
       {nextMeeting ? (
-        <section aria-labelledby="next-schedule-heading" className="rounded-2xl border p-4" style={{ borderColor: "var(--color-border)" }}>
-          <h2 id="next-schedule-heading" className="text-lg font-bold">
+        <section aria-labelledby="next-schedule-heading" className="backju-panel border p-5" style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}>
+          <h2 id="next-schedule-heading" className="backju-section-title text-lg font-bold">
             다음 일정
           </h2>
           <div className="mt-2 flex items-center justify-between gap-3">

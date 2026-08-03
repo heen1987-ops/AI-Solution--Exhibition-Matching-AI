@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 export type SyncStatus = "synced" | "syncing" | "offline" | "error";
 
@@ -195,14 +196,16 @@ export default function TopBar({
         className="mx-auto flex max-w-screen-content flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4"
         style={{ minHeight: "var(--top-bar-height)" }}
       >
-        <div className="flex min-w-0 flex-col justify-center py-2">
-          <span className="truncate text-base font-bold" title={eventName}>
-            {eventName}
+        <Link href="/home" className="tap-target min-w-0 justify-start gap-3" title={eventName}>
+          <span className="backju-brand-mark" aria-hidden="true" />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-bold">나의 행사</span>
+            <span className="block text-xs" style={{ color: "var(--color-text-muted)" }}>
+              {visitDate ? `방문일 ${visitDate}` : "2026 대한민국 백주대간"}
+            </span>
           </span>
-          <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-            {visitDate ? `방문일 ${visitDate}` : "방문일 미설정"}
-          </span>
-        </div>
+          <span className="sr-only">{eventName} 홈</span>
+        </Link>
 
         <div className="flex items-center gap-3 py-2">
           <div className="flex flex-col items-end text-xs" style={{ color: "var(--color-text-muted)" }}>

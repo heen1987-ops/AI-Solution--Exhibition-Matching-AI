@@ -364,7 +364,7 @@ export default function RecommendationCard({
     <div
       ref={cardRef}
       data-state={resolveState}
-      className={`rounded-2xl border p-4 ${className ?? ""}`}
+      className={`recommendation-card border p-4 ${className ?? ""}`}
       style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
     >
       {stale ? (

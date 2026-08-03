@@ -15,20 +15,25 @@
 :root {
   color-scheme: light;
 
-  --color-bg: #fffaf4;
+  --color-bg: #f8f6f1;
   --color-surface: #ffffff;
-  --color-text: #201a12;
-  --color-text-muted: #5c5344;
-  --color-border: #e7ddce;
-  --color-brand: #a65f1e;
+  --color-text: #2f2f2f;
+  --color-text-muted: #665f52;
+  --color-border: #e7e0d5;
+  --color-brand: #7a663d;
   --color-brand-contrast: #ffffff;
+  --color-brand-soft: #eee8dc;
+  --color-plum: #78595b;
+  --color-mint: #cde2cd;
+  --color-blush: #ef98a1;
+  --color-sky: #93c0df;
   --color-focus-ring: #1a56db;
   --color-danger: #b3261e;
   --color-success: #146c2e;
 
   /* TopBar/BottomNav 레이아웃 계산에 함께 쓰는 높이 값. 두 컴포넌트와 루트 레이아웃이
    * 같은 값을 참조해야 콘텐츠가 고정 영역에 가리지 않는다. */
-  --top-bar-height: 56px;
+  --top-bar-height: 72px;
   --bottom-nav-height: 64px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
@@ -38,13 +43,18 @@
   :root {
     color-scheme: dark;
 
-    --color-bg: #171310;
-    --color-surface: #221c16;
+    --color-bg: #1d1a15;
+    --color-surface: #272218;
     --color-text: #f5efe6;
     --color-text-muted: #c9bfae;
-    --color-border: #3a3226;
-    --color-brand: #e8ad70;
-    --color-brand-contrast: #201a12;
+    --color-border: #4a402f;
+    --color-brand: #d8c18c;
+    --color-brand-contrast: #211b11;
+    --color-brand-soft: #393123;
+    --color-plum: #d0aeb0;
+    --color-mint: #3b5340;
+    --color-blush: #7c4e56;
+    --color-sky: #46677c;
     --color-focus-ring: #7cacf8;
     --color-danger: #ff8a80;
     --color-success: #7fd99a;
@@ -71,6 +81,7 @@ body {
   font-size: 1rem;
   line-height: 1.6;
   font-family:
+    "Noto Sans KR",
     -apple-system,
     BlinkMacSystemFont,
     "Apple SD Gothic Neo",
@@ -82,6 +93,135 @@ body {
     Arial,
     sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(90deg, transparent 0, transparent calc(100% - 1px), rgba(122, 102, 61, 0.035) calc(100% - 1px)),
+    linear-gradient(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+  background-size: 120px 100%, 100% 100%;
+}
+
+.backju-brand-mark {
+  display: block;
+  width: 76px;
+  height: 50px;
+  flex: none;
+  background-image: url("https://www.backju.kr/theme/theme_2/pages/images/2026/logo.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.backju-hero {
+  position: relative;
+  isolation: isolate;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-brand) 48%, transparent);
+  background-color: var(--color-brand);
+  background-image:
+    linear-gradient(90deg, rgba(35, 28, 17, 0.88), rgba(61, 45, 25, 0.48)),
+    url("https://www.backju.kr/theme/theme_2/pages/images/2026/sub_visual_common.jpg");
+  background-position: center;
+  background-size: cover;
+  color: #fff;
+}
+
+.backju-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  z-index: -1;
+  height: 36px;
+  opacity: 0.56;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.72) 0,
+    rgba(255, 255, 255, 0.72) 1px,
+    transparent 1px,
+    transparent 92px
+  );
+  border-top: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.backju-hero-content {
+  display: flex;
+  min-height: 220px;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 2.25rem 1.25rem 3.25rem;
+}
+
+.backju-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.backju-section-title {
+  position: relative;
+  padding-top: 0.8rem;
+}
+
+.backju-section-title::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3.5rem;
+  height: 2px;
+  background: var(--color-brand);
+}
+
+.backju-shortcut {
+  min-height: 78px;
+  border: 1px solid color-mix(in srgb, var(--color-brand) 15%, transparent);
+  background: var(--shortcut-bg, var(--color-brand-soft));
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+
+.backju-shortcut:hover {
+  border-color: var(--color-brand);
+  transform: translateY(-1px);
+}
+
+.backju-shortcut:nth-child(1) { --shortcut-bg: var(--color-mint); }
+.backju-shortcut:nth-child(2) { --shortcut-bg: var(--color-brand-soft); }
+.backju-shortcut:nth-child(3) { --shortcut-bg: color-mix(in srgb, var(--color-sky) 38%, var(--color-surface)); }
+
+.backju-panel,
+.recommendation-card {
+  border-radius: 0.9rem;
+  box-shadow: 0 10px 30px rgba(65, 48, 25, 0.06);
+}
+
+.backju-asset-credit {
+  color: var(--color-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.backju-asset-credit a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .backju-hero,
+  .backju-hero-content {
+    min-height: 270px;
+  }
+
+  .backju-hero-content {
+    padding-inline: 2rem;
+  }
 }
 
 /* 13.2절: 키보드만으로 모든 기능 사용 가능 - 포커스 표시를 색상 대비가 충분한 링으로

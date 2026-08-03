@@ -53,7 +53,8 @@
     "BACKEND-013",
     "USERWEB-007",
     "DELIVERY-001",
-    "NOTIFY-001"
+    "NOTIFY-001",
+    "USERWEB-008"
   ],
   "blocked_tasks": [
     "BACKEND-009(CONTRACT-005 의존)",
@@ -61,10 +62,10 @@
     "QA-001(re-audit after CR-009 web-first pivot)"
   ],
   "next_recommended_task": "BACKEND-007 (implement operator approval/rejection and operations APIs on the verified BACKEND-010 principal/RBAC boundary)",
-  "last_successful_run": "2026-08-03T04:32:00+09:00",
+  "last_successful_run": "2026-08-03T11:50:00+09:00",
   "scope_status": "LOCKED_WEB_FIRST_CR009",
   "contract_status": "FROZEN",
-  "mvp_progress_percent": 97,
+  "mvp_progress_percent": 98,
   "monorepo_migration": "DONE (DECISION-006, updated by CR-009): canonical apps/* pnpm workspace remains materialized. Active default validation/build covers apps/user-web and apps/admin; apps/kiosk is retained as inactive compatibility source and excluded by root scripts. Latest clean-NTFS active web typecheck/build and frozen install pass.",
   "notes": [
     "The approved 259-concept Backjudaegan alcohol ontology remains canonical (DECISION-004).",
@@ -108,6 +109,7 @@
     "DELIVERY-001 makes /home and the opaque-link /e/{eventSlug}/my entry share the mobile My Event dashboard with recommendations, reasons, saved/meeting/schedule/search/map entry points. Missing snapshots return RECOMMENDATION_NOT_READY; Kakao/email/SMS remain entry adapters and dedicated kiosk remains excluded.",
     "CR-012/DECISION-022 establish Alimtalk-first informational delivery: approved business events enqueue an encrypted personal-link notification through a transactional Outbox, with SMS failure fallback and email last-resort backup. Rank/catalog drift and ordinary web activity never enqueue messages.",
     "NOTIFY-001 adds notification_delivery/attempt/outbox persistence, stable Snapshot dedupe, SKIP LOCKED lease recovery, bounded informational rendering, provider-neutral adapters, and personal-link click attribution without raw contact, token, URL, or provider bodies in Outbox/attempt records.",
-    "External sending remains disabled until a Kakao official dealer, verified business channel, approved template codes, callback authentication/status mapping, SMS/email providers, credentials/KMS, and legal/operations approval are supplied."
+    "External sending remains disabled until a Kakao official dealer, verified business channel, approved template codes, callback authentication/status mapping, SMS/email providers, credentials/KMS, and legal/operations approval are supplied.",
+    "CR-013 aligns the active user web with the official backju.kr bronze/ivory/pastel visual language. Official logo and common hero imagery remain attributed remote references; matching, snapshot, authentication, approval, and notification contracts are unchanged."
   ]
 }

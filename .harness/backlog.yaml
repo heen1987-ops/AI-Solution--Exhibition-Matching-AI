@@ -435,6 +435,26 @@ tasks:
     note: "CR-012 is approved by the user's explicit Alimtalk-first delivery direction."
     evidence: "CR-012, 0019 single-head migration, notification_delivery/attempt/outbox models, encrypted Magic Link enqueue, idempotent Snapshot dedupe, SKIP LOCKED lease recovery, Alimtalk→SMS→email adapter policy, and link-exchange click attribution implemented. Notification focused 9 passed; API 257 passed/2 skipped; common engine 72 passed; touched Ruff, compileall, pip check, Alembic full offline upgrade, and diff check PASS. No external provider is enabled pending dealer/template/callback/credential approval."
 
+  - id: USERWEB-008
+    title: Backju official-site visual language alignment
+    wave: 2
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [USERWEB-007, DELIVERY-001]
+    owned_paths:
+      - "apps/user-web/app/**"
+      - "apps/user-web/components/**"
+      - "apps/user-web/BRAND_ASSETS.md"
+      - ".harness/handoffs/contracts/change-request-013-backju-visual-language.md"
+    acceptance:
+      - "Global shell, My Event, recommendations, and guest search use the official site's bronze/ivory/pastel visual language"
+      - "Official image references keep source provenance and a visible credit without copying binaries into the repository"
+      - "Matching, snapshot delivery, personal-link, approval, and notification contracts remain unchanged"
+      - "Keyboard focus, 44px tap targets, responsive layout, and production build remain valid"
+    note: "CR-013 is approved by the user's explicit official-site tone-and-imagery direction."
+    evidence: "Official backju.kr home and visitor pages were inspected in-browser. Global bronze/ivory/pastel tokens, official logo, attributed common hero image, navigation, My Event, recommendation cards, and guest search were aligned without changing matching or delivery contracts. Clean NTFS frozen install, 5 user-web tests, typecheck, lint, and 21-route production build PASS; local browser landmarks/assets/5-tab navigation verified with zero console warnings/errors."
+
   # ---------- WAVE 2: USER_WEB (substantially done) ----------
   - id: USERWEB-001
     title: Next.js 골격 + API 클라이언트 + 레이아웃

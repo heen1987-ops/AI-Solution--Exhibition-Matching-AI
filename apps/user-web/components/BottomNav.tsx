@@ -149,11 +149,18 @@ export default function BottomNav() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className="tap-target flex h-full w-full flex-col items-center justify-center gap-1"
+                className="tap-target relative flex h-full w-full flex-col items-center justify-center gap-1"
                 style={{
                   color: active ? "var(--color-brand)" : "var(--color-text-muted)",
                 }}
               >
+                {active ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-4 top-0 h-0.5"
+                    style={{ backgroundColor: "var(--color-brand)" }}
+                  />
+                ) : null}
                 <Icon width={24} height={24} />
                 <span
                   className="text-xs leading-none"

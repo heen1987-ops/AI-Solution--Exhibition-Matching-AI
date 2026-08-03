@@ -18,7 +18,7 @@ function statusLabel(status: WebSearchResult["operating_status"]): string {
 function SearchResultCard({ result }: { result: WebSearchResult }) {
   return (
     <article
-      className="rounded-2xl border p-4 shadow-sm"
+      className="backju-panel border p-4"
       style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}
     >
       <div className="flex items-start justify-between gap-3">
@@ -140,17 +140,23 @@ export default function ExplorePage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-content space-y-5 px-4 py-5">
-      <header>
-        <p className="text-sm font-bold" style={{ color: "var(--color-brand)" }}>
-          로그인 없이 바로 검색
-        </p>
-        <h1 className="mt-1 text-2xl font-extrabold">어떤 업체를 찾고 계세요?</h1>
-        <p className="mt-2 text-sm" style={{ color: "var(--color-text-muted)" }}>
-          제품명, 방문 목적, 필요한 거래조건을 자연어로 입력해 보세요. 승인된 참가업체만
-          검색합니다.
-        </p>
+    <div className="mx-auto max-w-screen-content space-y-5 px-4 py-5 md:py-6">
+      <header className="backju-hero">
+        <div className="backju-hero-content">
+          <p className="backju-eyebrow">로그인 없이 바로 검색</p>
+          <h1 className="mt-2 text-3xl font-extrabold">어떤 업체를 찾고 계세요?</h1>
+          <p className="mt-2 max-w-xl text-sm text-white/90 md:text-base">
+            제품명, 방문 목적, 필요한 거래조건을 자연어로 입력해 보세요. 승인된 참가업체만
+            검색합니다.
+          </p>
+        </div>
       </header>
+      <p className="backju-asset-credit -mt-3 text-right">
+        행사 이미지 출처: {" "}
+        <a href="https://www.backju.kr/" target="_blank" rel="noreferrer">
+          대한민국 백주대간 공식 홈페이지
+        </a>
+      </p>
 
       <form onSubmit={handleSubmit} role="search" className="space-y-3">
         <label htmlFor="guest-search" className="sr-only">
@@ -165,13 +171,13 @@ export default function ExplorePage() {
             maxLength={300}
             autoComplete="off"
             placeholder="예: 선물용 전통주를 시음할 수 있는 곳"
-            className="min-h-12 flex-1 rounded-xl border px-4 text-base"
+            className="min-h-12 flex-1 rounded-none border px-4 text-base"
             style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}
           />
           <button
             type="submit"
             disabled={state === "loading"}
-            className="tap-target min-h-12 rounded-xl px-6 text-base font-bold disabled:opacity-60"
+            className="tap-target min-h-12 rounded-full px-7 text-base font-bold disabled:opacity-60"
             style={{ backgroundColor: "var(--color-brand)", color: "var(--color-brand-contrast)" }}
           >
             {state === "loading" ? "찾는 중…" : "검색"}
@@ -180,7 +186,7 @@ export default function ExplorePage() {
       </form>
 
       <section aria-labelledby="quick-search-heading">
-        <h2 id="quick-search-heading" className="text-sm font-bold">
+        <h2 id="quick-search-heading" className="backju-section-title text-sm font-bold">
           빠른 검색
         </h2>
         <div className="mt-2 flex flex-wrap gap-2">
