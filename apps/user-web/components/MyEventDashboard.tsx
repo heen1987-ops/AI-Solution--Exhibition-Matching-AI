@@ -229,14 +229,16 @@ export default function MyEventDashboard() {
   const meetingActionCount = data?.items.filter((item) => item.recommended_action === "REQUEST_MEETING").length ?? 0;
 
   return (
-    <div className="mx-auto max-w-screen-content space-y-6 px-4 py-4 md:py-6">
+    <div className="mx-auto max-w-screen-content space-y-7 px-4 py-4 md:space-y-10 md:py-7">
       <header className="backju-hero">
         <div className="backju-hero-content">
-          <p className="backju-eyebrow">2026 대한민국 백주대간</p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight md:text-4xl">나의 행사</h1>
-          <p className="mt-2 max-w-xl text-sm text-white/90 md:text-base">
-            추천 업체, 관심목록과 상담 일정을 한곳에서 확인하세요.
-          </p>
+          <div className="backju-personal-panel">
+            <p className="backju-eyebrow">AI PERSONAL MATCH</p>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight md:text-3xl">나의 행사</h1>
+            <p className="mt-1 max-w-xl text-sm text-white/90 md:text-base">
+              관심 분야에 맞춘 업체와 오늘의 방문 동선을 확인하세요.
+            </p>
+          </div>
         </div>
       </header>
       <p className="backju-asset-credit -mt-4 text-right">
@@ -252,43 +254,43 @@ export default function MyEventDashboard() {
           className="backju-shortcut tap-target px-3 py-3 text-center text-sm font-semibold"
           style={{ borderColor: "var(--color-border)" }}
         >
-          추천 업체
+          <span className="backju-shortcut-label">추천 업체</span>
         </Link>
         <Link
           href="/saved"
           className="backju-shortcut tap-target px-3 py-3 text-center text-sm font-semibold"
           style={{ borderColor: "var(--color-border)" }}
         >
-          관심 업체
+          <span className="backju-shortcut-label">관심 업체</span>
         </Link>
         <Link
           href="/schedule"
           className="backju-shortcut tap-target px-3 py-3 text-center text-sm font-semibold"
           style={{ borderColor: "var(--color-border)" }}
         >
-          상담 일정
+          <span className="backju-shortcut-label">상담 일정</span>
         </Link>
       </nav>
 
-      <section aria-labelledby="today-todo-heading" className="backju-panel border bg-white p-5 dark:bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
+      <section aria-labelledby="today-todo-heading" className="backju-panel backju-today-panel p-5 md:p-7">
         <h2 id="today-todo-heading" className="backju-section-title text-lg font-bold">
           지금 할 일
         </h2>
         {state === "loaded" && data ? (
-          <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
+          <p className="mt-1 text-sm text-white/80">
             추천 부스 {boothItems.length}곳
             {meetingActionCount > 0 ? ` · 상담 제안 ${meetingActionCount}건` : ""}
             {nextMeeting ? " · 확정 상담 1건" : ""}
           </p>
         ) : (
-          <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
+          <p className="mt-1 text-sm text-white/80">
             오늘의 추천을 준비하고 있어요.
           </p>
         )}
         <Link
           href="/route"
           className="tap-target mt-4 inline-flex rounded-full px-5 text-sm font-bold"
-          style={{ backgroundColor: "var(--color-brand)", color: "var(--color-brand-contrast)" }}
+          style={{ backgroundColor: "#ffffff", color: "var(--color-brand)" }}
         >
           추천 경로 시작
         </Link>

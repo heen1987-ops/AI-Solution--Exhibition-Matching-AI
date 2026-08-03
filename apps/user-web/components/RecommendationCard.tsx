@@ -373,6 +373,11 @@ export default function RecommendationCard({
         </p>
       ) : null}
 
+      <span className="recommendation-rank" aria-label={`추천 순위 ${item.rank}위`}>
+        <span aria-hidden="true">MATCH</span>
+        <strong>{String(item.rank).padStart(2, "0")}</strong>
+      </span>
+
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           {resolveState === "loading" ? (
@@ -408,7 +413,7 @@ export default function RecommendationCard({
       ) : null}
 
       {reasons.length > 0 ? (
-        <ul className="mt-2 space-y-0.5">
+        <ul className="recommendation-reasons mt-3 space-y-0.5">
           {reasons.map((reason) => (
             <li key={`${reason.code}-${reason.text}`} className="text-sm">
               · {reason.text}
@@ -478,7 +483,7 @@ export default function RecommendationCard({
             <Link
               href={primaryAction.href}
               onClick={recordOpened}
-              className="tap-target rounded-lg px-3 text-sm font-bold"
+              className="tap-target rounded-full px-4 text-sm font-bold"
               style={{ backgroundColor: "var(--color-brand)", color: "var(--color-brand-contrast)" }}
             >
               {primaryAction.label}
@@ -488,7 +493,7 @@ export default function RecommendationCard({
               type="button"
               onClick={primaryAction.onClick}
               disabled={primaryAction.disabled}
-              className="tap-target rounded-lg px-3 text-sm font-bold disabled:opacity-60"
+              className="tap-target rounded-full px-4 text-sm font-bold disabled:opacity-60"
               style={{ backgroundColor: "var(--color-brand)", color: "var(--color-brand-contrast)" }}
             >
               {primaryAction.label}

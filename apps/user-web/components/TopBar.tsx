@@ -192,22 +192,21 @@ export default function TopBar({
         borderColor: "var(--color-border)",
       }}
     >
-      <div
-        className="mx-auto flex max-w-screen-content flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4"
-        style={{ minHeight: "var(--top-bar-height)" }}
-      >
-        <Link href="/home" className="tap-target min-w-0 justify-start gap-3" title={eventName}>
+      <div className="topbar-shell mx-auto max-w-screen-content px-4">
+        <div className="topbar-service-label" aria-hidden="true">
+          <span>PERSONAL MATCHING</span>
+          <strong>나의 행사</strong>
+          {visitDate ? (
+            <small style={{ color: "var(--color-text-muted)" }}>방문일 {visitDate}</small>
+          ) : null}
+        </div>
+
+        <Link href="/home" className="topbar-official-link tap-target" title={eventName}>
           <span className="backju-brand-mark" aria-hidden="true" />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-bold">나의 행사</span>
-            <span className="block text-xs" style={{ color: "var(--color-text-muted)" }}>
-              {visitDate ? `방문일 ${visitDate}` : "2026 대한민국 백주대간"}
-            </span>
-          </span>
           <span className="sr-only">{eventName} 홈</span>
         </Link>
 
-        <div className="flex items-center gap-3 py-2">
+        <div className="topbar-status flex items-center gap-2 py-2">
           <div className="flex flex-col items-end text-xs" style={{ color: "var(--color-text-muted)" }}>
             <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>
               {currentZone ?? "구역 미확인"}
