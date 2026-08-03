@@ -29,6 +29,7 @@ describe("local personalization preview", () => {
     const parsed = parseLocalPersonalizationPreview(JSON.stringify(validPreview));
     expect(parsed?.displayName).toBe("테스트 사용자");
     expect(parsed?.recommendations).toHaveLength(1);
+    expect(parsed?.recommendations[0]?.matchLabel).toBe("관심분야 관련 업체");
   });
 
   it("rejects a raw phone number or email-like contact", () => {

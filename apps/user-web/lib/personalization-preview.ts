@@ -3,10 +3,19 @@ export interface LocalRecommendationPreview {
   productName: string;
   categoryLabel: string;
   boothLabel: string;
-  matchLabel: "매우 잘 맞음" | "잘 맞음" | "함께 살펴볼 만함";
+  matchLabel: "우선 확인할 업체" | "관심분야 관련 업체" | "함께 둘러볼 업체";
   reasons: string[];
   informationStatus: "확인됨" | "부스 미정" | "정보 확인 필요";
 }
+
+const MATCH_LABELS: Record<string, LocalRecommendationPreview["matchLabel"]> = {
+  "매우 잘 맞음": "우선 확인할 업체",
+  "잘 맞음": "관심분야 관련 업체",
+  "함께 살펴볼 만함": "함께 둘러볼 업체",
+  "우선 확인할 업체": "우선 확인할 업체",
+  "관심분야 관련 업체": "관심분야 관련 업체",
+  "함께 둘러볼 업체": "함께 둘러볼 업체",
+};
 
 export interface LocalPersonalizationPreview {
   displayName: string;
@@ -45,7 +54,7 @@ function parseRecommendation(value: unknown): LocalRecommendationPreview | null 
   const categoryLabel = cleanText(item.categoryLabel, 60);
   const boothLabel = cleanText(item.boothLabel, 40);
   const reasons = cleanTextList(item.reasons, 3, 140);
-  const matchLabel = item.matchLabel;
+  const matchLabel = MATCH_LABELS[String(item.matchLabel)];
   const informationStatus = item.informationStatus;
 
   if (
@@ -54,7 +63,7 @@ function parseRecommendation(value: unknown): LocalRecommendationPreview | null 
     !categoryLabel ||
     !boothLabel ||
     !reasons ||
-    !["매우 잘 맞음", "잘 맞음", "함께 살펴볼 만함"].includes(String(matchLabel)) ||
+    !matchLabel ||
     !["확인됨", "부스 미정", "정보 확인 필요"].includes(String(informationStatus))
   ) {
     return null;
@@ -66,7 +75,7 @@ function parseRecommendation(value: unknown): LocalRecommendationPreview | null 
     categoryLabel,
     boothLabel,
     reasons,
-    matchLabel: matchLabel as LocalRecommendationPreview["matchLabel"],
+    matchLabel,
     informationStatus: informationStatus as LocalRecommendationPreview["informationStatus"],
   };
 }
