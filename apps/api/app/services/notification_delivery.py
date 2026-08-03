@@ -28,6 +28,11 @@ from app.models.integration import (
 )
 
 NotificationChannel = Literal["KAKAO_ALIMTALK", "SMS", "EMAIL"]
+NotificationHoldReason = Literal[
+    "CATALOG_NOT_READY",
+    "OPERATOR_RELEASE_REQUIRED",
+    "EXTERNAL_SENDING_DISABLED",
+]
 
 CHANNEL_ORDER: tuple[NotificationChannel, ...] = (
     "KAKAO_ALIMTALK",
@@ -94,6 +99,30 @@ class DispatchOutcome:
     sent: bool
     channel: NotificationChannel | None
     attempts: tuple[NotificationAttempt, ...]
+    held_reason: NotificationHoldReason | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationReleaseGate:
+    """Fail-closed release facts supplied by catalog/operations configuration.
+
+    Matching and My Event Snapshot delivery continue while this gate is closed. Notification
+    persistence requires both catalog readiness and an explicit operator release. Provider calls
+    additionally require the external-sending switch. All defaults deliberately hold delivery.
+    """
+
+    catalog_ready: bool = False
+    operator_release_approved: bool = False
+    external_sending_enabled: bool = False
+
+    def hold_reason(self, *, for_dispatch: bool) -> NotificationHoldReason | None:
+        if not self.catalog_ready:
+            return "CATALOG_NOT_READY"
+        if not self.operator_release_approved:
+            return "OPERATOR_RELEASE_REQUIRED"
+        if for_dispatch and not self.external_sending_enabled:
+            return "EXTERNAL_SENDING_DISABLED"
+        return None
 
 
 def is_notification_trigger(change_type: str) -> bool:
@@ -134,12 +163,14 @@ async def enqueue_recommendation_ready(
     recommendation_session_id: UUID,
     recommendation_count: int,
     public_base_url: str,
+    release_gate: NotificationReleaseGate | None = None,
     settings: Settings | None = None,
-) -> NotificationDelivery:
+) -> NotificationDelivery | None:
     """Create the delivery, one-time link, and Outbox row in the caller transaction.
 
     The caller owns commit/rollback. Repeating the same snapshot event returns the existing row and
-    does not rotate the personal link or enqueue a second message.
+    does not rotate the personal link or enqueue a second message. A closed release gate returns
+    ``None`` before issuing a personal link or writing a delivery/Outbox row.
     """
 
     if not 1 <= recommendation_count <= 50:
@@ -147,6 +178,9 @@ async def enqueue_recommendation_ready(
     if not event_code or len(event_code) > 50:
         raise ValueError("event_code is required and must not exceed 50 characters")
     base_url = _validated_public_base_url(public_base_url)
+    release_gate = release_gate or NotificationReleaseGate()
+    if release_gate.hold_reason(for_dispatch=False) is not None:
+        return None
     settings = settings or get_settings()
     dedupe_key = _dedupe_key(
         event_id=event_id,
@@ -304,11 +338,20 @@ async def dispatch_notification(
     identity: UserIdentity,
     event: Event,
     providers: dict[NotificationChannel, NotificationProvider],
+    release_gate: NotificationReleaseGate | None = None,
     settings: Settings | None = None,
     now: datetime | None = None,
 ) -> DispatchOutcome:
-    """Try Alimtalk first, then SMS, then email; stop after the first accepted send."""
+    """Try Alimtalk first, then SMS, then email; stop after the first accepted send.
 
+    Provider calls are impossible unless the caller supplies a fully open release gate. This keeps
+    production fail-closed even if adapters or credentials are configured ahead of launch.
+    """
+
+    release_gate = release_gate or NotificationReleaseGate()
+    held_reason = release_gate.hold_reason(for_dispatch=True)
+    if held_reason is not None:
+        return DispatchOutcome(False, None, (), held_reason)
     settings = settings or get_settings()
     current_time = now or datetime.now(UTC)
     delivery.status = "PROCESSING"

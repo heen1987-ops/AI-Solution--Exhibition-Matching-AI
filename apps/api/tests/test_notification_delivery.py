@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+
 from app.api.v1.routers.auth import _record_notification_click
 from app.core.auth import decrypt_secret, encrypt_secret
 from app.core.config import Settings
@@ -20,6 +21,7 @@ from app.services.notification_delivery import (
     MAX_ALIMTALK_BUTTONS,
     MAX_ALIMTALK_TEXT_LENGTH,
     NotificationChannel,
+    NotificationReleaseGate,
     ProviderMessage,
     ProviderResult,
     claim_notification_outbox,
@@ -37,6 +39,21 @@ def _settings() -> Settings:
         SECRET_KEY="notification-test-secret-key",
         AUTH_TOKEN_PEPPER="notification-test-token-pepper",
         AUTH_ENCRYPTION_KEY_B64=base64.urlsafe_b64encode(b"n" * 32).decode(),
+    )
+
+
+def _enqueue_gate() -> NotificationReleaseGate:
+    return NotificationReleaseGate(
+        catalog_ready=True,
+        operator_release_approved=True,
+    )
+
+
+def _live_gate() -> NotificationReleaseGate:
+    return NotificationReleaseGate(
+        catalog_ready=True,
+        operator_release_approved=True,
+        external_sending_enabled=True,
     )
 
 
@@ -183,8 +200,11 @@ async def test_enqueue_persists_only_encrypted_link_and_id_only_outbox_payload()
         recommendation_session_id=uuid4(),
         recommendation_count=10,
         public_base_url="https://match.example",
+        release_gate=_enqueue_gate(),
         settings=settings,
     )
+
+    assert delivery is not None
 
     link = next(row for row in db.rows if isinstance(row, PersonalAccessLink))
     outbox = next(row for row in db.rows if isinstance(row, OutboxEvent))
@@ -220,11 +240,50 @@ async def test_enqueue_is_idempotent_for_the_same_snapshot() -> None:
         recommendation_session_id=existing.recommendation_session_id,  # type: ignore[arg-type]
         recommendation_count=10,
         public_base_url="https://match.example",
+        release_gate=_enqueue_gate(),
         settings=_settings(),
     )
 
     assert result is existing
     assert db.rows == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("release_gate", "expected_reason"),
+    [
+        (NotificationReleaseGate(), "CATALOG_NOT_READY"),
+        (
+            NotificationReleaseGate(catalog_ready=True),
+            "OPERATOR_RELEASE_REQUIRED",
+        ),
+    ],
+)
+async def test_enqueue_is_held_until_catalog_and_operator_release(
+    release_gate: NotificationReleaseGate,
+    expected_reason: str,
+) -> None:
+    db = _RecordingDb()
+    event = _event()
+
+    assert release_gate.hold_reason(for_dispatch=False) == expected_reason
+    delivery = await enqueue_recommendation_ready(
+        db,  # type: ignore[arg-type]
+        tenant_id=event.tenant_id,
+        event_id=event.event_id,
+        event_code=event.event_code,
+        user_id=uuid4(),
+        profile_id=uuid4(),
+        recommendation_session_id=uuid4(),
+        recommendation_count=3,
+        public_base_url="https://match.example",
+        release_gate=release_gate,
+        settings=_settings(),
+    )
+
+    assert delivery is None
+    assert db.rows == []
+    assert db.flushes == 0
 
 
 def test_alimtalk_content_is_bounded_informational_and_web_first() -> None:
@@ -270,6 +329,7 @@ async def test_dispatch_falls_back_to_sms_and_stops_before_email() -> None:
         identity=_identity(settings, user_id),
         event=event,
         providers={"KAKAO_ALIMTALK": alimtalk, "SMS": sms, "EMAIL": email},
+        release_gate=_live_gate(),
         settings=settings,
         now=datetime(2026, 8, 3, tzinfo=UTC),
     )
@@ -304,12 +364,43 @@ async def test_successful_alimtalk_does_not_send_sms_or_email() -> None:
         identity=_identity(settings, user_id),
         event=event,
         providers={"KAKAO_ALIMTALK": alimtalk, "SMS": sms, "EMAIL": email},
+        release_gate=_live_gate(),
         settings=settings,
     )
 
     assert outcome.channel == "KAKAO_ALIMTALK"
     assert len(outcome.attempts) == 1
     assert len(alimtalk.messages) == 1
+    assert sms.messages == []
+    assert email.messages == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_without_external_switch_calls_no_provider() -> None:
+    settings = _settings()
+    event = _event()
+    user_id = uuid4()
+    delivery = _delivery(settings, event, user_id)
+    db = _RecordingDb()
+    alimtalk = _Provider("KAKAO_ALIMTALK", accepted=True)
+    sms = _Provider("SMS", accepted=True)
+    email = _Provider("EMAIL", accepted=True)
+
+    outcome = await dispatch_notification(
+        db,  # type: ignore[arg-type]
+        delivery,
+        identity=_identity(settings, user_id),
+        event=event,
+        providers={"KAKAO_ALIMTALK": alimtalk, "SMS": sms, "EMAIL": email},
+        release_gate=_enqueue_gate(),
+        settings=settings,
+    )
+
+    assert outcome.sent is False
+    assert outcome.held_reason == "EXTERNAL_SENDING_DISABLED"
+    assert outcome.attempts == ()
+    assert delivery.status == "QUEUED"
+    assert alimtalk.messages == []
     assert sms.messages == []
     assert email.messages == []
 
