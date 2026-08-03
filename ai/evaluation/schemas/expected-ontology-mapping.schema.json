@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://backju.example/ai/evaluation/expected-ontology-mapping.schema.json",
+  "title": "GoldSetExpectedOntologyMapping",
+  "description": "ai/evaluation/expected/ontology-mapping.jsonl 각 줄. Hallucination Rate/온톨로지 매핑 정확도 평가용.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "query_id",
+    "required_concept_codes",
+    "preferred_concept_codes",
+    "excluded_concept_codes",
+    "unmapped_terms"
+  ],
+  "properties": {
+    "query_id": { "type": "string" },
+    "required_concept_codes": { "type": "array", "items": { "type": "string" } },
+    "preferred_concept_codes": { "type": "array", "items": { "type": "string" } },
+    "excluded_concept_codes": { "type": "array", "items": { "type": "string" } },
+    "unmapped_terms": {
+      "type": "array",
+      "description": "원문에 등장하지만 카탈로그에 대응 개념이 없는 표현 - 여기 없는 concept_code를 AI가 지어내면 Hallucination으로 채점한다.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["term", "reason"],
+        "properties": {
+          "term": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "synonym_table_coverage": {
+      "type": ["string", "null"],
+      "enum": ["FULL", "PARTIAL", "NONE", null]
+    },
+    "aspirational_concept_codes_via_llm": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  }
+}

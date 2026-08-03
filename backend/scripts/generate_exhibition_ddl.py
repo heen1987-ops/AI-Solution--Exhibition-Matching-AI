@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateIndex, CreateTable
+
 from app.db.base import SCHEMA_EXHIBITION, Base
 from app.models import (  # noqa: F401
     consent,
@@ -13,8 +16,6 @@ from app.models import (  # noqa: F401
     ontology_refs,
     profile,
 )
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.schema import CreateIndex, CreateTable
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "db" / "migrations" / "0002_exhibition.sql"

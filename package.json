@@ -3,7 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
+    "e2e": "playwright test",
+    "perf:web-only": "node tests/performance/web-only-http-smoke.mjs",
+    "perf:web-only:load": "node tests/performance/web-only-load-smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -11,6 +18,7 @@
     "openai": "6.49.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "24.13.3",
     "typescript": "5.9.3"
   }

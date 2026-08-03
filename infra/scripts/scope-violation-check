@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""범위위반 탐지 (메타프롬프트 §20, PROJECT_SCOPE.md "범위 감시 질문").
+
+PROJECT_SCOPE.md의 명시적 제외범위에 해당하는 키워드를 코드·설정 파일에서 찾는다.
+단순 문자열 발견을 무조건 실패시키지 않고 다음을 구분한다:
+  - 문서(docs/**, *.md, .harness/**)에서의 "이건 하지 않는다"는 설명 - 허용
+  - 테스트 fixture/주석에서 금지사항 자체를 검증하는 코드 - 허용
+  - 실제 의존성 선언(pyproject.toml/package.json)이나 import/코드 사용 - 실패
+
+종료코드: 0=위반 없음, 1=실제 위반 발견(FAIL), 0이지만 경고 있으면 메시지만 출력.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+# 키워드 -> 코드/의존성에서 나타나면 실패로 볼 정규식 패턴 (대소문자 무시).
+# 문서·마크다운·이 스크립트 자신·.harness/**(정책 설명 문서)는 검사 대상에서 제외한다.
+FORBIDDEN_PATTERNS: dict[str, str] = {
+    "Kafka": r"\bkafka\b",
+    "real-time inventory": r"real[-_ ]?time\s+inventory",
+    "indoor navigation": r"indoor\s+navigation|정밀\s*실내\s*내비게이션",
+    "kiosk login": r"kiosk.{0,20}\blogin\b|키오스크.{0,10}로그인",
+    "kiosk phone/email input": r"kiosk.{0,30}(phone|email).{0,20}input",
+    "automatic model retraining": r"auto(matic)?\s+model\s+retrain",
+}
+
+KIOSK_SOURCE_ROOT = Path("apps/kiosk/src")
+GUEST_WEB_SOURCE_ROOTS = (
+    Path("apps/user-web/app/(screens)/search"),
+    Path("apps/user-web/app/(screens)/signup"),
+)
+KIOSK_TEST_PATH_MARKERS = {"__tests__", "__mocks__", "test", "tests"}
+KIOSK_TEST_NAME_PATTERNS = (".test.", ".spec.")
+KIOSK_PERSONAL_FIELD_ATTRS = {
+    "name",
+    "id",
+    "placeholder",
+    "aria-label",
+    "autocomplete",
+    "autocapitalize",
+}
+KIOSK_DISALLOWED_INPUT_TYPES = {"email", "tel", "password"}
+KIOSK_DISALLOWED_AUTOCOMPLETE = {
+    "email",
+    "tel",
+    "name",
+    "given-name",
+    "family-name",
+    "username",
+    "current-password",
+    "new-password",
+    "cc-number",
+    "cc-name",
+    "street-address",
+    "postal-code",
+}
+KIOSK_PERSONAL_DATA_PATTERN = re.compile(
+    r"("
+    r"\b(company[_-]?contact|companyContact)\b|"
+    r"\b(e-?mail|email|phone|tel(ephone)?|mobile|password|passwd|login|username|user-name|account|"
+    r"card-?number|ssn|address)\b|"
+    r"(^|[^a-z0-9])name([^a-z0-9]|$)|"
+    r"이메일|메일주소|전화번호|휴대(폰|전화)|연락처|비밀번호|로그인|아이디|계좌|카드번호|"
+    r"주민(등록)?번호|생년월일|주소|성명|실명|본인인증"
+    r")",
+    re.IGNORECASE,
+)
+FORM_CONTROL_TAG = re.compile(r"<(?P<tag>input|textarea|select)\b(?P<attrs>[^<>]*)/?>", re.IGNORECASE | re.DOTALL)
+JSX_ATTR = re.compile(
+    r"(?P<name>[A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*"
+    r"(?:\"(?P<double>[^\"]*)\"|'(?P<single>[^']*)'|\{`(?P<template>[^`]*)`\}|\{(?P<brace>[^}]*)\})",
+    re.DOTALL,
+)
+
+EXCLUDED_DIR_PARTS = {
+    ".git", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".tmp-venv",
+    ".venv", "venv", "site-packages",  # 로컬 스크래치 가상환경·설치된 서드파티 패키지
+    # 빌드 산출물 - 사람이 작성한 코드가 아니라 컴파일러가 주석·코드를 뒤섞어 재배치한
+    # 결과물이라 코멘트 스트리핑으로 오탐을 걸러낼 수 없다. 소스 파일 자체를 검사하므로
+    # 여기서 제외해도 실제 코드 검사 커버리지에는 영향이 없다.
+    ".next", "dist", "build", "out", ".turbo", ".vercel",
+}
+EXCLUDED_SUFFIXES = {".md"}  # 문서는 "하지 않는다"는 설명 위주라 검사하지 않음
+EXCLUDED_PATHS = {
+    Path("infra/scripts/scope-violation-check"),  # 이 스크립트 자신(키워드 목록 포함)
+}
+# 실제 코드/의존성으로 취급할 확장자만 검사한다 - 나머지(설정 예시, 스크린샷 등)는 제외.
+CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".toml", ".json", ".yml", ".yaml"}
+
+# 주석/문서 문자열 제거용 패턴. 제외범위를 "설명"하는 주석은 실패시키지 않는다는
+# 원칙(WAVE-1 §12.3/§20)을 코드 파일에도 동일하게 적용하기 위해, 실제 코드를 보기
+# 전에 주석을 먼저 지운다. 문자열 리터럴 내부의 // 등을 오인식할 수 있는 단순
+# 정규식 기반 스트리핑이라 완벽하지 않지만("설명 주석은 통과, 실제 사용은 실패"라는
+# 목적에는 충분), 문자열이 정교하게 이스케이프된 극단적 케이스까지는 다루지 않는다.
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_LINE_COMMENT_C = re.compile(r"//[^\n]*")
+_LINE_COMMENT_PY = re.compile(r"#[^\n]*")
+_PY_DOCSTRING = re.compile(r'("""|\'\'\')(?:(?!\1).)*\1', re.DOTALL)
+
+# 매치 주변(±40자)에 이런 부정 표현이 있으면 "설명"으로 보고 통과시킨다 - 화면
+# 안내문구("~는 제공하지 않습니다")처럼 주석이 아닌 렌더링 텍스트에도 적용된다.
+NEGATION_NEARBY = re.compile(
+    r"(하지\s*않|제공하지\s*않|없습니다|없다|구현하지\s*않|제외범위|제외\s*대상|범위\s*밖|"
+    r"not\s+(implement|provide|support)|no\s+(indoor|kiosk)|아직\s*없|out\s+of\s+scope)",
+    re.IGNORECASE,
+)
+
+
+def strip_comments(text: str, suffix: str) -> str:
+    if suffix in {".py"}:
+        text = _PY_DOCSTRING.sub("", text)
+        text = _LINE_COMMENT_PY.sub("", text)
+    elif suffix in {".ts", ".tsx", ".js", ".jsx"}:
+        text = _BLOCK_COMMENT.sub("", text)
+        text = _LINE_COMMENT_C.sub("", text)
+    return text
+
+
+def is_test_path(rel: Path) -> bool:
+    return any(part in KIOSK_TEST_PATH_MARKERS for part in rel.parts) or any(
+        marker in rel.name for marker in KIOSK_TEST_NAME_PATTERNS
+    )
+
+
+def iter_files() -> list[Path]:
+    files = []
+    for p in ROOT.rglob("*"):
+        if not p.is_file():
+            continue
+        if any(part in EXCLUDED_DIR_PARTS for part in p.parts):
+            continue
+        if ".harness" in p.parts:
+            continue  # 정책·계약 설명 문서 - 금지사항 자체를 서술하는 곳이라 검사 대상 아님
+        if p.suffix in EXCLUDED_SUFFIXES:
+            continue
+        if p.suffix not in CODE_SUFFIXES:
+            continue
+        rel = p.relative_to(ROOT)
+        if rel in EXCLUDED_PATHS:
+            continue
+        files.append(p)
+    return files
+
+
+def parse_jsx_attrs(attr_text: str) -> dict[str, str]:
+    attrs: dict[str, str] = {}
+    for match in JSX_ATTR.finditer(attr_text):
+        value = (
+            match.group("double")
+            or match.group("single")
+            or match.group("template")
+            or match.group("brace")
+            or ""
+        )
+        attrs[match.group("name").lower()] = " ".join(value.split())
+    return attrs
+
+
+def summarize_control(tag: str, attrs: dict[str, str]) -> str:
+    interesting = []
+    for attr_name in ("type", "name", "id", "placeholder", "aria-label", "autocomplete"):
+        value = attrs.get(attr_name)
+        if value:
+            interesting.append(f'{attr_name}="{value[:48]}"')
+    return f"<{tag} {' '.join(interesting)}>".strip()
+
+
+def find_kiosk_personal_input_violations(path: Path, text: str) -> list[str]:
+    rel = path.relative_to(ROOT)
+    try:
+        rel.relative_to(KIOSK_SOURCE_ROOT)
+    except ValueError:
+        return []
+    if is_test_path(rel) or path.suffix not in {".ts", ".tsx", ".js", ".jsx"}:
+        return []
+
+    stripped = strip_comments(text, path.suffix)
+    violations: list[str] = []
+    for match in FORM_CONTROL_TAG.finditer(stripped):
+        tag = match.group("tag").lower()
+        attrs = parse_jsx_attrs(match.group("attrs"))
+        input_type = attrs.get("type", "").strip("'\"` ").lower()
+        autocomplete = attrs.get("autocomplete", "").strip("'\"` ").lower()
+        line_no = stripped.count("\n", 0, match.start()) + 1
+        control = summarize_control(tag, attrs)
+
+        if tag == "input" and input_type in KIOSK_DISALLOWED_INPUT_TYPES:
+            violations.append(f"{rel}:{line_no} - kiosk 개인정보 입력 필드 의심: 금지 input type ({control})")
+            continue
+
+        if autocomplete and autocomplete in KIOSK_DISALLOWED_AUTOCOMPLETE:
+            violations.append(
+                f"{rel}:{line_no} - kiosk 개인정보 입력 필드 의심: 금지 autocomplete ({control})"
+            )
+            continue
+
+        for attr_name in KIOSK_PERSONAL_FIELD_ATTRS:
+            value = attrs.get(attr_name)
+            if value and KIOSK_PERSONAL_DATA_PATTERN.search(value):
+                violations.append(
+                    f"{rel}:{line_no} - kiosk 개인정보 입력 필드 의심: {attr_name}={value!r} ({control})"
+                )
+                break
+
+    return violations
+
+
+def find_guest_web_personal_input_violations(path: Path, text: str) -> list[str]:
+    rel = path.relative_to(ROOT)
+    if not any(_is_relative_to(rel, root) for root in GUEST_WEB_SOURCE_ROOTS):
+        return []
+    if is_test_path(rel) or path.suffix not in {".ts", ".tsx", ".js", ".jsx"}:
+        return []
+
+    stripped = strip_comments(text, path.suffix)
+    violations: list[str] = []
+    for match in FORM_CONTROL_TAG.finditer(stripped):
+        tag = match.group("tag").lower()
+        attrs = parse_jsx_attrs(match.group("attrs"))
+        input_type = attrs.get("type", "").strip("'\"` ").lower()
+        autocomplete = attrs.get("autocomplete", "").strip("'\"` ").lower()
+        line_no = stripped.count("\n", 0, match.start()) + 1
+        control = summarize_control(tag, attrs)
+
+        if tag == "input" and input_type in KIOSK_DISALLOWED_INPUT_TYPES:
+            violations.append(f"{rel}:{line_no} - guest web 개인정보 입력 필드 의심: 금지 input type ({control})")
+            continue
+
+        if autocomplete and autocomplete in KIOSK_DISALLOWED_AUTOCOMPLETE:
+            violations.append(
+                f"{rel}:{line_no} - guest web 개인정보 입력 필드 의심: 금지 autocomplete ({control})"
+            )
+            continue
+
+        for attr_name in KIOSK_PERSONAL_FIELD_ATTRS:
+            value = attrs.get(attr_name)
+            if value and KIOSK_PERSONAL_DATA_PATTERN.search(value):
+                violations.append(
+                    f"{rel}:{line_no} - guest web 개인정보 입력 필드 의심: {attr_name}={value!r} ({control})"
+                )
+                break
+
+    return violations
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def main() -> None:
+    violations: list[str] = []
+    for path in iter_files():
+        try:
+            raw_text = path.read_text(errors="ignore")
+        except OSError:
+            continue
+        # 줄 번호는 원본 기준으로 보고해야 하므로, 코드 검사는 주석 제거본으로 하되
+        # 라인 번호 계산은 원본 텍스트에서의 매치 위치 기준으로 별도 처리한다.
+        stripped = strip_comments(raw_text, path.suffix)
+        for label, pattern in FORBIDDEN_PATTERNS.items():
+            for m in re.finditer(pattern, stripped, re.IGNORECASE):
+                window = stripped[max(0, m.start() - 40) : m.end() + 40]
+                if NEGATION_NEARBY.search(window):
+                    continue  # 화면 안내문구 등 "제공하지 않는다"는 설명 - 실제 구현 아님
+                line_no = stripped.count("\n", 0, m.start()) + 1
+                violations.append(f"{path.relative_to(ROOT)}:{line_no} - '{label}' 패턴 발견 (주석 제외 후)")
+        violations.extend(find_kiosk_personal_input_violations(path, raw_text))
+        violations.extend(find_guest_web_personal_input_violations(path, raw_text))
+
+    if violations:
+        print(f"FAIL: {len(violations)}건의 범위위반 의심 항목 발견")
+        for v in violations:
+            print(f"  - {v}")
+        sys.exit(1)
+
+    print("OK: 범위위반 키워드 없음 (검사 대상: 코드·설정 파일, 문서(*.md)는 제외)")
+
+
+if __name__ == "__main__":
+    main()

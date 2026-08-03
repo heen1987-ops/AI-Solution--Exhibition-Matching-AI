@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backju-worker"
+version = "0.1.0"
+description = "Backju AI matching platform - background job worker scaffolding (BAC-001). Real AI document processing / embedding generation is NOT implemented here (PROJECT_SCOPE.md exclusions)."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+dependencies = [
+    # backend/pyproject.toml이 이미 redis>=5.0.0을 쓰고 있어 같은 하한선을 맞춘다.
+    "redis>=5.0.0",
+    # RQ를 선택한 이유는 BAC-001-worker.md 핸드오프 문서 참고 - Celery 대비 브로커/백엔드
+    # 설정이 필요 없고(Redis 하나로 큐+결과 저장 겸용) 최소 골격을 세우기 가장 단순하다.
+    "rq>=1.16.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["worker*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

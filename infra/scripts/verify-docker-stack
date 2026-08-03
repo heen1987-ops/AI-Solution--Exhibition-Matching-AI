@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "NOT_RUN: docker command is not available in this environment" >&2
+  exit 125
+fi
+
+docker compose version >/dev/null
+docker compose config --quiet
+
+if [[ "${VERIFY_DOCKER_KEEP:-0}" != "1" ]]; then
+  cleanup() {
+    docker compose down >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT
+fi
+
+docker compose up -d postgres redis minio minio-bucket-init
+
+wait_for_container_health() {
+  local container_name="$1"
+  local deadline
+  deadline=$((SECONDS + 120))
+
+  while (( SECONDS < deadline )); do
+    local status
+    status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || true)"
+    if [[ "$status" == "healthy" || "$status" == "exited" ]]; then
+      echo "OK: $container_name $status"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "FAILED: $container_name did not become healthy before timeout" >&2
+  docker logs "$container_name" >&2 || true
+  return 1
+}
+
+wait_for_container_health backju-postgres
+wait_for_container_health backju-redis
+wait_for_container_health backju-minio
+
+docker build -f infra/docker/backend.Dockerfile -t meet-ai-backend:verify .
+
+echo "PASS: Docker Compose infrastructure is healthy and backend image builds"

@@ -532,6 +532,19 @@ CONSUMER_SCORE_V1 = ScoringPolicy(
     },
 )
 
+GUEST_WEB_SEARCH_SCORE_V1 = ScoringPolicy(
+    version="guest-web-search-score-v1.0",
+    audience="GUEST_WEB_SEARCH",
+    grade_prefix="S",
+    weights={
+        "semantic": Decimal("0.45"),
+        "keyword": Decimal("0.30"),
+        "structured": Decimal("0.15"),
+        "data_quality": Decimal("0.05"),
+        "availability": Decimal("0.05"),
+    },
+)
+
 BUYER_SCORE_V1 = ScoringPolicy(
     version="buyer-score-v1.0",
     audience="BUYER_TO_EXHIBITOR",

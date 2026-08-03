@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -u
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR" || exit 1
+
+overall=0
+external_blockers=0
+
+run_check() {
+  local name="$1"
+  shift
+
+  echo "==> $name"
+  "$@"
+  local rc=$?
+
+  case "$rc" in
+    0)
+      echo "PASS: $name"
+      ;;
+    124|125)
+      echo "NOT_RUN: $name (external dependency or pending remote state)"
+      external_blockers=1
+      ;;
+    *)
+      echo "FAIL: $name (exit $rc)"
+      overall=1
+      ;;
+  esac
+  echo
+}
+
+run_check "Harness validation" infra/scripts/validate-harness
+run_check "Scope violation check" infra/scripts/scope-violation-check
+run_check "Git diff whitespace check" git diff --check
+run_check "GitHub Actions latest CI run" infra/scripts/verify-github-actions
+run_check "Docker Compose stack and backend image" infra/scripts/verify-docker-stack
+
+if [[ "$overall" -ne 0 ]]; then
+  echo "RELEASE_READINESS=FAILED"
+  exit 1
+fi
+
+if [[ "$external_blockers" -ne 0 ]]; then
+  echo "RELEASE_READINESS=BLOCKED_EXTERNAL"
+  exit 125
+fi
+
+echo "RELEASE_READINESS=PASSED"

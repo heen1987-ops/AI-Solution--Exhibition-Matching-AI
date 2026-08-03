@@ -7,10 +7,15 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api.health import router as health_router
 from app.api.v1.api import api_router
+from app.api.v1.errors import error_body
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -36,14 +41,59 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(HTTPException)
+async def api_http_exception_handler(
+    request: Request, exc: HTTPException
+) -> JSONResponse:
+    """Render BAC-002 contract errors as {error:{...}}.
+
+    Older endpoints still raise plain string details, so those keep FastAPI's
+    default shape until each domain migrates to the common helper.
+    """
+
+    if isinstance(exc.detail, dict) and {"code", "message", "request_id"} <= set(
+        exc.detail
+    ):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail},
+            headers=exc.headers,
+        )
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def api_request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Render request validation failures with the v1 contract envelope."""
+
+    return JSONResponse(
+        status_code=422,
+        content=error_body(
+            "VALIDATION_ERROR",
+            "요청 값이 올바르지 않습니다.",
+            details={"errors": exc.errors()},
+        ),
+    )
+
+
 @app.get("/healthz", tags=["health"])
 async def healthz() -> dict[str, str]:
-    """가벼운 liveness 체크. DB/Redis 연결을 확인하지 않는다(의도적으로 무의존).
+    """가벼운 liveness 체크(레거시). DB/Redis 연결을 확인하지 않는다(의도적으로 무의존).
 
-    실제 readiness(DB/Redis 연결 확인)가 필요해지면 별도 /readyz 엔드포인트로 분리한다.
+    BAC-001에서 `/health/live`(동일 목적) + `/health/ready`(DB/Redis/S3 확인)로
+    대체되었지만, README.md/DEVELOPMENT.md/backend/README.md/quality-gates.yaml이
+    이미 `/healthz`를 참조하고 있어(g0-5 기준) 하위 호환을 위해 그대로 유지한다 -
+    새로 만드는 통합·모니터링은 `/health/live`, `/health/ready`를 사용한다.
     """
 
     return {"status": "ok"}
+
+
+# BAC-001: 프로세스 생존(/health/live)과 의존성 준비(/health/ready) 체크.
+# /api/v1 프리픽스 밖에 둔다 - 헬스체크는 API 버전과 무관한 인프라 계약이다.
+app.include_router(health_router, prefix="/health", tags=["health"])
 
 
 # 이후 단계 에이전트들이 app/api/v1/api.py의 api_router에 각자 라우터를 추가한다.

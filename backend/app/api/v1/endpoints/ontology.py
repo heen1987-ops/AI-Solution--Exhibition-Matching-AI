@@ -12,9 +12,8 @@ from functools import lru_cache
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
-
 from meet_ai.ontology import Catalog, load_catalog
+from pydantic import BaseModel, Field
 
 router = APIRouter()
 
@@ -35,7 +34,7 @@ class DeriveBandRequest(BaseModel):
     value: Decimal = Field(ge=0)
 
 
-@router.get("")
+@router.get("", operation_id="getOntologyMetadata")
 async def catalog_metadata() -> dict[str, object]:
     catalog = _catalog()
     return {
@@ -46,7 +45,7 @@ async def catalog_metadata() -> dict[str, object]:
     }
 
 
-@router.get("/concepts")
+@router.get("/concepts", operation_id="listOntologyConcepts")
 async def list_concepts(
     concept_type: Annotated[str | None, Query(max_length=50)] = None,
     parent_code: Annotated[str | None, Query(max_length=100)] = None,
@@ -63,7 +62,7 @@ async def list_concepts(
     return {"taxonomy_version": catalog.version, "items": items}
 
 
-@router.get("/concepts/{concept_code}")
+@router.get("/concepts/{concept_code}", operation_id="getOntologyConcept")
 async def get_concept(concept_code: str) -> dict[str, object]:
     try:
         concept = _catalog().get(concept_code)
@@ -72,7 +71,7 @@ async def get_concept(concept_code: str) -> dict[str, object]:
     return {"taxonomy_version": _catalog().version, "concept": concept}
 
 
-@router.post("/resolve")
+@router.post("/resolve", operation_id="resolveOntologySynonym")
 async def resolve_synonym(request: ResolveRequest) -> dict[str, object]:
     catalog = _catalog()
     matches = catalog.resolve_synonym(
@@ -95,7 +94,7 @@ async def resolve_synonym(request: ResolveRequest) -> dict[str, object]:
     }
 
 
-@router.post("/derive-band")
+@router.post("/derive-band", operation_id="deriveOntologyBand")
 async def derive_band(request: DeriveBandRequest) -> dict[str, str]:
     catalog = _catalog()
     try:

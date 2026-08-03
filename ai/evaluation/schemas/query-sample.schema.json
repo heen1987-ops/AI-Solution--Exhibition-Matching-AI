@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://backju.example/ai/evaluation/query-sample.schema.json",
+  "title": "GoldSetQuerySample",
+  "description": "ai/evaluation/queries/*.jsonl 각 줄의 구조 (AIS-001). 이 스키마는 Gold Set 아티팩트 형식을 검증하는 것이지, ai/schemas/query_output.QueryInterpretation(AIS-005, 런타임 AI 출력 스키마)과는 별개다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "channel",
+    "profile_context",
+    "locale",
+    "input_text",
+    "expected_intent",
+    "target_type",
+    "required_concept_codes",
+    "preferred_concept_codes",
+    "excluded_concept_codes",
+    "forbidden_inferences",
+    "expected_search_targets",
+    "ontology_gap_notes",
+    "clarification_expected"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[A-Z]+-[A-Z]+-[0-9]{3}$" },
+    "channel": { "type": "string", "enum": ["REGISTERED_WEB", "GUEST_WEB", "BUYER_WEB"] },
+    "profile_context": {
+      "type": "string",
+      "enum": ["GUEST_WEB", "GENERAL_VISITOR", "CONSUMER_BUYER", "BUSINESS_BUYER"],
+      "description": "GUEST_WEB=현장 게스트 웹(비등록 게스트, 지속 프로파일 없음). 나머지는 PROFILE.* 온톨로지 코드와 대응하는 웹 사용자 유형."
+    },
+    "locale": { "type": "string", "minLength": 2 },
+    "input_text": { "type": "string", "minLength": 1 },
+    "expected_intent": { "type": "string", "minLength": 1 },
+    "target_type": {
+      "type": "string",
+      "enum": ["EXHIBITOR", "EVENT_PRODUCT"],
+      "description": "Gold Set 범위는 candidate_generator.py가 실제로 구현한 2개 채널까지로 한정한다(ai/schemas/query_output.py의 4종 TargetType과 다르게 의도적으로 좁힘 - 아래 README 참고)."
+    },
+    "required_concept_codes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "빈 배열이면 '이 조건에 대응하는 카탈로그 개념이 없음(gap)'을 뜻한다 - 지어낸 코드를 채우지 않는다."
+    },
+    "preferred_concept_codes": { "type": "array", "items": { "type": "string" } },
+    "excluded_concept_codes": { "type": "array", "items": { "type": "string" } },
+    "forbidden_inferences": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "AI가 원문에 없는데도 추론해서는 안 되는 것(AGENTS.md §5 '원문에 없는 조건 생성 금지'의 근거를 명시적으로 남긴다)."
+    },
+    "expected_search_targets": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["EXHIBITOR", "EVENT_PRODUCT"] },
+      "minItems": 1
+    },
+    "ontology_gap_notes": {
+      "type": "string",
+      "description": "빈 문자열이면 이 질의는 카탈로그로 완전히 표현 가능하다는 뜻(gap 없음)."
+    },
+    "clarification_expected": { "type": "boolean" },
+    "clarification_question_hint": { "type": ["string", "null"] },
+    "synonym_table_coverage": {
+      "type": ["string", "null"],
+      "enum": ["FULL", "PARTIAL", "NONE", null],
+      "description": "카탈로그 synonyms 테이블이 이 locale/문구를 커버하는지(AIS-002 실측 근거). ko-KR 샘플은 보통 FULL/PARTIAL, multilingual 샘플은 NONE."
+    },
+    "aspirational_concept_codes_via_llm": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "동의어 사전이 아니라 LLM의 zero-shot 의미이해가 성공했다면 매핑됐을 것으로 기대하는 코드(참고용, 보증 아님) - synonym_table_coverage가 NONE/PARTIAL인 샘플에서만 의미가 있다."
+    }
+  }
+}

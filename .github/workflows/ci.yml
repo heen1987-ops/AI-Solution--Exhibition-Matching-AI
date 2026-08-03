@@ -1,0 +1,304 @@
+name: CI
+
+# G0_BOOTSTRAP 기준(quality-gates.yaml g0-6) 충족용 기본 파이프라인.
+# mypy는 backend/pyproject.toml에 아직 구성되지 않아 포함하지 않는다
+# (quality-gates.yaml g3-2 "Type Check 성공"은 Python 타입힌트+ruff 범위로 한정,
+# 별도 mypy 도입은 ADR 필요 - AGENTS.md §3).
+#
+# QAS-001(정적검사·시크릿 스캔 CI 통합)에서 추가:
+#   - secret-scan 잡: gitleaks CLI를 고정 버전 바이너리로 직접 설치해 실행한다
+#     (marketplace의 gitleaks/gitleaks-action은 조직 계정 사용 시 라이선스 요건이
+#     붙을 수 있어 - 이 저장소가 조직/개인 어느 계정에 있을지 알 수 없으므로 -
+#     라이선스 유무와 무관하게 항상 동작하는 순정 CLI 방식을 택했다). 별도
+#     .gitleaks.toml 설정 파일 없이 gitleaks 기본 탐지 규칙만 사용한다.
+#   - backend/meet-ai-core 잡: ruff/pytest/unittest 결과를 .harness/reports/**
+#     경로 규칙에 맞는 파일명으로 러너 로컬에 기록한 뒤 actions/upload-artifact로
+#     첨부한다. CI 러너는 실행 후 폐기되므로 이 파일들이 저장소에 커밋되지는
+#     않는다 - 저장소에 영구 보관하려면 별도 커밋-백 잡이 필요한데, 동시 PR 간
+#     경합·봇 커밋 정책 등 부가 복잡도가 이번 범위 대비 과도하다고 판단해
+#     보류했다(핸드오프 NEXT DEPENDENCY 참고).
+#
+# WAVE-0 v2 프롬프트에서 추가:
+#   - harness-validate 잡: infra/scripts/validate-harness + scope-violation-check
+#     + .harness/contracts/**의 YAML 유효성(openapi.yaml은 OpenAPI 스펙으로서의
+#     완전한 유효성까지는 CTR-002 완료 후 검사 - 지금은 DRAFT 스텁이라 순수 YAML
+#     파싱만 확인).
+#   - docker-build 잡: backend/만 대상. apps/user-web·kiosk·admin·worker는 이번
+#     Wave에서 스캐폴딩 중이라 Dockerfile을 아직 두지 않는다(infra/docker/README.md
+#     참고) - 각 앱이 실제로 존재하게 되면 이 잡에 스텝을 추가한다.
+#   - frontend-web-only/e2e-web-only/performance-web-only 잡: CR-001 이후 MVP 기준인
+#     user-web/admin WEB_ONLY 흐름을 lint/test/build, Playwright, HTTP perf/load smoke로
+#     검증한다.
+#   - build-artifact 잡(main 브랜치 push에만 실행): 실제 배포는 하지 않고 저장소
+#     스냅샷 아티팩트만 생성한다("실제 운영 배포는 아직 구현하지 않음").
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  harness-validate:
+    name: Harness validation + scope check + contract YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PyYAML
+        run: python -m pip install pyyaml
+      - name: Validate harness (state/backlog/locks/quality-gates consistency)
+        run: python3 infra/scripts/validate-harness
+      - name: Scope violation check
+        run: python3 infra/scripts/scope-violation-check
+      - name: Validate contract YAML/JSON files parse
+        run: |
+          python3 - <<'EOF'
+          import yaml, json, pathlib
+          for p in sorted(pathlib.Path(".harness/contracts").glob("*.yaml")):
+              yaml.safe_load(p.read_text())
+              print(f"{p}: OK")
+          state = json.loads(pathlib.Path(".harness/state.json").read_text())
+          print(".harness/state.json: OK")
+          EOF
+
+  docker-build:
+    name: Docker stack verifier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Docker Compose infrastructure and backend image
+        run: infra/scripts/verify-docker-stack
+
+  build-artifact:
+    name: Build artifact (main branch only, no deploy)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs:
+      [
+        backend,
+        meet-ai-core,
+        ts-boundary,
+        frontend-web-only,
+        e2e-web-only,
+        performance-web-only,
+        harness-validate,
+        docker-build,
+        secret-scan,
+      ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package repository snapshot
+        run: |
+          mkdir -p dist
+          git archive --format=tar.gz -o dist/backju-ai-matching-${{ github.sha }}.tar.gz HEAD
+      - name: Upload snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-snapshot
+          path: dist/backju-ai-matching-${{ github.sha }}.tar.gz
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install gitleaks (pinned binary)
+        run: |
+          set -euo pipefail
+          curl -sSL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f gitleaks.tar.gz gitleaks
+          gitleaks version
+      - name: Prepare report directory
+        run: mkdir -p .harness/reports/security
+      - name: Run gitleaks scan
+        # 작업 트리 스캔(--no-git): 커밋 이력 전체가 아니라 체크아웃된 현재
+        # 파일 상태만 검사하는 기본적인("기본 시크릿 스캔") 구성이다.
+        # gitleaks-baseline.json은 docs/frontend-backend-ai-interface-spec.md의
+        # 예시 Idempotency-Key UUID(실제 시크릿 아님, 고엔트로피 문자열이라
+        # generic-api-key 규칙에 오탐)를 제외하기 위한 베이스라인이다 - 새 시크릿이
+        # 추가되면 베이스라인에 없으므로 빌드가 실패한다.
+        run: |
+          gitleaks detect \
+            --source . \
+            --no-git \
+            --baseline-path .harness/reports/security/gitleaks-baseline.json \
+            --report-format json \
+            --report-path .harness/reports/security/gitleaks-report.json \
+            --redact \
+            --exit-code 1 \
+            -v
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: .harness/reports/security/gitleaks-report.json
+          if-no-files-found: warn
+
+  backend:
+    name: Backend (ruff + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend package (dev extras)
+        working-directory: backend
+        run: python -m pip install -e ".[dev]"
+      - name: Prepare report directories
+        run: mkdir -p .harness/reports/lint .harness/reports/tests
+      - name: ruff check
+        working-directory: backend
+        run: ruff check . --output-file "${{ github.workspace }}/.harness/reports/lint/ruff-backend.txt"
+      - name: pytest
+        working-directory: backend
+        run: pytest --junitxml "${{ github.workspace }}/.harness/reports/tests/pytest-backend.xml"
+        env:
+          # DB 통합 테스트는 TEST_DATABASE_URL이 설정된 경우에만 실행되도록
+          # backend/tests/conftest.py가 env-gate 처리한다 (TESTING.md 참고).
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+      - name: Upload backend reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-reports
+          path: |
+            .harness/reports/lint/ruff-backend.txt
+            .harness/reports/tests/pytest-backend.xml
+          if-no-files-found: warn
+
+  meet-ai-core:
+    name: meet_ai core (ontology + scoring)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install meet-ai package
+        run: python -m pip install -e .
+      - name: Prepare report directory
+        run: mkdir -p .harness/reports/tests
+      - name: Validate ontology catalog
+        run: meet-ai-ontology validate
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -v 2>&1 | tee .harness/reports/tests/meet-ai-unittest.log
+      - name: Upload meet-ai reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meet-ai-reports
+          path: .harness/reports/tests/meet-ai-unittest.log
+          if-no-files-found: warn
+
+  ts-boundary:
+    name: Netlify functions boundary (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+
+  frontend-web-only:
+    name: WEB_ONLY frontend (lint + test + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Root typecheck
+        run: npm run typecheck
+      - name: user-web lint
+        run: npm --workspace @backju/user-web run lint
+      - name: user-web tests
+        run: npm --workspace @backju/user-web test
+      - name: user-web build
+        run: npm --workspace @backju/user-web run build
+      - name: admin lint
+        run: npm --workspace @backju/admin run lint
+      - name: admin typecheck
+        run: npm --workspace @backju/admin run typecheck
+      - name: admin tests
+        run: npm --workspace @backju/admin test
+      - name: admin build
+        run: npm --workspace @backju/admin run build
+
+  e2e-web-only:
+    name: WEB_ONLY Playwright E2E
+    runs-on: ubuntu-latest
+    needs: [frontend-web-only]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run WEB_ONLY E2E
+        run: npm run e2e
+
+  performance-web-only:
+    name: WEB_ONLY performance smoke
+    runs-on: ubuntu-latest
+    needs: [frontend-web-only]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run WEB_ONLY HTTP and load smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          USER_LOG="$(mktemp /tmp/meet-ai-user-web-ci.XXXXXX.log)"
+          ADMIN_LOG="$(mktemp /tmp/meet-ai-admin-ci.XXXXXX.log)"
+          npm --workspace @backju/user-web run dev -- --hostname 127.0.0.1 --port 3300 > "$USER_LOG" 2>&1 &
+          USER_PID=$!
+          npm --workspace @backju/admin run dev -- --hostname 127.0.0.1 --port 3320 > "$ADMIN_LOG" 2>&1 &
+          ADMIN_PID=$!
+          cleanup() {
+            kill "$USER_PID" "$ADMIN_PID" >/dev/null 2>&1 || true
+            wait "$USER_PID" "$ADMIN_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          node - <<'NODE'
+          const targets = ['http://127.0.0.1:3300/home', 'http://127.0.0.1:3320/console'];
+          const deadline = Date.now() + 120000;
+          for (const target of targets) {
+            let ready = false;
+            while (Date.now() < deadline) {
+              try {
+                const response = await fetch(target);
+                if (response.ok) {
+                  ready = true;
+                  break;
+                }
+              } catch {}
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            if (!ready) throw new Error(`Timed out waiting for ${target}`);
+          }
+          NODE
+          PERF_STRICT=1 npm run perf:web-only
+          LOAD_STRICT=1 LOAD_DURATION_SECONDS=12 LOAD_CONCURRENCY=4 npm run perf:web-only:load

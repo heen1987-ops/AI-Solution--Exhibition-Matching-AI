@@ -1,0 +1,1115 @@
+"""오케스트레이터 종단 통합테스트 (실제 Postgres 필요).
+
+이전에는 GENERAL_VISITOR/BUYER 경로를 검증하는 수동 스크립트(smoke_test_orchestrator.py,
+smoke_test_buyer.py)만 있었고 정식 pytest 스위트에는 없었다 - 비동기 DB 통합테스트
+관례가 이 저장소에 없었기 때문이다(conftest.py 참고). 이제 그 관례가 생겼으므로 두 스크립트를
+이 파일로 옮기고, 카테고리 매칭 보정(structured_search_exhibitors의 category_concept_ids
+채움)을 검증하는 시나리오를 하나 추가했다.
+
+TEST_DATABASE_URL에 연결할 수 없으면 conftest.db_engine이 이 모듈의 테스트 전부를
+건너뛴다. conftest.db_session이 트랜잭션을 자동으로 롤백해주지 않으므로(conftest.py
+모듈 docstring 참고) tenant_code/concept_code 등 UNIQUE 컬럼에는 매 호출마다
+`_unique_suffix()`로 접미사를 붙여 테스트끼리, 그리고 재실행 사이에 충돌하지 않게 한다.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import uuid
+from datetime import UTC, date, datetime, timedelta
+
+import pytest
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.core import Event, Tenant
+from app.models.exhibitor import (
+    Booth,
+    EventProduct,
+    Exhibitor,
+    ExhibitorParticipation,
+    Product,
+    ProductAttribute,
+    SupplyCapability,
+    TradeCondition,
+    TradeConditionTerm,
+)
+from app.models.identity import GuestSession, UserAccount
+from app.models.matching import (
+    MatchPolicyVersion,
+    MatchReason,
+    MatchResult,
+    Recommendable,
+)
+from app.models.profile import (
+    BuyerNeed,
+    ContextProfile,
+    ProfileAttribute,
+    ProfileVersion,
+    UserProfile,
+    VisitSession,
+)
+from app.services.matching.orchestrator import (
+    BuyerRecommendationRequest,
+    GeneralVisitorRecommendationRequest,
+    generate_buyer_recommendations,
+    generate_general_visitor_recommendations,
+)
+
+
+def _unique_suffix() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+async def _seed_ontology_concept(
+    session: AsyncSession, *, suffix: str, concept_code: str, concept_type: str
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """온톨로지 개념 하나를 최소 시딩한다(ORM 모델이 아직 없어 raw SQL, feature_builder.py
+    모듈 docstring "concept 기반 구성요소" 참고). taxonomy_version은 DRAFT로 남겨둔다 -
+    PUBLISHED로 만들면 불변성 트리거가 concept_revision INSERT를 막는다. semantic_version은
+    (tenant_id, semantic_version) UNIQUE(NULLS NOT DISTINCT) 대상이고 tenant_id는 항상
+    NULL이라 suffix로 유일성을 보장해야 한다. 반환값은 (taxonomy_version_id, concept_id)."""
+
+    taxonomy_version_id = uuid.uuid4()
+    concept_id = uuid.uuid4()
+    await session.execute(
+        text(
+            "INSERT INTO ontology.taxonomy_version "
+            "(taxonomy_version_id, semantic_version, status, checksum) "
+            "VALUES (:tvid, :semver, 'DRAFT', :checksum)"
+        ),
+        {
+            "tvid": taxonomy_version_id,
+            "semver": f"1.0.0-it-{suffix}",
+            "checksum": hashlib.sha256(f"it-{suffix}".encode()).digest(),
+        },
+    )
+    await session.execute(
+        text(
+            "INSERT INTO ontology.concept "
+            "(concept_id, concept_code, concept_type) "
+            "VALUES (:cid, :code, :ctype)"
+        ),
+        {"cid": concept_id, "code": concept_code, "ctype": concept_type},
+    )
+    await session.execute(
+        text(
+            "INSERT INTO ontology.concept_revision "
+            "(taxonomy_version_id, concept_id) VALUES (:tvid, :cid)"
+        ),
+        {"tvid": taxonomy_version_id, "cid": concept_id},
+    )
+    return taxonomy_version_id, concept_id
+
+
+async def _ensure_ontology_concept(
+    session: AsyncSession, *, concept_code: str, concept_type: str
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """`_seed_ontology_concept`과 달리 이미 있으면 재사용한다 - concept_code가 전역
+    UNIQUE라서 매 테스트 실행마다 새로 만들 수 없는 고정 코드(예: feature_builder.py의
+    "SERVICE.TASTING"처럼 하드코딩된 매칭 키)에 쓴다."""
+
+    existing = (
+        await session.execute(
+            text(
+                "SELECT cr.taxonomy_version_id, c.concept_id "
+                "FROM ontology.concept c "
+                "JOIN ontology.concept_revision cr ON cr.concept_id = c.concept_id "
+                "WHERE c.concept_code = :code LIMIT 1"
+            ),
+            {"code": concept_code},
+        )
+    ).first()
+    if existing is not None:
+        return existing.taxonomy_version_id, existing.concept_id
+
+    return await _seed_ontology_concept(
+        session,
+        suffix=_unique_suffix(),
+        concept_code=concept_code,
+        concept_type=concept_type,
+    )
+
+
+async def _seed_general_visitor_scenario(
+    session: AsyncSession,
+    *,
+    require_sensory: bool = False,
+    tag_product_sensory: bool = False,
+    require_tasting: bool = False,
+    tasting_status: str = "AVAILABLE",
+) -> GeneralVisitorRecommendationRequest:
+    suffix = _unique_suffix()
+    tenant = Tenant(
+        tenant_code=f"it-general-visitor-{suffix}", tenant_name="IT General Visitor"
+    )
+    session.add(tenant)
+    await session.flush()
+
+    event = Event(
+        tenant_id=tenant.tenant_id,
+        event_code=f"it-event-general-visitor-{suffix}",
+        event_name="IT Event",
+        start_date=date(2026, 10, 9),
+        end_date=date(2026, 10, 11),
+    )
+    session.add(event)
+    await session.flush()
+
+    exhibitor = Exhibitor(
+        tenant_id=tenant.tenant_id,
+        company_name="IT Brewery",
+        master_approval_status="APPROVED",
+    )
+    session.add(exhibitor)
+    await session.flush()
+
+    product = Product(
+        exhibitor_id=exhibitor.exhibitor_id,
+        product_name="IT Soju",
+        master_approval_status="APPROVED",
+    )
+    session.add(product)
+    await session.flush()
+
+    participation = ExhibitorParticipation(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        exhibitor_id=exhibitor.exhibitor_id,
+        participation_status="APPROVED",
+    )
+    session.add(participation)
+    await session.flush()
+
+    event_product = EventProduct(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        participation_id=participation.participation_id,
+        product_id=product.product_id,
+        event_price_amount=20_000,
+        tasting_status=tasting_status,
+        approval_status="APPROVED",
+    )
+    session.add(event_product)
+    await session.flush()
+
+    sensory_concept_id: uuid.UUID | None = None
+    sensory_taxonomy_version_id: uuid.UUID | None = None
+    if require_sensory or tag_product_sensory:
+        sensory_taxonomy_version_id, sensory_concept_id = await _seed_ontology_concept(
+            session,
+            suffix=suffix,
+            concept_code=f"TASTE.DRY.X{suffix.upper()}",
+            concept_type="TASTE",
+        )
+        if tag_product_sensory:
+            session.add(
+                ProductAttribute(
+                    product_id=product.product_id,
+                    taxonomy_version_id=sensory_taxonomy_version_id,
+                    concept_id=sensory_concept_id,
+                    text_value="DRY",
+                    source="OPERATOR",
+                    review_status="APPROVED",
+                )
+            )
+            await session.flush()
+
+    recommendable = Recommendable(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        object_type="EVENT_PRODUCT",
+        event_product_id=event_product.event_product_id,
+    )
+    session.add(recommendable)
+
+    policy = MatchPolicyVersion(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_type="GENERAL_VISITOR",
+        version="v1",
+        status="ACTIVE",
+    )
+    session.add(policy)
+
+    guest_session = GuestSession(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        session_token_hmac=uuid.uuid4().bytes,
+        entry_channel="WEB",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    session.add(guest_session)
+    await session.flush()
+
+    profile = UserProfile(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_id=None,
+        guest_session_id=guest_session.guest_session_id,
+        user_type="GENERAL_VISITOR",
+    )
+    session.add(profile)
+    await session.flush()
+
+    profile_version = ProfileVersion(
+        profile_id=profile.profile_id,
+        version_number=1,
+        snapshot_json={},
+        change_reason="USER_UPDATE",
+    )
+    session.add(profile_version)
+
+    if require_sensory:
+        assert sensory_concept_id is not None
+        assert sensory_taxonomy_version_id is not None
+        session.add(
+            ProfileAttribute(
+                profile_id=profile.profile_id,
+                taxonomy_version_id=sensory_taxonomy_version_id,
+                concept_id=sensory_concept_id,
+                attribute_code=f"TASTE.DRY.X{suffix.upper()}",
+                value_json={"selected": True},
+                requirement_level="PREFERRED",
+                source_type="USER_SELECTED",
+            )
+        )
+
+    if require_tasting:
+        # feature_builder._SERVICE_CODE_TO_AVAILABILITY_FIELD는 정확히 "SERVICE.TASTING"
+        # 문자열을 찾으므로, 접미사 없이 이 코드를 재사용해야 한다(concept_code는 전역
+        # UNIQUE라 매 테스트가 새로 만들면 안 된다) - 있으면 재사용하고 없으면 만든다.
+        (
+            tasting_taxonomy_version_id,
+            tasting_concept_id,
+        ) = await _ensure_ontology_concept(
+            session, concept_code="SERVICE.TASTING", concept_type="SERVICE"
+        )
+        session.add(
+            ProfileAttribute(
+                profile_id=profile.profile_id,
+                taxonomy_version_id=tasting_taxonomy_version_id,
+                concept_id=tasting_concept_id,
+                attribute_code="SERVICE.TASTING",
+                value_json={"selected": True},
+                requirement_level="PREFERRED",
+                source_type="USER_SELECTED",
+            )
+        )
+
+    await session.commit()
+
+    return GeneralVisitorRecommendationRequest(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        profile_id=profile.profile_id,
+        visit_session_id=None,
+        policy_version_id=policy.policy_version_id,
+        required_category_concept_ids=frozenset(),
+        price_min=None,
+        price_max=50_000,
+        limit=10,
+    )
+
+
+async def test_generate_general_visitor_recommendations_end_to_end(
+    db_session: AsyncSession,
+) -> None:
+    request = await _seed_general_visitor_scenario(db_session)
+
+    recommendation_session = await generate_general_visitor_recommendations(
+        db_session, request
+    )
+    await db_session.commit()
+
+    assert recommendation_session.result_count == 1
+
+    results = (
+        (
+            await db_session.execute(
+                select(MatchResult).where(
+                    MatchResult.recommendation_session_id
+                    == recommendation_session.recommendation_session_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+    assert results[0].recommended_action == "VISIT_NOW"
+    assert float(results[0].normalized_score) == pytest.approx(100.0)
+    # 14단계 상황 재정렬이 연결되어 있으면 context_score가 채워진다(방문 세션이 없어도
+    # "정보 없음"은 만점으로 처리한다, context_reranker.compute_context_score 참고).
+    assert float(results[0].context_score) == pytest.approx(1.0)
+
+
+async def test_generate_general_visitor_recommendations_scores_lower_when_tasting_paused(
+    db_session: AsyncSession,
+) -> None:
+    """feature_builder._service_match(exhibition.event_product.tasting_status 연결,
+    item 3의 나머지 구성요소 중 하나)를 검증한다: 시음을 요구하는 프로파일에 대해
+    시음 가능한 후보가, 시음이 일시중단된 후보보다 raw_score가 높아야 한다."""
+
+    available_request = await _seed_general_visitor_scenario(
+        db_session, require_tasting=True, tasting_status="AVAILABLE"
+    )
+    available_session = await generate_general_visitor_recommendations(
+        db_session, available_request
+    )
+    await db_session.commit()
+
+    paused_request = await _seed_general_visitor_scenario(
+        db_session, require_tasting=True, tasting_status="PAUSED"
+    )
+    paused_session = await generate_general_visitor_recommendations(
+        db_session, paused_request
+    )
+    await db_session.commit()
+
+    available_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == available_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    paused_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == paused_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(available_result.raw_score) > float(paused_result.raw_score)
+
+
+async def test_generate_general_visitor_recommendations_generates_reason_per_matched_component(
+    db_session: AsyncSession,
+) -> None:
+    """18단계 추천 이유 생성(reason_generator.generate_directional_reasons)이 기여도
+    상위 구성요소 각각에 대해 별도 MatchReason 행을 만드는지 검증한다."""
+
+    request = await _seed_general_visitor_scenario(
+        db_session, require_sensory=True, tag_product_sensory=True
+    )
+    recommendation_session = await generate_general_visitor_recommendations(
+        db_session, request
+    )
+    await db_session.commit()
+
+    match_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == recommendation_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    reasons = (
+        (
+            await db_session.execute(
+                select(MatchReason)
+                .where(MatchReason.match_result_id == match_result.match_result_id)
+                .order_by(MatchReason.display_order)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    reason_codes = [reason.reason_code for reason in reasons]
+    assert reason_codes == ["SENSORY_MATCH", "PRICE_MATCH"]
+    for reason in reasons:
+        assert "sensory" not in reason.reason_text
+        assert "price" not in reason.reason_text
+
+
+async def test_generate_general_visitor_recommendations_scores_lower_on_sensory_mismatch(
+    db_session: AsyncSession,
+) -> None:
+    """profile_resolver의 ProfileAttribute를 온톨로지 concept_type(attribute_code 접두어)
+    으로 해석해 feature_builder의 sensory 구성요소를 채우는 연결(item 3)을 검증한다:
+    후보가 프로파일이 요구하는 맛(TASTE.DRY)을 실제로 갖고 있는 시나리오가, 같은 요구를
+    갖고 있지만 후보에는 그 속성이 없는 시나리오보다 raw_score가 높아야 한다."""
+
+    matching_request = await _seed_general_visitor_scenario(
+        db_session, require_sensory=True, tag_product_sensory=True
+    )
+    matching_session = await generate_general_visitor_recommendations(
+        db_session, matching_request
+    )
+    await db_session.commit()
+
+    mismatched_request = await _seed_general_visitor_scenario(
+        db_session, require_sensory=True, tag_product_sensory=False
+    )
+    mismatched_session = await generate_general_visitor_recommendations(
+        db_session, mismatched_request
+    )
+    await db_session.commit()
+
+    matching_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == matching_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    mismatched_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == mismatched_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(matching_result.raw_score) > float(mismatched_result.raw_score)
+
+
+async def test_generate_general_visitor_recommendations_reranks_by_booth_wait_time(
+    db_session: AsyncSession,
+) -> None:
+    """14단계 상황 재정렬(orchestrator._booth_wait_minutes_by_recommendable ->
+    context_reranker.rerank)을 검증한다: 기본 적합도(raw_score)는 같은 두 후보 중,
+    부스 대기시간이 남은 체류시간보다 긴 후보가 순위에서 밀려야 한다."""
+
+    suffix = _unique_suffix()
+    tenant = Tenant(tenant_code=f"it-booth-wait-{suffix}", tenant_name="IT Booth Wait")
+    db_session.add(tenant)
+    await db_session.flush()
+
+    event = Event(
+        tenant_id=tenant.tenant_id,
+        event_code=f"it-event-booth-wait-{suffix}",
+        event_name="IT Booth Wait Event",
+        start_date=date(2026, 10, 9),
+        end_date=date(2026, 10, 11),
+    )
+    db_session.add(event)
+    await db_session.flush()
+
+    recommendable_ids: dict[str, uuid.UUID] = {}
+    for label, wait_minutes in (("fast", 5), ("slow", 60)):
+        exhibitor = Exhibitor(
+            tenant_id=tenant.tenant_id,
+            company_name=f"IT Brewery {label}",
+            master_approval_status="APPROVED",
+        )
+        db_session.add(exhibitor)
+        await db_session.flush()
+
+        product = Product(
+            exhibitor_id=exhibitor.exhibitor_id,
+            product_name=f"IT Soju {label}",
+            master_approval_status="APPROVED",
+        )
+        db_session.add(product)
+        await db_session.flush()
+
+        participation = ExhibitorParticipation(
+            tenant_id=tenant.tenant_id,
+            event_id=event.event_id,
+            exhibitor_id=exhibitor.exhibitor_id,
+            participation_status="APPROVED",
+        )
+        db_session.add(participation)
+        await db_session.flush()
+
+        event_product = EventProduct(
+            tenant_id=tenant.tenant_id,
+            event_id=event.event_id,
+            participation_id=participation.participation_id,
+            product_id=product.product_id,
+            event_price_amount=20_000,
+            approval_status="APPROVED",
+        )
+        db_session.add(event_product)
+        await db_session.flush()
+
+        db_session.add(
+            Booth(
+                tenant_id=tenant.tenant_id,
+                event_id=event.event_id,
+                participation_id=participation.participation_id,
+                booth_number=f"{label}-{suffix}",
+                operating_status="OPEN",
+                estimated_wait_minutes=wait_minutes,
+            )
+        )
+
+        recommendable = Recommendable(
+            tenant_id=tenant.tenant_id,
+            event_id=event.event_id,
+            object_type="EVENT_PRODUCT",
+            event_product_id=event_product.event_product_id,
+        )
+        db_session.add(recommendable)
+        await db_session.flush()
+        recommendable_ids[label] = recommendable.recommendable_id
+
+    policy = MatchPolicyVersion(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_type="GENERAL_VISITOR",
+        version="v1",
+        status="ACTIVE",
+    )
+    db_session.add(policy)
+
+    guest_session = GuestSession(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        session_token_hmac=uuid.uuid4().bytes,
+        entry_channel="WEB",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    db_session.add(guest_session)
+    await db_session.flush()
+
+    profile = UserProfile(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_id=None,
+        guest_session_id=guest_session.guest_session_id,
+        user_type="GENERAL_VISITOR",
+    )
+    db_session.add(profile)
+    await db_session.flush()
+
+    db_session.add(
+        ProfileVersion(
+            profile_id=profile.profile_id,
+            version_number=1,
+            snapshot_json={},
+            change_reason="USER_UPDATE",
+        )
+    )
+
+    visit_session = VisitSession(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        guest_session_id=guest_session.guest_session_id,
+        profile_id=profile.profile_id,
+        visit_date=date(2026, 10, 9),
+    )
+    db_session.add(visit_session)
+    await db_session.flush()
+
+    # 남은 시간(20분)은 fast 부스(대기 5분)에는 충분하지만 slow 부스(대기 60분)에는
+    # 부족하다 - context_reranker.compute_context_score의 핵심 분기.
+    db_session.add(
+        ContextProfile(
+            visit_session_id=visit_session.visit_session_id, remaining_minutes=20
+        )
+    )
+    await db_session.commit()
+
+    request = GeneralVisitorRecommendationRequest(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        profile_id=profile.profile_id,
+        visit_session_id=visit_session.visit_session_id,
+        policy_version_id=policy.policy_version_id,
+        required_category_concept_ids=frozenset(),
+        price_min=None,
+        price_max=50_000,
+        limit=10,
+    )
+    recommendation_session = await generate_general_visitor_recommendations(
+        db_session, request
+    )
+    await db_session.commit()
+
+    assert recommendation_session.result_count == 2
+
+    results = (
+        (
+            await db_session.execute(
+                select(MatchResult)
+                .where(
+                    MatchResult.recommendation_session_id
+                    == recommendation_session.recommendation_session_id
+                )
+                .order_by(MatchResult.rank)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert results[0].recommendable_id == recommendable_ids["fast"]
+    assert results[1].recommendable_id == recommendable_ids["slow"]
+    assert float(results[0].raw_score) == pytest.approx(float(results[1].raw_score))
+    assert float(results[0].context_score) > float(results[1].context_score)
+
+
+async def _seed_buyer_scenario(
+    session: AsyncSession,
+    *,
+    with_matching_category: bool,
+    require_channel: bool = False,
+    tag_exhibitor_channel: bool = False,
+    available_capacity: int | None = None,
+    verification_status: str | None = None,
+    require_oem: bool = False,
+    oem_status: str = "YES",
+) -> BuyerRecommendationRequest:
+    suffix = _unique_suffix()
+    category_label = "category" if with_matching_category else "no-category"
+    tenant_code = f"it-buyer-{category_label}-{suffix}"
+    tenant = Tenant(tenant_code=tenant_code, tenant_name="IT Buyer")
+    session.add(tenant)
+    await session.flush()
+
+    event = Event(
+        tenant_id=tenant.tenant_id,
+        event_code=f"{tenant_code}-event",
+        event_name="IT Buyer Event",
+        start_date=date(2026, 10, 9),
+        end_date=date(2026, 10, 11),
+    )
+    session.add(event)
+    await session.flush()
+
+    exhibitor = Exhibitor(
+        tenant_id=tenant.tenant_id,
+        company_name="IT Distillery",
+        master_approval_status="APPROVED",
+    )
+    session.add(exhibitor)
+    await session.flush()
+
+    participation = ExhibitorParticipation(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        exhibitor_id=exhibitor.exhibitor_id,
+        participation_status="APPROVED",
+    )
+    session.add(participation)
+    await session.flush()
+
+    trade_condition = TradeCondition(
+        participation_id=participation.participation_id,
+        event_product_id=None,
+        min_order_quantity=100,
+        monthly_capacity=3_000,
+        wholesale_price_max_amount=40_000,
+        oem_status=oem_status,
+        approval_status="APPROVED",
+    )
+    session.add(trade_condition)
+    await session.flush()
+
+    required_category_concept_ids: frozenset[uuid.UUID] = frozenset()
+    if with_matching_category:
+        # concept_code CHECK 제약(^[A-Z][A-Z0-9_]*(\.[A-Z][A-Z0-9_]*)+$)은 각 점 구간이
+        # 문자로 시작해야 한다 - hex suffix 앞에 "X"를 붙인다.
+        taxonomy_version_id, category_concept_id = await _seed_ontology_concept(
+            session,
+            suffix=suffix,
+            concept_code=f"CATEGORY.SPIRITS.SOJU.X{suffix.upper()}",
+            concept_type="CATEGORY",
+        )
+
+        product = Product(
+            exhibitor_id=exhibitor.exhibitor_id,
+            product_name="IT Premium Soju",
+            category_taxonomy_version_id=taxonomy_version_id,
+            category_concept_id=category_concept_id,
+        )
+        session.add(product)
+        await session.flush()
+
+        event_product = EventProduct(
+            tenant_id=tenant.tenant_id,
+            event_id=event.event_id,
+            participation_id=participation.participation_id,
+            product_id=product.product_id,
+            approval_status="APPROVED",
+        )
+        session.add(event_product)
+        await session.flush()
+
+        required_category_concept_ids = frozenset({category_concept_id})
+
+    channel_concept_id: uuid.UUID | None = None
+    channel_taxonomy_version_id: uuid.UUID | None = None
+    if require_channel or tag_exhibitor_channel:
+        channel_taxonomy_version_id, channel_concept_id = await _seed_ontology_concept(
+            session,
+            suffix=suffix,
+            concept_code=f"CHANNEL.HORECA.X{suffix.upper()}",
+            concept_type="CHANNEL",
+        )
+        if tag_exhibitor_channel:
+            session.add(
+                TradeConditionTerm(
+                    trade_condition_id=trade_condition.trade_condition_id,
+                    term_type="CHANNEL",
+                    taxonomy_version_id=channel_taxonomy_version_id,
+                    concept_id=channel_concept_id,
+                )
+            )
+            await session.flush()
+
+    if available_capacity is not None or verification_status is not None:
+        session.add(
+            SupplyCapability(
+                exhibitor_id=exhibitor.exhibitor_id,
+                product_id=None,
+                available_capacity=available_capacity,
+                verification_status=verification_status or "SELF_DECLARED",
+            )
+        )
+
+    recommendable = Recommendable(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        object_type="EXHIBITOR",
+        participation_id=participation.participation_id,
+    )
+    session.add(recommendable)
+
+    policy = MatchPolicyVersion(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_type="BUYER",
+        version="v1",
+        status="ACTIVE",
+    )
+    session.add(policy)
+
+    buyer_account = UserAccount(
+        authentication_state="ACCOUNT_AUTHENTICATED", account_status="ACTIVE"
+    )
+    session.add(buyer_account)
+    await session.flush()
+
+    profile = UserProfile(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        user_id=buyer_account.user_id,
+        guest_session_id=None,
+        user_type="BUYER",
+    )
+    session.add(profile)
+    await session.flush()
+
+    profile_version = ProfileVersion(
+        profile_id=profile.profile_id,
+        version_number=1,
+        snapshot_json={},
+        change_reason="USER_UPDATE",
+    )
+    session.add(profile_version)
+
+    if require_channel:
+        assert channel_concept_id is not None
+        assert channel_taxonomy_version_id is not None
+        session.add(
+            ProfileAttribute(
+                profile_id=profile.profile_id,
+                taxonomy_version_id=channel_taxonomy_version_id,
+                concept_id=channel_concept_id,
+                attribute_code=f"CHANNEL.HORECA.X{suffix.upper()}",
+                value_json={"selected": True},
+                requirement_level="PREFERRED",
+                source_type="USER_SELECTED",
+            )
+        )
+
+    if require_oem:
+        # feature_builder._TRADE_CODE_TO_STATUS_FIELD는 정확히 "TRADE.OEM" 문자열을
+        # 찾으므로 _ensure_ontology_concept으로 재사용한다(_service_match의 "SERVICE.
+        # TASTING"과 같은 이유).
+        oem_taxonomy_version_id, oem_concept_id = await _ensure_ontology_concept(
+            session, concept_code="TRADE.OEM", concept_type="TRADE_TYPE"
+        )
+        session.add(
+            ProfileAttribute(
+                profile_id=profile.profile_id,
+                taxonomy_version_id=oem_taxonomy_version_id,
+                concept_id=oem_concept_id,
+                attribute_code="TRADE.OEM",
+                value_json={"selected": True},
+                requirement_level="PREFERRED",
+                source_type="USER_SELECTED",
+            )
+        )
+
+    buyer_need = BuyerNeed(profile_id=profile.profile_id)
+    session.add(buyer_need)
+    await session.commit()
+
+    return BuyerRecommendationRequest(
+        tenant_id=tenant.tenant_id,
+        event_id=event.event_id,
+        profile_id=profile.profile_id,
+        visit_session_id=None,
+        policy_version_id=policy.policy_version_id,
+        required_category_concept_ids=required_category_concept_ids,
+        target_price_max=50_000,
+        max_order_quantity=200,
+        requested_monthly_units=100,
+        limit=10,
+    )
+
+
+async def test_generate_buyer_recommendations_end_to_end(
+    db_session: AsyncSession,
+) -> None:
+    request = await _seed_buyer_scenario(db_session, with_matching_category=False)
+
+    recommendation_session = await generate_buyer_recommendations(db_session, request)
+    await db_session.commit()
+
+    assert recommendation_session.result_count == 1
+
+    results = (
+        (
+            await db_session.execute(
+                select(MatchResult).where(
+                    MatchResult.recommendation_session_id
+                    == recommendation_session.recommendation_session_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+    assert results[0].recommended_action == "REQUEST_MEETING"
+
+
+async def test_generate_buyer_recommendations_scores_higher_with_matching_category(
+    db_session: AsyncSession,
+) -> None:
+    """구조화 검색이 업체의 출품 제품 카테고리를 채우면(candidate_generator._exhibitor_
+    category_concept_ids) build_buyer_components의 product 구성요소가 더 이상 항상
+    None이 아니게 된다 - 카테고리가 일치하는 시나리오의 raw_score가, 요구 카테고리를
+    지정하지 않은 시나리오보다 높아야 한다(모든 조건이 같고 product 구성요소만 다르다)."""
+
+    baseline_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False
+    )
+    baseline_session = await generate_buyer_recommendations(
+        db_session, baseline_request
+    )
+    await db_session.commit()
+
+    matching_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=True
+    )
+    matching_session = await generate_buyer_recommendations(
+        db_session, matching_request
+    )
+    await db_session.commit()
+
+    baseline_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == baseline_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    matching_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == matching_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(matching_result.raw_score) > float(baseline_result.raw_score)
+
+
+async def test_generate_buyer_recommendations_scores_lower_on_channel_mismatch(
+    db_session: AsyncSession,
+) -> None:
+    """buyer_profile_facts.required_concept_ids_by_component(ProfileAttribute의
+    CHANNEL.* 접두어를 해석한 결과)와 exhibition.trade_condition_term(term_type='CHANNEL')
+    을 연결한 부분(item 3)을 검증한다: 바이어가 요구하는 유통채널을 업체가 실제로 등록해
+    둔 시나리오가, 같은 요구를 갖고 있지만 업체 쪽에 등록이 없는 시나리오보다 raw_score가
+    높아야 한다."""
+
+    matching_request = await _seed_buyer_scenario(
+        db_session,
+        with_matching_category=False,
+        require_channel=True,
+        tag_exhibitor_channel=True,
+    )
+    matching_session = await generate_buyer_recommendations(
+        db_session, matching_request
+    )
+    await db_session.commit()
+
+    mismatched_request = await _seed_buyer_scenario(
+        db_session,
+        with_matching_category=False,
+        require_channel=True,
+        tag_exhibitor_channel=False,
+    )
+    mismatched_session = await generate_buyer_recommendations(
+        db_session, mismatched_request
+    )
+    await db_session.commit()
+
+    matching_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == matching_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    mismatched_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == mismatched_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(matching_result.raw_score) > float(mismatched_result.raw_score)
+
+
+async def test_generate_buyer_recommendations_scores_higher_with_sufficient_capacity(
+    db_session: AsyncSession,
+) -> None:
+    """exhibition.supply_capability.available_capacity(잔여 생산능력)를
+    BuyerCandidateFacts.available_capacity로 채우는 연결(feature_builder.py의 capacity
+    구성요소)을 검증한다: 요청한 월 물량(100)을 충당할 잔여 생산능력이 있는 시나리오가,
+    잔여 생산능력이 부족한 시나리오보다 raw_score가 높아야 한다."""
+
+    sufficient_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, available_capacity=1_000
+    )
+    sufficient_session = await generate_buyer_recommendations(
+        db_session, sufficient_request
+    )
+    await db_session.commit()
+
+    insufficient_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, available_capacity=10
+    )
+    insufficient_session = await generate_buyer_recommendations(
+        db_session, insufficient_request
+    )
+    await db_session.commit()
+
+    sufficient_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == sufficient_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    insufficient_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == insufficient_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(sufficient_result.raw_score) > float(insufficient_result.raw_score)
+
+
+async def test_generate_buyer_recommendations_scores_higher_for_verified_exhibitor(
+    db_session: AsyncSession,
+) -> None:
+    """exhibition.supply_capability.verification_status를 EXHIBITOR_SCORE_V1의
+    verification 구성요소로 채우는 연결(feature_builder._verification_score)을 검증한다:
+    검증 완료(VERIFIED) 업체가, 자기신고(SELF_DECLARED) 업체보다 raw_score가 높아야
+    한다."""
+
+    verified_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, verification_status="VERIFIED"
+    )
+    verified_session = await generate_buyer_recommendations(
+        db_session, verified_request
+    )
+    await db_session.commit()
+
+    self_declared_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, verification_status="SELF_DECLARED"
+    )
+    self_declared_session = await generate_buyer_recommendations(
+        db_session, self_declared_request
+    )
+    await db_session.commit()
+
+    verified_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == verified_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    self_declared_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == self_declared_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(verified_result.raw_score) > float(self_declared_result.raw_score)
+
+
+async def test_generate_buyer_recommendations_scores_higher_when_oem_available(
+    db_session: AsyncSession,
+) -> None:
+    """exhibition.trade_condition.oem_status를 BUYER_SCORE_V1의 cooperation 구성요소로
+    채우는 연결(feature_builder._cooperation_match)을 검증한다: OEM을 요구하는 바이어에
+    대해 OEM 가능(YES) 업체가, OEM 불가(NO) 업체보다 raw_score가 높아야 한다."""
+
+    oem_available_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, require_oem=True, oem_status="YES"
+    )
+    oem_available_session = await generate_buyer_recommendations(
+        db_session, oem_available_request
+    )
+    await db_session.commit()
+
+    oem_unavailable_request = await _seed_buyer_scenario(
+        db_session, with_matching_category=False, require_oem=True, oem_status="NO"
+    )
+    oem_unavailable_session = await generate_buyer_recommendations(
+        db_session, oem_unavailable_request
+    )
+    await db_session.commit()
+
+    oem_available_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == oem_available_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+    oem_unavailable_result = (
+        await db_session.execute(
+            select(MatchResult).where(
+                MatchResult.recommendation_session_id
+                == oem_unavailable_session.recommendation_session_id
+            )
+        )
+    ).scalar_one()
+
+    assert float(oem_available_result.raw_score) > float(
+        oem_unavailable_result.raw_score
+    )

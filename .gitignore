@@ -1,3 +1,6 @@
+# OS artifacts
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -15,6 +18,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+!apps/admin/lib/
+!apps/admin/lib/**
+!apps/user-web/lib/
+!apps/user-web/lib/**
 lib64/
 parts/
 sdist/

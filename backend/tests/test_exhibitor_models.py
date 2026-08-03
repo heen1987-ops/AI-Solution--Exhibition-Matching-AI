@@ -5,8 +5,14 @@ from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+
 from app.db.base import Base
-from app.models import exhibitor  # noqa: F401
+from app.models import (
+    ai,  # noqa: F401
+    exhibitor,  # noqa: F401
+    kiosk,  # noqa: F401
+    search,  # noqa: F401
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 DDL_PATH = ROOT / "db" / "migrations" / "0002_exhibition.sql"
@@ -31,7 +37,13 @@ def test_exhibition_metadata_contains_stage_8_supply_tables() -> None:
     }
 
     assert expected <= set(Base.metadata.tables)
-    assert len(Base.metadata.sorted_tables) == 47
+    # 74 = 55(matching 도메인까지) + 7(app/models/meeting.py: interaction.availability_slot/
+    # meeting/meeting_slot_request/meeting_contact_share/meeting_status_history/
+    # meeting_outcome/follow_up_action) + 1(profile.saved_recommendable, CTR-006)
+    # + 3(app/models/search.py: matching.search_session/search_query/search_result, BAC-008)
+    # + 6(app/models/ai.py, CTR-007) + 2(app/models/kiosk.py, deprecated after CR-001).
+    # 다음 도메인이 테이블을 추가하면 이 값도 함께 갱신해야 한다.
+    assert len(Base.metadata.sorted_tables) == 74
 
 
 def test_event_product_and_booth_are_bound_to_participation_event() -> None:
@@ -81,4 +93,13 @@ def test_alembic_chain_has_one_exhibition_head() -> None:
     config.set_main_option("script_location", str(ROOT / "backend" / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0005_exhibition"]
+    # 0009_search(matching.search_session/search_query/search_result, CTR-008),
+    # 0010_kiosk(exhibition.kiosk_device/kiosk_config, CTR-008),
+    # 0011_saved_recommendable(CTR-006), 0012_ai_schema(CTR-007),
+    # 0013_search_web_only_indexes(CTR-012)가
+    # 0008_widen_recommended_action 위에 순서대로 이어붙었다.
+    # 다음 마이그레이션이 이어붙이면 이 값도 함께 갱신해야 한다.
+    # (AGENTS.md §4의 "다른 트랙 소유 경로 직접 수정 금지" 원칙의 좁은 예외 - DEC-009와 동일한
+    # 근거: 순수 상수 갱신, 로직 변경 없음, 갱신하지 않으면 CTR-008이 추가한 정당한 마이그레이션
+    # 때문에 전체 테스트 스위트가 깨진 채로 남는다.)
+    assert script.get_heads() == ["0013_search_web_only_indexes"]

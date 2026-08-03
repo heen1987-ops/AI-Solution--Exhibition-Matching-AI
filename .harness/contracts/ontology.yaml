@@ -1,0 +1,247 @@
+# Ontology contract (CTR-003)
+#
+# 상태: CONFIRMED. 이 문서는 신규 온톨로지 설계가 아니다 - `src/meet_ai/ontology/catalog.v1.json`
+# (정본, 259개 concept, 23개 concept_type)에 이미 있는 것을 계약 형식으로 요약·참조하고,
+# `docs/redesign-v2/common/C-3-ontology.md`의 6개 카테고리 매핑 표와 WAVE-1 프롬프트가 요구한
+# 8개 카테고리(INDUSTRY/TECH/PRODUCT/SERVICE/GOAL/CHANNEL/TRADE/REGION)를 대조해 하나의
+# 표로 통합한다. `.harness/contracts/domain-model.md` §5(온톨로지, REUSED_AS_IS)가 이 문서의
+# 근거다 - 신규 concept_type이나 신규 테이블은 전혀 필요하지 않다.
+#
+# 정본 소스: src/meet_ai/ontology/catalog.py(Catalog 클래스, validate()/resolve_synonym()/
+# match_strength()/derive_band()), src/meet_ai/ontology/catalog.v1.json(실제 데이터).
+# 이 계약 파일은 그 정본을 대체하지 않는다 - 다른 트랙이 카탈로그 구조를 빠르게 참조하기 위한
+# 요약이며, 실제 코드 검증은 항상 catalog.py의 Catalog.validate()가 담당한다.
+
+status: confirmed
+version: "1.0.0" # src/meet_ai/ontology/catalog.v1.json의 metadata.version과 동일해야 한다
+source_catalog: "src/meet_ai/ontology/catalog.v1.json"
+source_engine: "src/meet_ai/ontology/catalog.py"
+default_locale: "ko-KR"
+
+# --------------------------------------------------------------------------
+# 1. WAVE-1 8개 카테고리 <-> 기존 concept_type/attribute_code 접두어 매핑
+# --------------------------------------------------------------------------
+# C-3 §1은 마스터 스펙 §6의 6개 카테고리(산업/기술/제품·서비스/활용목적/바이어 거래유형/유사어)만
+# 다뤘다. WAVE-1 프롬프트는 8개(INDUSTRY/TECH/PRODUCT/SERVICE/GOAL/CHANNEL/TRADE/REGION)를
+# 요구했다 - 아래에서 그 차이를 전부 실측 코드(catalog.v1.json 실제 concept_type 목록,
+# backend/app/services/matching/feature_builder.py의 _COMPONENT_BY_CODE_PREFIX)로 재검증한다.
+wave1_category_mapping:
+  - wave1_category: INDUSTRY
+    concept_type: PRODUCT_CATEGORY
+    code_prefix: "PRODUCT.*"
+    example_codes: ["PRODUCT.ALCOHOL", "PRODUCT.NON_ALCOHOL", "PRODUCT.FOOD_PAIRING"]
+    c3_row: "산업"
+    note: >
+      C-3 §1 표는 이 행의 접두어를 "CATEGORY.*"로 적었으나, 실제 catalog.v1.json에는
+      CATEGORY.* 코드가 하나도 없다(전체 259개 코드의 접두어 집합을 실측 확인) - 실제
+      존재하는 접두어는 PRODUCT.*(concept_type=PRODUCT_CATEGORY)뿐이다. C-3 §1의 오탈자로
+      판단하고 이 계약에서는 실측값(PRODUCT.*)을 정본으로 채택한다. C-3 문서 자체의 정정은
+      이 태스크 범위 밖(docs/**는 CONTRACTS 소유이지만 CTR-003의 acceptance는 ontology.yaml
+      작성이지 C-3 재작성이 아니다) - 필요하면 별도 CHANGE_REQUEST로 처리한다.
+  - wave1_category: TECH
+    concept_type: USE_CASE
+    code_prefix: "USE.*"
+    example_codes: ["USE.SELF_CONSUMPTION", "USE.GIFT", "USE.FOOD_PAIRING"]
+    c3_row: "기술"
+    note: "C-3 §1과 실측 일치. USE_CASE는 활용 기술·용도 축이다."
+  - wave1_category: PRODUCT
+    concept_type: PRODUCT_CATEGORY
+    code_prefix: "PRODUCT.*"
+    example_codes: ["PRODUCT.EQUIPMENT", "PRODUCT.ALCOHOL"]
+    c3_row: "산업과 동일 축"
+    note: >
+      실제 카탈로그에는 INDUSTRY와 PRODUCT를 구분하는 별도 concept_type이 없다 -
+      WAVE-1이 둘로 나눈 것은 두 축이 실제로 존재해서가 아니라 상위 설계 프롬프트의
+      일반적 8분류 틀을 그대로 옮긴 것으로 판단한다(이 행사 도메인에서는 "산업"="제품
+      카테고리"가 사실상 같은 개념 - 예: 주류/비주류/식품페어링/장비). 신규 concept_type을
+      만들지 않고 하나로 합쳐 매핑한다(도메인 모델 문서 DEC-004 "재설계가 아니라
+      재발견" 원칙과 정합).
+  - wave1_category: SERVICE
+    concept_type: BOOTH_SERVICE
+    code_prefix: "SERVICE.*"
+    example_codes: ["SERVICE.TASTING", "SERVICE.PURCHASE", "SERVICE.CONSULTATION"]
+    c3_row: "제품·서비스"
+    note: "C-3 §1과 실측 일치."
+  - wave1_category: GOAL
+    concept_type: [VISIT_GOAL, BUSINESS_GOAL]
+    code_prefix: ["GOAL.*", "BIZ_GOAL.*"]
+    example_codes: ["GOAL.TASTING", "GOAL.ON_SITE_PURCHASE", "BIZ_GOAL.NEW_SUPPLIER"]
+    c3_row: "활용목적"
+    note: >
+      일반 방문객 방문목적(VISIT_GOAL/GOAL.*)과 바이어 사업목표(BUSINESS_GOAL/
+      BIZ_GOAL.*)는 실제로는 서로 다른 concept_type 2개다 - C-3 §1이 하나의 행으로
+      합쳐 적었지만 이 계약에서는 실측대로 둘 다 명시한다.
+  - wave1_category: CHANNEL
+    concept_type: CHANNEL
+    code_prefix: "CHANNEL.*"
+    example_codes: ["CHANNEL.OFFLINE_RETAIL", "CHANNEL.DEPARTMENT_STORE"]
+    c3_row: "(6개 카테고리 표에 없음 - 별도로 이미 존재)"
+    note: >
+      C-3 §1의 6개 카테고리 표에는 CHANNEL이 없지만, feature_builder.py의
+      _COMPONENT_BY_CODE_PREFIX가 "CHANNEL": "channel"로 이미 실사용 중임을 코드로
+      확인했다 - 누락된 문서 항목일 뿐 실제로는 이미 성숙한 축이다.
+  - wave1_category: TRADE
+    concept_type: [TRADE_TYPE, BUYER_TYPE]
+    code_prefix: ["TRADE.*", "BUYER.*"]
+    example_codes: ["TRADE.OEM", "TRADE.PRIVATE_LABEL", "BUYER.DEPARTMENT_STORE"]
+    c3_row: "바이어 거래유형"
+    note: "C-3 §1과 실측 일치(두 접두어 모두 포함하는 것까지 일치)."
+  - wave1_category: REGION
+    concept_type: REGION
+    code_prefix: "REGION.*"
+    example_codes: ["REGION.KR", "REGION.KR.SEOUL", "REGION.KR.BUSAN"]
+    c3_row: "(6개 카테고리 표에 명시적 언급 없음)"
+    note: >
+      CTR-003 acceptance가 명시적으로 확인을 요구한 항목: REGION은 C-3 §1 표에는
+      없지만 (1) catalog.v1.json에 concept_type=REGION으로 19개 코드가 이미 존재하고,
+      (2) feature_builder.py의 _COMPONENT_BY_CODE_PREFIX가 "REGION": "region"으로
+      이미 실사용 중이다(코드로 실측 확인). 결론: 신규 매핑이 필요한 것이 아니라
+      C-3 §1 표의 누락 - 실제로는 이미 REUSED_AS_IS 상태의 성숙한 카테고리다.
+
+# --------------------------------------------------------------------------
+# 2. WAVE-1 8개 카테고리에 없지만 실제 카탈로그에 존재하는 추가 concept_type
+# --------------------------------------------------------------------------
+# 참고용 - 다른 트랙(특히 AI_SEARCH, USER_WEB)이 "이 축은 어디에 있나" 헷갈리지 않도록
+# 8개 카테고리 밖의 나머지 concept_type도 전부 명시한다. 전부 REUSED_AS_IS.
+additional_concept_types:
+  - concept_type: PROFILE_TYPE
+    code_prefix: "PROFILE.*"
+    purpose: "사용자 유형 축 (일반관람객/소비자바이어/비즈니스바이어/업계 등)"
+  - concept_type: INGREDIENT
+    code_prefix: "INGREDIENT.*"
+    purpose: "원재료 (쌀/밀/보리 등) - 제품 속성"
+  - concept_type: TASTE
+    code_prefix: "TASTE.*"
+    purpose: "맛 프로파일 - W-5 sensory 컴포넌트"
+  - concept_type: AROMA
+    code_prefix: "AROMA.*"
+    purpose: "향 프로파일 - W-5 sensory 컴포넌트"
+  - concept_type: ALCOHOL_LEVEL
+    code_prefix: "ALCOHOL_LEVEL.*"
+    purpose: "도수 구간 - W-5 alcohol 컴포넌트"
+  - concept_type: PRICE_BAND
+    code_prefix: "PRICE_BAND.*"
+    purpose: "가격대 구간 (derive_band()로 숫자->코드 변환)"
+  - concept_type: PRODUCT_FEATURE
+    code_prefix: "FEATURE.*"
+    purpose: "제품 특징(프리미엄/디자인 등)"
+  - concept_type: SUPPLY_CAPACITY
+    code_prefix: "CAPACITY.*"
+    purpose: "공급역량 구간 - B2B 매칭 order_scale 관련"
+  - concept_type: MEETING_TOPIC
+    code_prefix: "MEETING.*"
+    purpose: "상담 주제 - interaction.meeting과 무관한 온톨로지 축(exhibitor.staff_topic)"
+  - concept_type: BOOTH_STATUS
+    code_prefix: "BOOTH_STATUS.*"
+    purpose: "부스 운영 상태값의 온톨로지 표현"
+  - concept_type: PRODUCT_STATUS
+    code_prefix: "PRODUCT_STATUS.*"
+    purpose: "제품 판매/재고 상태값의 온톨로지 표현"
+  - concept_type: CONGESTION
+    code_prefix: "CONGESTION.*"
+    purpose: "부스 혼잡도 구간"
+  - concept_type: ACTION
+    code_prefix: "ACTION.*"
+    purpose: "행동 이벤트 유형(impression/click/favorite/dismiss 등)"
+
+# --------------------------------------------------------------------------
+# 3. 코드별 필드 정의 (catalog.v1.json concept 객체 그대로, 요약)
+# --------------------------------------------------------------------------
+concept_fields:
+  code:
+    type: string
+    pattern: '^[A-Z][A-Z0-9_]*(?:\.[A-Z][A-Z0-9_]*)+$'
+    description: "전역 고유 개념 코드. 최상위 접두어가 concept_type을 식별한다."
+  concept_type:
+    type: string
+    description: "23개 폐쇄형 값 중 하나 (위 1절/2절 목록)"
+  parent:
+    type: string
+    nullable: true
+    description: "동일 concept_type 내 상위 코드 (계층 구조, 사이클 금지)"
+  label_ko:
+    type: string
+    required: true
+    description: "한국어 표시 라벨 (필수)"
+  label_en:
+    type: string
+    nullable: true
+    description: "영어 표시 라벨 (선택 - catalog.v1.json에 en 라벨이 없는 코드는 ko로 폴백)"
+  description:
+    type: string
+    nullable: true
+  data_type:
+    type: string
+    enum: [CODE, NUMBER, BOOLEAN, TEXT]
+    default: CODE
+  assignable:
+    type: boolean
+    default: true
+    description: "false면 분류 그룹 노드일 뿐 실제 값으로 할당 불가(예: *.ALL)"
+  sort_order:
+    type: integer
+    default: 0
+  status:
+    type: string
+    enum: [ACTIVE]
+    note: "concept_revision.status - 이번 버전은 전부 ACTIVE"
+
+# --------------------------------------------------------------------------
+# 4. 동의어(다국어) 필드 정의
+# --------------------------------------------------------------------------
+synonym_fields:
+  concept_code: { type: string, description: "대상 개념 코드" }
+  text: { type: string, description: "동의어 원문" }
+  locale:
+    type: string
+    default: "ko-KR"
+    note: >
+      K-6(다국어) 지원언어는 한국어+영어이나, catalog.v1.json 실측 결과 ko-KR 유사어
+      11건만 있고 en 유사어는 0건이다(AIS-002가 이미 회귀 테스트로 확인,
+      backend/tests/test_ontology_api.py, AIS-002-followup 참고). 이 계약은 스키마
+      상 en locale을 이미 지원하지만, 데이터가 없는 상태다 - 데이터 추가는 별도 작업.
+  context:
+    type: string
+    default: "ANY"
+    description: "PRODUCT/CONSUMER/BUYER 등 컨텍스트 스코핑 (ANY는 전체 컨텍스트)"
+  priority: { type: integer, default: 100, description: "낮을수록 우선 매칭" }
+  approval_status:
+    type: string
+    enum: [APPROVED]
+    note: "seed 데이터는 전부 APPROVED (emit_postgres_seed 참고)"
+
+# --------------------------------------------------------------------------
+# 5. 파생 구간(derived_bands) - 숫자 -> 코드 변환
+# --------------------------------------------------------------------------
+derived_bands:
+  - metric: alcohol_percentage
+    target_concept_type: ALCOHOL_LEVEL
+    description: "도수(%) 숫자 값을 ALCOHOL_LEVEL.* 코드로 변환 (derive_band())"
+  - metric: price_krw
+    target_concept_type: PRICE_BAND
+    description: "가격(원) 숫자 값을 PRICE_BAND.* 코드로 변환 (derive_band())"
+
+# --------------------------------------------------------------------------
+# 6. 관계(concept_relation) 유형
+# --------------------------------------------------------------------------
+relation_types: [IS_A, RELATED_TO, MATCHES_GOAL, SIMILAR_TO, COMPLEMENTS, CONFLICTS_WITH]
+
+# --------------------------------------------------------------------------
+# 7. 버전 관리
+# --------------------------------------------------------------------------
+versioning:
+  scheme: "semantic X.Y.Z (metadata.version)"
+  statuses: [DRAFT, REVIEW, PUBLISHED, RETIRED]
+  current_status: PUBLISHED
+  immutability_rule: >
+    ontology.concept_revision의 PUBLISHED/RETIRED 버전 하위 행은 DB 트리거로 변경·삭제를
+    거부한다(db-erd-table-spec.md §11.2) - 수정은 새 버전 발행으로만 한다. 이 규칙은
+    이번 CTR-003으로 바뀌지 않는다(REUSED_AS_IS).
+
+# --------------------------------------------------------------------------
+# 8. 이 계약을 소비하는 다른 계약/트랙
+# --------------------------------------------------------------------------
+consumers:
+  - "CTR-002 (openapi.yaml) - /api/v1/ontology/* 응답 스키마, /search 요청의 concept_codes 필드 검증 규칙"
+  - "AIS-005 (ai/schemas) - 자연어 질의 출력 Schema의 concept_codes/excluded_concept_codes 필드가 허용하는 코드 집합"
+  - "USER_WEB/GUEST_WEB - 카테고리 브라우징 UI가 assignable=true인 코드만 사용자에게 노출"

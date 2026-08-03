@@ -1,0 +1,15 @@
+# Next.js build output / TS incremental cache - never commit generated artifacts.
+.next/
+out/
+tsconfig.tsbuildinfo
+
+# node_modules is already ignored at repo root, kept here for clarity when
+# working inside apps/kiosk directly.
+node_modules/
+
+# Local env overrides (committed template is .env.example only).
+.env
+.env.local
+
+# OS cruft
+.DS_Store

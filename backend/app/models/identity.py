@@ -39,10 +39,12 @@ profile.role / profile.user_role에 대한 메모:
     강제하는 조건부 제약은 role_code가 별 테이블(profile.role)에 있어 순수 CHECK로 표현할
     수 없으므로 애플리케이션 계층(서비스 레이어) 검증으로 남겨 둔다 - 아래 TODO 참고.
 
-    user_role.exhibitor_id는 exhibition.exhibitor(업체 마스터)를 가리켜야 하지만 그 테이블은
-    exhibition 도메인 담당 에이전트의 책임이라 아직 존재하지 않는다. app/models/profile.py가
-    이미 채택한 관례와 동일하게, 존재하지 않는 테이블에 대한 FK 제약은 걸지 않고 값만
-    저장한다(정합성은 애플리케이션 계층 + 통합 단계에서 FK 추가로 보강).
+    [갱신] user_role.exhibitor_id는 exhibition.exhibitor(업체 마스터)를 가리킨다. 이 문단을
+    처음 쓴 시점에는 exhibition 도메인이 아직 없어 FK를 걸지 않았지만, app/models/exhibitor.py가
+    나온 뒤 __table_args__의 fk_user_role_exhibitor_boundary 복합 FK
+    (tenant_id, exhibitor_id) -> exhibition.exhibitor(tenant_id, exhibitor_id)로 이미
+    연결되어 있다. exhibitor_id가 NULL인 행(전역/이벤트 스코프 역할)은 FK가 자동으로
+    통과하므로 이 컬럼을 nullable로 유지하는 것과 충돌하지 않는다.
 """
 
 from __future__ import annotations
@@ -333,7 +335,9 @@ class UserRole(Base):
     role_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey(f"{SCHEMA_PROFILE}.role.role_id"), nullable=False
     )
-    # exhibition.exhibitor가 아직 없어 FK를 걸지 않는다 (모듈 docstring 참고).
+    # 단일 컬럼 FK는 없지만 __table_args__의 fk_user_role_exhibitor_boundary 복합 FK가
+    # (tenant_id, exhibitor_id) -> exhibition.exhibitor(tenant_id, exhibitor_id)를
+    # 강제한다 (모듈 docstring "[갱신]" 메모 참고).
     exhibitor_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )

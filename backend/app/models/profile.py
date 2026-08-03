@@ -203,6 +203,9 @@ class UserProfile(Base):
     buyer_need: Mapped[BuyerNeed | None] = relationship(
         back_populates="profile", cascade="all, delete-orphan", uselist=False
     )
+    saved_recommendables: Mapped[list[SavedRecommendable]] = relationship(
+        back_populates="profile", cascade="all, delete-orphan"
+    )
 
 
 class ProfileAttribute(Base):
@@ -681,3 +684,45 @@ class BuyerNeed(Base):
     )
 
     profile: Mapped[UserProfile] = relationship(back_populates="buyer_need")
+
+
+class SavedRecommendable(Base):
+    """profile.saved_recommendable - W-8 §4 / CTR-006.
+
+    사전등록 사용자의 관심 업체·부스·제품 저장 상태를 표현한다. CR-001 이후 GUEST_WEB
+    임시 관심목록은 지속 식별정보 없이 guest_session 소유 임시 UserProfile을 만든 뒤 이
+    테이블을 재사용하고, 등록 전환 시 명시 동의에 따라 지속 프로파일로 이동한다. 중복 저장은
+    UNIQUE(profile_id, recommendable_id)로 막고, 삭제는 API 계층의 DELETE 토글로 처리한다.
+    """
+
+    __tablename__ = "saved_recommendable"
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_id",
+            "recommendable_id",
+            name="uq_saved_recommendable_profile_target",
+        ),
+        Index("idx_saved_recommendable_profile", "profile_id", "saved_at"),
+        Index("idx_saved_recommendable_target", "recommendable_id", "saved_at"),
+        {"schema": SCHEMA_PROFILE},
+    )
+
+    saved_recommendable_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_new_uuid
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_PROFILE}.user_profile.profile_id"),
+        nullable=False,
+    )
+    recommendable_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_EXHIBITION}.recommendable.recommendable_id"),
+        nullable=False,
+    )
+    saved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    saved_context_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    profile: Mapped[UserProfile] = relationship(back_populates="saved_recommendables")
