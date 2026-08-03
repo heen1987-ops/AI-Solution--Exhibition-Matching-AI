@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export type SyncStatus = "synced" | "syncing" | "offline" | "error";
 
@@ -181,7 +182,9 @@ export default function TopBar({
   syncStatus = "synced",
 }: TopBarProps) {
   const isOnline = useIsOnline();
+  const pathname = usePathname();
   const effectiveStatus: SyncStatus = !isOnline ? "offline" : syncStatus;
+  const isVenueDirections = pathname === "/map";
 
   return (
     <header
@@ -209,19 +212,21 @@ export default function TopBar({
         <div className="topbar-status flex items-center gap-2 py-2">
           <div className="flex flex-col items-end text-xs" style={{ color: "var(--color-text-muted)" }}>
             <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>
-              {currentZone ?? "구역 미확인"}
+              {isVenueDirections ? "EXCO 3홀" : (currentZone ?? "구역 미확인")}
             </span>
             {zoneObservedAt ? <span>확인 {zoneObservedAt}</span> : null}
           </div>
-          <button
-            type="button"
-            onClick={onRefreshLocation}
-            className="tap-target rounded-full"
-            style={{ color: "var(--color-brand)" }}
-            aria-label="위치 갱신"
-          >
-            <IconRefresh />
-          </button>
+          {!isVenueDirections ? (
+            <button
+              type="button"
+              onClick={onRefreshLocation}
+              className="tap-target rounded-full"
+              style={{ color: "var(--color-brand)" }}
+              aria-label="위치 갱신"
+            >
+              <IconRefresh />
+            </button>
+          ) : null}
           <SyncBadge status={effectiveStatus} />
         </div>
       </div>
