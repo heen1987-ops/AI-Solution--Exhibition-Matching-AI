@@ -7,96 +7,108 @@ gates:
     criteria:
       - id: g0-1
         desc: "모든 앱이 로컬에서 실행"
-        status: BLOCKED
-        note: "apps/user-web, apps/kiosk, apps/admin이 아직 존재하지 않음 (FND-002 이후 가능)"
+        status: PASSED
+        note: "CR-001 WEB_ONLY MVP 실행 앱 기준 통과: user-web/admin dev 서버로 E2E/perf smoke 실행, backend uvicorn /health/live 200 확인. 기존 apps/kiosk는 cleanup 참고자료"
       - id: g0-2
         desc: "Docker Compose 실행"
-        status: LIKELY_PASS
-        note: "docker-compose.yml 존재(postgres+redis), FND-004에서 재검증 필요"
+        status: BLOCKED
+        note: "infra/scripts/verify-docker-stack 추가. 현재 세션은 docker command 부재로 NOT_RUN, Docker 가용 환경에서 compose health/backend image build 재검증 필요"
       - id: g0-3
         desc: "PostgreSQL 연결"
-        status: LIKELY_PASS
-        note: "이전 세션에서 실제 Postgres 대상 통합 테스트 통과 이력 있음, FND-004에서 재검증"
+        status: PASSED
+        note: "임시 PostgreSQL 17 + pgvector clean DB에서 migration roundtrip 통과. Docker Compose postgres health는 g0-2/FND-004에 남김"
       - id: g0-4
         desc: "Redis 연결"
         status: UNVERIFIED
         note: "현재 백엔드 코드가 Redis를 실제로 사용하는 경로가 없음(캐시 미구현) - C-7에서 설계만 존재"
       - id: g0-5
         desc: "Health Check 성공"
-        status: LIKELY_PASS
-        note: "backend/app/main.py에 /healthz 존재(README 기준), FND-004에서 재검증"
+        status: PARTIAL_PASS
+        note: "QAS-006으로 /health/live, /health/ready, /api/v1/system/info, /healthz 테스트 반영 및 통과. 실제 Docker/Redis/Postgres ready 상태는 FND-004에서 재검증"
       - id: g0-6
         desc: "CI 기본 파이프라인 성공"
-        status: NOT_STARTED
-        note: ".github/workflows 없음 - FND-003"
+        status: PARTIAL_PASS
+        note: ".github/workflows/ci.yml 존재 및 WEB_ONLY frontend/e2e/performance/docker verifier jobs로 확장. YAML 파싱과 주요 로컬 명령 통과. infra/scripts/verify-github-actions 추가, 원격은 아직 workflow 미노출/미실행"
 
   G1_CONTRACT_FREEZE:
-    status: NOT_STARTED
+    status: PASSED
     criteria:
       - id: g1-1
         desc: "도메인 모델 확정"
-        status: NOT_STARTED
-        note: "CTR-001. docs/redesign-v2 26개 문서가 근거 자료로는 이미 존재"
+        status: PASSED
+        note: "CTR-001 완료. docs/redesign-v2 26개 문서 + 실제 backend 모델 대조 완료"
       - id: g1-2
         desc: "OpenAPI 유효"
-        status: NOT_STARTED
-        note: "CTR-002"
+        status: PASSED
+        note: "CTR-002 완료. openapi-spec-validator 통과 이력 있음"
       - id: g1-3
         desc: "DB 스키마 초안"
-        status: PARTIAL_PASS
-        note: "8개 Alembic 마이그레이션 기존 존재. CTR-006(saved_recommendable)만 추가 필요"
+        status: PASSED
+        note: "CTR-006 profile.saved_recommendable + CTR-007 ai.* 6테이블 추가. PostgreSQL 17 + pgvector 임시 DB에서 upgrade/downgrade 왕복 성공"
       - id: g1-4
         desc: "온톨로지 유효"
-        status: LIKELY_PASS
-        note: "src/meet_ai/ontology validate CLI로 259개 개념 검증 이력 있음. CTR-003에서 계약 파일화만 필요"
+        status: PASSED
+        note: "CTR-003 완료. catalog.v1.json 실측 259개 concept 기준 계약 파일화"
       - id: g1-5
         desc: "오류코드 정의"
-        status: NOT_STARTED
-        note: "CTR-004"
+        status: PASSED
+        note: "CTR-004 완료. OpenAPI 오류 envelope와 error-codes.yaml 정합"
       - id: g1-6
         desc: "API Mock 동작"
-        status: NOT_STARTED
-        note: "WEB-001/KSK-001/ADM-001"
+        status: PASSED
+        note: "WEB-001/KSK-001/ADM-001 화면 골격과 mock 데이터 존재 이력. CR-001 이후 신규 검증은 user-web 게스트 웹 흐름으로 대체"
       - id: g1-7
         desc: "계약 변경절차 정의"
         status: PASSED
         note: "본 메타프롬프트 §8(CHANGE_REQUEST 절차) 자체가 절차 정의 - AGENTS.md에 반영됨"
 
   G2_FEATURE_COMPLETE:
-    status: NOT_STARTED
+    status: IN_PROGRESS
     criteria:
-      - { id: g2-1, desc: "핵심 API 구현", status: NOT_STARTED, note: "BAC-GROUP-001" }
-      - { id: g2-2, desc: "user-web 핵심 흐름 구현", status: NOT_STARTED, note: "WEB-GROUP-001" }
-      - { id: g2-3, desc: "kiosk 핵심 흐름 구현", status: NOT_STARTED, note: "KSK-GROUP-001" }
-      - { id: g2-4, desc: "admin 핵심 흐름 구현", status: NOT_STARTED, note: "ADM-GROUP-001" }
+      - { id: g2-1, desc: "핵심 API 구현", status: PASSED, note: "BAC-002~BAC-011 및 BAC-GROUP-001 완료. static OpenAPI 대비 runtime operationId missing/mismatch 0" }
+      - { id: g2-2, desc: "user-web 핵심 흐름 구현", status: PASSED, note: "WEB-GROUP-001 완료: profile/recommendations/search/favorites/buyer matches/company detail API-first loader, fallback, dynamic route 고정" }
+      - { id: g2-3, desc: "guest web 핵심 흐름 구현", status: PASSED, note: "WEB-GROUP-001 완료: GUEST_WEB 검색은 /guest/sessions 후 /search 호출, 모바일 Playwright smoke 확인" }
+      - { id: g2-4, desc: "admin 핵심 흐름 구현", status: PASSED, note: "ADM-GROUP-001 완료: content approval/booth status API 폼, buyer verification/statistics 계약 대기 패널, Playwright smoke 통과" }
       - id: g2-5
         desc: "검색·추천 구현"
         status: PARTIAL_PASS
-        note: "구조화 검색(RRF)·하드필터·컨텍스트재랭킹·이유생성은 이미 구현됨(AIS-GROUP-001은 키워드·벡터 채널 및 키오스크 점수식만 추가)"
+        note: "AIS-GROUP-001/CTR-012/BAC-008 완료: GUEST_WEB Gold Set, RRF combiner, 구조화 Provider adapter, GUEST_WEB_SEARCH_SCORE_V1, 회복 정책, search_session 채널 CHECK, FTS/pgvector 인덱스, 검색·추천 API 파사드 구현 완료. KEYWORD/VECTOR provider 실제 query adapter는 후속"
       - id: g2-6
         desc: "상담 최소 기능 구현"
-        status: NOT_STARTED
-        note: "Meeting/MeetingStatusHistory/MeetingContactShare 모델은 존재, API 미구현 - BAC-GROUP-001"
-      - { id: g2-7, desc: "권한 적용", status: NOT_STARTED, note: "profile.UserRole 스키마는 존재, 인가 로직 미구현" }
+        status: PARTIAL_PASS
+        note: "BAC-006으로 REQUESTED 생성, 상태전이, CONFIRMED 연락처 공유 트리거 구현. DB 계약 테스트와 암호화 메시지 저장은 후속"
+      - { id: g2-7, desc: "권한 적용", status: PARTIAL_PASS, note: "BAC-009로 인증/권한 오류 envelope 회귀 테스트 추가. 정식 role 기반 인가는 후속" }
 
   G3_MVP_RELEASE:
-    status: NOT_STARTED
+    status: BLOCKED_EXTERNAL
     criteria:
-      - { id: g3-1, desc: "Lint 성공", status: NOT_STARTED }
-      - { id: g3-2, desc: "Type Check 성공", status: NOT_STARTED }
+      - { id: g3-1, desc: "Lint 성공", status: PASSED, note: "backend ruff, AI/src ruff, user-web/admin ESLint, tests/security ruff 통과" }
+      - { id: g3-2, desc: "Type Check 성공", status: PASSED, note: "root tsc --noEmit, admin typecheck, user-web/admin Next build TypeScript 통과" }
       - id: g3-3
         desc: "Unit Test 성공"
-        status: PARTIAL_PASS
-        note: "이전 세션 기준 83개 유닛 테스트 존재·통과 이력. 신규 코드 추가 시 재검증 필요"
+        status: PASSED
+        note: "user-web Vitest 12 passed, admin Vitest 8 passed, AI schema tests 60 passed, root/backend unit 포함 회귀 통과"
       - id: g3-4
         desc: "Integration Test 성공"
-        status: PARTIAL_PASS
-        note: "이전 세션 기준 11개 DB 통합 테스트 존재·통과 이력"
-      - { id: g3-5, desc: "E2E 핵심 시나리오 성공", status: NOT_STARTED }
-      - { id: g3-6, desc: "Migration Test 성공", status: PARTIAL_PASS, note: "8개 마이그레이션 왕복 검증 이력, CTR-006 추가분은 재검증 필요" }
-      - { id: g3-7, desc: "AI Gold Set 기준 통과", status: NOT_STARTED, note: "AIS-001 선행 필요" }
-      - { id: g3-8, desc: "권한시험 성공", status: NOT_STARTED }
-      - { id: g3-9, desc: "개인정보 로그 노출 0건", status: NOT_STARTED }
-      - { id: g3-10, desc: "키오스크 세션 잔존 0건", status: NOT_STARTED }
-      - { id: g3-11, desc: "성능 목표 통과", status: NOT_STARTED }
-      - { id: g3-12, desc: "제외범위 위반 0건", status: NOT_STARTED, note: "PROJECT_SCOPE.md §제외범위 대비 매 작업 종료 시 점검" }
+        status: PASSED
+        note: "backend pytest 104 passed, 12 skipped; static OpenAPI/runtime route contract 포함"
+      - { id: g3-5, desc: "E2E 핵심 시나리오 성공", status: PASSED, note: "WEB_ONLY Playwright desktop/mobile Chromium 6 passed" }
+      - id: g3-5a
+        desc: "Wave 1 프런트 라우트 smoke"
+        status: PASSED
+        note: "QAS-GROUP-001에서 WEB_ONLY smoke로 재작성: user-web registered/guest/buyer + admin console"
+      - { id: g3-6, desc: "Migration Test 성공", status: PASSED, note: "임시 PostgreSQL 17 + pgvector clean DB에서 tests/api/test_db_migrations.py 통과 및 alembic upgrade head -> downgrade base -> upgrade head 전체 왕복 통과. 0013 HNSW index는 1536차원 partial expression index로 보정" }
+      - { id: g3-7, desc: "AI Gold Set 기준 통과", status: PASSED, note: "ai/evaluation/validate_gold_set.py PASS - 15 samples, 0 schema violations, 0 unknown concept codes" }
+      - { id: g3-8, desc: "권한시험 성공", status: PASSED, note: "BAC-009/BAC-011 backend auth/permission envelope tests + admin/user-web API header tests 통과" }
+      - { id: g3-9, desc: "개인정보 로그 노출 0건", status: PASSED, note: "tests/security/test_event_payload_privacy.py 통과 - event payload 직접식별정보 금지" }
+      - { id: g3-10, desc: "게스트 웹 세션 잔존 0건", status: PASSED, note: "tests/security/test_guest_session_lifecycle_static.py 통과 - convert 시 session expiry/code clear/visit detach, temp favorites active-session requirement 확인" }
+      - { id: g3-11, desc: "성능 목표 통과", status: PARTIAL_PASS, note: "WEB_ONLY HTTP perf smoke + load smoke 통과. Strict load 기준 p95: home 84.4ms, recommendations 109.5ms, guest search 84.5ms, company detail 81.8ms, admin console 75.9ms, error 0. 정식 부하·응답시간 목표는 대표 DB/동시성 환경 필요" }
+      - { id: g3-12, desc: "제외범위 위반 0건", status: PASSED, note: "infra/scripts/scope-violation-check 통과" }
+      - id: g3-13
+        desc: "게스트 웹 개인정보 입력필드 정적 검사"
+        status: PASSED
+        note: "scope-violation-check guest web 검사 확장 + tests/security/test_guest_web_privacy_static.py 통과"
+      - id: g3-14
+        desc: "Health API 회귀시험"
+        status: PASSED
+        note: "backend 전체 회귀 104 passed, 12 skipped에 health API 포함"

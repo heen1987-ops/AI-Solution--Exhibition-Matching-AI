@@ -16,7 +16,7 @@
 - `REUSED_WITH_CAVEAT`: 기존 테이블은 그대로 두되, 사용 범위 축소·API 레이어 매핑·값 목록 확장 등 코드 레벨 조정이 필요하다.
 - `NEW_REQUIRED`: 이번 재설계로 신규 테이블(또는 신규 스키마)이 필요하다.
 
-**소비자**: CTR-002(OpenAPI 초안)가 이 문서의 엔드포인트별 요청/응답 엔티티 매핑에 직접 의존한다. CTR-006(`saved_recommendable` 마이그레이션)은 §4의 확정 스키마를 그대로 구현한다. BACKEND/USER_WEB/KIOSK/ADMIN/AI_SEARCH 트랙은 각자 담당 화면·엔드포인트가 어느 테이블에 대응하는지 이 문서에서 찾는다.
+**소비자**: CTR-002(OpenAPI 초안)가 이 문서의 엔드포인트별 요청/응답 엔티티 매핑에 직접 의존한다. CTR-006(`saved_recommendable` 마이그레이션)은 §4의 확정 스키마를 그대로 구현한다. CR-001 이후 BACKEND/USER_WEB/ADMIN/AI_SEARCH 트랙은 각자 담당 화면·엔드포인트가 어느 테이블에 대응하는지 이 문서에서 찾는다. 기존 KIOSK 트랙 문서는 cleanup 참고자료로만 본다.
 
 **이 문서가 다루지 않는 것**: 실제 마이그레이션 코드, OpenAPI 스펙, 서비스 계층 구현. 이 문서는 참조 문서이지 구현이 아니다(AGENTS.md §11 "계획만 반복" 금지와는 별개로, CTR-001의 acceptance는 문서 산출물이다).
 
@@ -70,9 +70,9 @@
 | --- | --- |
 | 엔티티 | `profile.GuestSession` |
 | 실재 위치 | `backend/app/models/identity.py` |
-| 결정 문서 | `docs/redesign-v2/kiosk/K-1-service-scope.md` §0~1(entry_channel 3분할이 이미 웹/키오스크 분리를 예견), §4(자동 세션 초기화), §5(QR 인계); `K-5-map-location-qr.md` §5(`entry_code`를 QR 인계 토큰으로 재사용) |
-| 핵심 필드/제약 | `entry_channel IN ('QR','WEB','KIOSK')` - `KIOSK`=`KIOSK_GUEST`, `QR`=키오스크에서 인계된 `GUEST_WEB`, `WEB`=웹에서 직접 방문한 `GUEST_WEB`. 이름·연락처 컬럼이 **아예 없음**(개인정보 저장 자리 자체가 없는 구조) - `session_token_hmac`(원문 토큰 미저장), `entry_code`(nullable, QR 인계 토큰 값으로 재사용), `expires_at`(TTL, 정확한 초 단위는 K-8에서 미확정), `converted_user_id`/`converted_at`(회원 전환 이력). |
-| 상태 | `REUSED_AS_IS` (QR 인계 프로토콜은 신규 테이블 없이 기존 `entry_code` 컬럼 재사용으로 확정 - K-5 §5) |
+| 결정 문서 | CR-001(2026-08-02) `WEB_ONLY` 기준서. 기존 근거였던 `docs/redesign-v2/kiosk/K-1-service-scope.md`/`K-5-map-location-qr.md`는 deprecated kiosk 근거로만 보존한다. |
+| 핵심 필드/제약 | `entry_channel IN ('QR','WEB','KIOSK')` 제약은 이미 배포된 스키마 호환성 때문에 즉시 변경하지 않는다. CR-001 이후 신규 세션은 `WEB`을 `GUEST_WEB` 모바일 웹 세션으로 사용한다. `KIOSK`와 `QR`은 기존 구현 호환용 deprecated 값이며 신규 기능에서 사용하지 않는다. 이름·연락처 컬럼은 **아예 없음**(개인정보 저장 자리 자체가 없는 구조) - `session_token_hmac`(원문 토큰 미저장), `entry_code`(nullable, 사전등록 개인 링크/배지 QR 같은 단기 profile link token으로 재사용 가능), `expires_at`(TTL), `converted_user_id`/`converted_at`(회원 전환 이력). |
+| 상태 | `REUSED_WITH_CR001_SCOPE_CHANGE` (GUEST_WEB 세션 정본. 기존 KIOSK/QR 용법은 cleanup 전까지 deprecated) |
 
 ---
 
@@ -144,7 +144,7 @@
 | 실재 위치 | `backend/app/models/matching.py` (스키마는 `exhibition`) |
 | 결정 문서 | `docs/redesign-v2/common/C-1-exhibitor-booth-data-model.md` §2("마스터 스펙 §6에 대응 개념 없음 - 구현 세부사항이라 상위 스펙에 안 나온 것으로 해석, 그대로 유지"), `common/C-4-search-recommendation-engine.md` §4(승인 게이트) |
 | 핵심 필드/제약 | `object_type IN ('BOOTH','EVENT_PRODUCT','EXHIBITOR','PROGRAM')`, `num_nonnulls(booth_id, event_product_id, participation_id, program_id) = 1`(정확히 하나의 대상), 각 FK 컬럼에 partial unique(대상당 recommendable 1개). **미승인 업체 차단 최종 결정(C-4 §4)**: 사후 비활성 플래그가 아니라 **사전 등록 게이트** - `master_approval_status = 'APPROVED'`인 업체·제품만 애초에 레지스트리 행을 생성한다. 승인이 철회되면 소프트 삭제(비활성화)로 처리. |
-| 소비처 | `profile.saved_recommendable`(§4)이 FK로 참조, `matching.match_result`/`matching.filter_result`가 FK로 참조, K-4의 검색 결과도 궁극적으로 이 ID를 반환. |
+| 소비처 | `profile.saved_recommendable`(§4)이 FK로 참조, `matching.match_result`/`matching.filter_result`가 FK로 참조, CR-001 이후 GUEST_WEB 검색 결과도 궁극적으로 이 ID를 반환. |
 | 상태 | `REUSED_AS_IS`(테이블 자체) + `REUSED_WITH_CAVEAT`(등록 게이트 로직은 C-2의 `ai.content_approval`이 확정되는 시점에 서비스 계층이 새로 연동해야 함 - `04-integration-roadmap.md` 3단계 3-F) |
 
 ---
@@ -158,9 +158,9 @@
 | 결정 문서 | `docs/redesign-v2/web/W-5-recommendation-logic.md`(전체), `common/C-4-search-recommendation-engine.md` §1~2 |
 | 핵심 필드/제약 | `MatchPolicyVersion`: `(tenant_id, event_id, user_type)`당 `status='ACTIVE'` 정책 최대 1개(partial unique). `FilterResult.result IN ('PASS','FAIL','UNKNOWN','CONDITIONAL_PASS','MANUAL_REVIEW','TEMPORARY_BLOCK','POLICY_BLOCK','USER_EXCLUDED')`(8종 - CTR-004 오류코드 매핑의 근거 어휘). `MatchResult.recommended_action`은 `0008_widen_recommended_action` 마이그레이션으로 CONSUMER 7종 + BUYER/EXHIBITOR 3종(`REQUEST_INFORMATION`/`CONFIRM_TRADE_CONDITION`/`DO_NOT_PUSH`) 합집합 10종을 허용하도록 이미 확장됨. |
 | **재계량 결정(W-5, 신규 스키마 아님)** | 기존 `src/meet_ai/scoring/engine.py`의 `CONSUMER_SCORE_V1`/`BUYER_SCORE_V1`을 그대로 재사용하되 §57 비율로 **가중치만 재조정**(`ScoringPolicy.weights`, 코드 변경 - `04-integration-roadmap.md` 2단계 2-B). 컴포넌트 재그룹(예: price/moq/capacity를 order_scale로 합치기)은 **하지 않는다** - 계산은 세분화된 채로, 표시만 마스터 스펙 어휘에 맞춘다(W-5 §3). `current_query`(웹의 실시간 검색결과 반영) 컴포넌트는 `feature_builder.py`에 **신규 추가 필요**(코드 변경, C-4 선행 필요 - `04-integration-roadmap.md` 3단계 3-E). |
-| **키오스크 전용 신규 정책(코드, 테이블 아님)** | `KIOSK_SEARCH_SCORE_V1`(0.45 Semantic + 0.30 Keyword + 0.15 Category + 0.05 Data Quality + 0.05 Booth Availability) - 웹의 `CONSUMER_SCORE_V1`을 변형한 것이 아니라 **완전히 별개의 신규 `ScoringPolicy` 객체**(C-4 §2, `04-integration-roadmap.md` 3단계 3-D). `MatchPolicyVersion`/`MatchWeight` 테이블 구조 자체는 무변경 - 새 `policy_version` 행 + `match_weight` 행들만 데이터로 추가하면 된다. |
+| **deprecated kiosk scoring 후보** | CTR-001 시점에는 `KIOSK_SEARCH_SCORE_V1` 신규 정책 후보가 있었으나 CR-001 이후 전용 KIOSK 채널이 MVP 제외되었으므로 신규 구현하지 않는다. AIS-GROUP-001은 GUEST_WEB 세션 의도·무결과 회복·다국어 검색 품질 기준으로 재정의한다. |
 | **검색 레이어 결정** | RRF(후보 검색, C-4 책임)와 가중합(점수 계산, W-5/K-4 책임)은 **서로 다른 레이어라 공존**한다(대체 관계 아님) - C-4 §1 최종 결정. |
-| 상태 | `REUSED_AS_IS`(테이블 스키마) + `REUSED_WITH_CAVEAT`(가중치 재조정·신규 정책 데이터·`current_query` 컴포넌트는 코드/데이터 변경, AI_SEARCH 트랙 담당) |
+| 상태 | `REUSED_AS_IS`(테이블 스키마) + `REUSED_WITH_CAVEAT`(웹 가중치 재조정·`current_query` 컴포넌트·GUEST_WEB 세션 의도 품질은 코드/데이터 변경, AI_SEARCH 트랙 담당) |
 
 ---
 
@@ -211,12 +211,12 @@
 | 항목 | 내용 |
 | --- | --- |
 | 엔티티 | `ai.source_document`, `ai.extracted_attribute`, `ai.content_approval`, `ai.ai_execution_log`, `ai.embedding_document`, `ai.embedding_vector` |
-| 실재 위치 | **NEW — 스키마 상수(`SCHEMA_AI = "ai"`)만 존재, 테이블은 하나도 구현되지 않음.** `backend/app/models/*.py` 전체에 대응 모델 파일 없음(C-2 §0에서 명시적으로 확인: "이전 세션에서 vector/behavior/popularity 검색이 `ai.object_embedding` 등 인프라 부재로 막혀 있다고 확인한 것과 같은 공백"). |
+| 실재 위치 | `backend/app/models/ai.py`, migration `0012_ai_schema`. CTR-012가 `0013_search_web_only_indexes`에서 `ai.embedding_document.content_excerpt` FTS index와 `ai.embedding_vector` 1536차원 partial pgvector HNSW cosine index를 추가했다. |
 | 결정 문서 | `docs/redesign-v2/common/C-2-content-collection-ai-structuring.md` §0~2(4개 테이블 설계), `common/C-4-search-recommendation-engine.md` §3(임베딩 2개 테이블 + pgvector 확장). 실행 항목: `04-integration-roadmap.md` 1단계 1-B/1-C(병렬 가능, 선행 의존성 없음). |
 | 신규 테이블 설계 (C-2 §2 그대로) | `ai.source_document`(참가신청서·업체소개·제품자료 원본 - 문서 유형, 업체/제품 FK, 저장 위치), `ai.extracted_attribute`(AI 추출 속성 후보 - `attribute_code`/`value`/`confidence`/상태 `PENDING`\|`CONFIRMED`\|`REJECTED`, `ontology.concept`와 동일 코드 체계 공유 - 업체 전용 하위 집합 없음, C-3 §2에서 재확인), `ai.content_approval`(운영자 승인 이력 - `approved_by`/`approved_at`/전후 `master_approval_status`, 승인 확정 시 서비스 로직이 `exhibition.exhibitor.master_approval_status`를 갱신), `ai.ai_execution_log`(AI 호출 로그 - 모델·프롬프트 버전, 입력 참조, 실행시간, 성공/실패). |
 | 임베딩 (C-4 §3) | `ai.embedding_document` / `ai.embedding_vector` - pgvector 확장 활성화 필요(마스터 스펙 §5 기술스택에 이미 명시, 전용 벡터DB 도입 아님 - PROJECT_SCOPE.md 제외범위 "전용 벡터 데이터베이스" 원칙과 정합). 업체·제품 설명 텍스트 임베딩 + 자연어 질의 임베딩 코사인 유사도 비교용. **재계산 트리거 결정(C-5 §2)**: 즉시 동기 재계산이 아니라, `content_approval` 확정 시 비동기 워커(RQ/Celery) 큐잉 - 잡 완료 전까지는 이전 임베딩으로 검색 지속(짧은 지연 허용). |
 | 흐름 | 참가신청서 업로드(`source_document`) → AI 추출(`extracted_attribute` PENDING, 동시에 `ai_execution_log` 기록) → 업체 확인(CONFIRMED/REJECTED) → 운영자 승인(`content_approval` 생성, `Exhibitor.master_approval_status = APPROVED`) → 승인된 속성만 `Recommendable` 레지스트리 등록 게이트(§7) 통과. |
-| 상태 | `NEW_REQUIRED` — CTR 트랙 소관은 아니고(`.harness/locks.yaml`상 `backend/app/services/matching/**`, `src/meet_ai/scoring/**`는 AI_SEARCH 소유, 신규 `ai` 스키마 마이그레이션은 CONTRACTS 소유 `backend/alembic/versions/**`에 해당하므로 후속 CTR 태스크(현재 backlog에 전용 태스크 미배정 - CTR-002/003 이후 필요 시 신규 태스크로 등록 권장)가 담당해야 함 |
+| 상태 | `IMPLEMENTED` — CTR-007이 6개 ai 테이블과 pgvector extension을 추가했고, CTR-012가 검색용 FTS/ANN index strategy를 migration으로 고정했다. Query embedding 생성 어댑터와 실제 provider SQL은 BAC-008/후속 BACKEND 구현 책임이다. |
 
 ---
 
@@ -224,8 +224,8 @@
 
 이 문서의 엔티티 정의는 아니지만 §8/§11과 직결되어 다른 트랙이 혼동하지 않도록 명시한다.
 
-- **키워드 검색(FTS)**: PostgreSQL Full-Text Search를 `exhibition.Product`/`exhibition.Exhibitor`의 기존 텍스트 컬럼에 적용 - 신규 테이블 불필요, 인덱스만 추가(C-4 §3).
-- **벡터 검색**: §11의 `ai.embedding_document`/`ai.embedding_vector`에 의존.
+- **키워드 검색(FTS)**: PostgreSQL Full-Text Search를 `exhibition.Product`/`exhibition.Exhibitor`/`exhibition.ExhibitorParticipation`/`ai.EmbeddingDocument.content_excerpt`의 텍스트 컬럼에 적용한다. CTR-012 migration `0013_search_web_only_indexes`가 expression GIN index 전략을 고정했다.
+- **벡터 검색**: §11의 `ai.embedding_document`/`ai.embedding_vector`에 의존한다. CTR-012 migration `0013_search_web_only_indexes`가 `embedding_model`/`embedding_dimension` lookup index와 `embedding_dimension = 1536` active vector partial HNSW cosine ANN index를 추가했다.
 - **자연어 의도 추출**: LLM 호출 1회 → concept_id 목록, 실행 결과는 `ai.ai_execution_log`에 기록(§11).
 - 이 3채널은 기존 `reciprocal_rank_fusion`(candidate_generator.py)에 새 채널로 추가되는 것이지, 후보 검색 프레임워크 자체를 재설계하는 것이 아니다(K-4 §0, C-4 §1).
 
@@ -259,6 +259,88 @@
 - 정확한 API 요청/응답 스키마(경로·파라미터·상태코드) → **CTR-002**(OpenAPI 초안)가 담당. 이 문서의 §4/§7/§9/§11 표에 나열한 엔드포인트 목록(`04-integration-roadmap.md` 4단계)이 CTR-002의 입력이다.
 - `matching.filter_result.result` 8종 값을 실제 HTTP 오류코드로 매핑하는 작업 → **CTR-004**.
 - `src/meet_ai/ontology/catalog.v1.json`의 `concept_type` 체계를 계약 형식으로 요약 → **CTR-003**.
-- `ScoringPolicy.weights` 실제 수치 변경, `current_query`/`KIOSK_SEARCH_SCORE_V1` 실제 구현 → AI_SEARCH 트랙(AIS-GROUP-001, Wave 2).
+- `ScoringPolicy.weights` 실제 수치 변경, `current_query`, GUEST_WEB 세션 의도·무결과 회복 품질 구현 → AI_SEARCH 트랙(AIS-GROUP-001, Wave 2). `KIOSK_SEARCH_SCORE_V1`은 CR-001 이후 신규 구현하지 않는다.
 - `ai.*` 6개 테이블·pgvector 확장의 실제 Alembic 마이그레이션 코드 → 아직 backlog에 전용 태스크가 없음(§11 참고, 이번 CTR-001 산출물이 이 공백을 명시적으로 드러낸 것 - 다음 CONTRACTS 웨이브에서 신규 태스크로 등록 권장).
 - `profile.saved_recommendable`의 실제 마이그레이션 코드 → **CTR-006**(이미 backlog에 존재, 이 문서 §4가 그 입력).
+
+---
+
+## 15. WAVE-1 엔터티 크로스워크 (CTR-008)
+
+**목적**: 사용자가 Wave 1 도중 미리 전달한 별도 "WAVE-1" 실행 프롬프트(§7.1/§7.8, `.harness/assumptions.md` ASSUMPTION-010에 보존)가 나열한 엔터티/플랫 테이블 목록을, 위 §13 상태표와 1:1로 대조한다. ASSUMPTION-010의 결론대로 이 목록은 "처음부터 새로 만들 대상"이 아니라 "이름을 맞추고 정말 없는 것만 신규로 만들 대상"이다. 아래 표는 그 목록의 엔터티(객체) + 플랫 테이블명(DB) 둘 다를 한 행에 담는다. `backend/app/models/*.py` 실제 코드를 직접 grep해 재확인했다(도메인 모델 문서만 신뢰하지 않음).
+
+### 15.1 크로스워크 표
+
+| WAVE-1 엔터티 | WAVE-1 플랫 테이블명 | 실제 스키마.테이블 (있으면) | 판정 | 근거 |
+| --- | --- | --- | --- | --- |
+| Event | events | `exhibition.event` | REUSE | §1, §13 #2 |
+| RegisteredUser | registered_users | `profile.user_account` + `identity.user_identity` | REUSE | §13 #3 |
+| ExternalReference | external_references | 없음 (레거시 `docs/db-erd-table-spec.md` §19.2 `integration.external_reference` 설계는 있으나 `backend/app/models/*.py`에 대응 클래스 없음, `integration` 스키마는 상수만 존재) | **NEW_REQUIRED (이번 태스크에서는 마이그레이션 보류 — 아래 15.3 참고)** | db-erd §19.2, 26개 redesign-v2 문서 중 이 테이블을 신규 요구하는 문서 없음(사전등록 연계는 W-2/§1의 "행사별 사용자 프로파일"로 이미 대응됨) |
+| UserEventProfile | user_event_profiles | `profile.user_profile` | REUSE | §3, §13 #6 |
+| ProfileInterest | profile_interests | `profile.profile_attribute`(`attribute_code`가 `GOAL.*`/`CATEGORY.*`/`USE.*` 등 접두어인 행) | REUSE | §3, C-3 §1 |
+| BuyerProfile | buyer_profiles | `profile.buyer_need` | REUSE | §3, §13 #6 |
+| ConsentRecord | consent_records | `profile.user_consent` | REUSE | §10, §13 #14 |
+| Exhibitor | exhibitors | `exhibition.exhibitor` | REUSE | §6, §13 #9 |
+| EventParticipation | event_participations | `exhibition.exhibitor_participation` | REUSE | §6, §13 #9 |
+| ProductService | product_services | `exhibition.product` + `exhibition.event_product` | REUSE | §6, §13 #9 |
+| Booth | booths | `exhibition.booth` | REUSE | §6, §13 #9 |
+| BoothStatus | booth_statuses | `exhibition.booth_status_history` | REUSE | §6, §13 #9 |
+| ExhibitorInterest | exhibitor_interests | `exhibition.exhibitor_profile`/`product_profile`/`supply_profile_attribute` | REUSE | §6, §13 #9 |
+| PublicTradeCondition | public_trade_conditions | `exhibition.trade_condition` + `trade_condition_term` | REUSE | §6, §13 #9 |
+| SearchSession | search_sessions | 없음 (grep 확인: `backend/app/models/*.py` 전체에 `SearchSession`/`search_session` 없음) | **NEW_REQUIRED** | 아래 15.2 참고 - `matching.recommendation_session`은 `profile_id NOT NULL`이라 프로파일 없는 키오스크·GUEST_WEB 검색을 표현할 수 없음(코드로 확인, `backend/app/models/matching.py` `RecommendationSession.profile_id`) |
+| SearchQuery | search_queries | 없음 | **NEW_REQUIRED** | 위와 동일 |
+| SearchResult | search_results | 없음 | **NEW_REQUIRED** | 위와 동일 |
+| RecommendationSession | recommendation_sessions | `matching.recommendation_session` | REUSE | §8, §13 #11 |
+| RecommendationResult | recommendation_results | `matching.match_result` | REUSE | §8, §13 #11 |
+| Favorite | favorites | `profile.saved_recommendable`(CTR-006, NEW_REQUIRED이지만 이미 backlog 등록됨) | REUSE(예정) | §4, §13 #7 - 주의: 레거시 `docs/db-erd-table-spec.md` §16.1 `interaction.favorite` 설계는 W-8 §4가 `profile.saved_recommendable`로 대체 확정한 것으로 판단(스키마·소속이 다름) - 별도로 다시 만들지 않는다 |
+| GuestWebSession | guest_web_sessions | `profile.guest_session`(`entry_channel = 'WEB'`) | REUSE | CR-001 - 모바일 웹 게스트 세션. 장기 지문/PII 없음 |
+| GuestTemporaryFavorite | guest_temporary_favorites | 없음(서버 세션/Redis/제한된 브라우저 저장소 후보) | **NEW_REQUIRED_OR_CACHE_REQUIRED** | CR-001 - 로그인 전 임시 관심목록. 영속 DB 테이블로 만들지, Redis 세션으로 둘지는 후속 계약 필요 |
+| KioskDevice | kiosk_devices | `backend/app/models/kiosk.py` / migration `0010_kiosk` | **DEPRECATED_DO_NOT_EXTEND** | CR-001로 전용 키오스크 제외. 이미 생성된 마이그레이션은 삭제하지 않고 cleanup migration 전까지 유지 |
+| KioskConfig | kiosk_configs | `backend/app/models/kiosk.py` / migration `0010_kiosk` | **DEPRECATED_DO_NOT_EXTEND** | 위와 동일 |
+| KioskSession | kiosk_sessions | `profile.guest_session`(`entry_channel = 'KIOSK'`) | **DEPRECATED_DO_NOT_EXTEND** | CR-001 이후 신규 세션은 GUEST_WEB(`entry_channel='WEB'`) 사용 |
+| QrHandoff | qr_handoffs | `profile.guest_session.entry_code` | **RENAMED_TO_WEB_ENTRY_OR_PROFILE_LINK** | 키오스크 결과 인계가 아니라 행사 QR/관심분야 QR/부스 QR/사전등록 개인 링크의 단기 토큰으로 재정의 |
+| MeetingRequest | meeting_requests | `interaction.meeting` | REUSE | §9.1, §13 #12 |
+| MeetingStatusHistory | meeting_status_histories | `interaction.meeting_status_history` | REUSE | §9.1, §13 #12 |
+| SourceDocument | (목록 밖, 참고) | 없음 | NEW_REQUIRED (CTR-007 소관, 중복 등록 아님) | §11, §13 #15 |
+| ExtractedAttribute | (목록 밖, 참고) | 없음 | NEW_REQUIRED (CTR-007 소관) | §11, §13 #15 |
+| ContentApproval | (목록 밖, 참고) | 없음 | NEW_REQUIRED (CTR-007 소관) | §11, §13 #15 |
+| EmbeddingDocument | embedding_documents | 없음 | NEW_REQUIRED (CTR-007 소관) | §11, §13 #16 |
+| (EmbeddingVector) | embedding_vectors | 없음 | NEW_REQUIRED (CTR-007 소관) | §11, §13 #16 |
+| AiExecutionLog | (목록 밖, 참고) | 없음 | NEW_REQUIRED (CTR-007 소관) | §11, §13 #15 |
+| InteractionEvent | interaction_events | 없음 (레거시 `docs/db-erd-table-spec.md` §17.1 `interaction.interaction_event`(파티션 테이블) 설계는 있고, `backend/app/models/profile.py` `ProfileVersion.source_event_id` 주석이 "언젠가 이 테이블을 가리켜야 한다"고 명시적으로 예약해뒀으나 실제 테이블은 없음) | **NEW_REQUIRED (이번 태스크에서는 마이그레이션 보류 — 아래 15.3 참고)** | db-erd §17.1, `profile.py` L431-433 주석 |
+| AuditLog | audit_logs | `audit.audit_log` | REUSE | §10, §13 #14 |
+
+### 15.2 진짜 신규로 확정 - 이번 태스크에서 마이그레이션 생성
+
+**SearchSession/SearchQuery/SearchResult** (`backend/app/models/search.py`, `matching` 스키마): 웹 자연어 추가검색(W-2 §1-6)과 게스트 웹 검색(CR-001)이 공유하는 "프로파일 없이도 성립하는 검색" 채널을 표현한다. CTR-012 이후 `SearchSession.channel`은 `REGISTERED_WEB/GUEST_WEB/BUYER_WEB/ADMIN_PREVIEW`를 저장하며, legacy `WEB/KIOSK` 값은 migration에서 각각 `REGISTERED_WEB/GUEST_WEB`로 backfill한다. 기존 `matching.recommendation_session`/`matching.match_result`(§8)와 구조적으로 자매 관계이지만, 그쪽은 `profile_id NOT NULL`이라 GUEST_WEB 검색(프로파일 자체가 없음)을 담을 수 없어 별도 테이블이 필요하다. `exhibition.recommendable`(§7)을 그대로 결과 대상으로 재사용하므로 다형 FK나 신규 레지스트리는 만들지 않는다.
+
+**KioskDevice/KioskConfig** (`backend/app/models/kiosk.py`, `exhibition` 스키마): CTR-008 시점에는 신규로 확정되어 migration `0010_kiosk`까지 생성됐으나, CR-001에서 전용 키오스크가 MVP 제외로 재정의됐다. 따라서 이 테이블들은 **신규 기능에서 사용하지 않는 deprecated 자산**이다. 이미 생성된 migration 파일은 히스토리이므로 삭제하지 않는다. 실제 DB 적용 여부와 데이터 존재 여부를 확인한 뒤, 별도 cleanup migration으로 제거하거나 장기 보존(deprecated)한다. 즉시 파괴적 DROP 금지.
+
+### 15.2-CR001 WEB_ONLY 변경 후 신규·대체 계약
+
+**GuestWebSession**: `profile.guest_session(entry_channel='WEB')`을 정본으로 재사용한다. `session_token_hmac`, `language`, `expires_at`, `converted_user_id/converted_at`은 그대로 사용한다. CR-001 기준서가 제안한 `normalized_queries[]`, `selected_concept_codes[]`, `excluded_concept_codes[]`는 `matching.search_query`와 `matching.search_session`에 남기는 방식이 우선이며, `GuestSession`에 JSON 컬럼을 즉시 추가하지 않는다.
+
+**GuestTemporaryFavorite**: 로그인 전 임시 관심목록은 영속 프로파일 신호가 아니므로 `profile.saved_recommendable`에 직접 넣지 않는다. MVP 구현 선택지는 (a) Redis/session storage, (b) 별도 TTL 테이블이다. 현 시점에는 DB migration을 만들지 않고, BACKEND/USER_WEB 후속에서 TTL·동시성·전환 규칙을 확정한다.
+
+**WebEntryOrProfileLink**: 기존 `QrHandoff` 이름을 대체한다. QR 자체는 행사 진입, 관심분야 진입, 부스 상세 진입, 사전등록 개인 링크를 여는 웹 entry method이며, 키오스크 결과 인계가 아니다. 개인 링크 토큰은 단기·서명·1회성으로 설계하고 원문 PII를 포함하지 않는다.
+
+### 15.3 진짜 신규이나 이번 태스크 범위에서 보류 - 후속 태스크로 등록
+
+`ExternalReference`(사전등록 연계)와 `InteractionEvent`(행동 이벤트 로그)도 실제 테이블이 없는 것은 맞지만(15.1 확인), 다음 이유로 이번 CTR-008에서 마이그레이션을 만들지 않고 후속 태스크로만 등록한다(CTR-001이 §11 공백을 CTR-007로 등록했던 것과 같은 패턴, AGENTS.md §2 "새 기능 발견 시 몰래 포함하지 말고 기록"):
+
+1. **이 문서(CTR-001)의 26개 redesign-v2 문서 검토에서 이미 이 두 테이블을 NEW_REQUIRED로 결론 내리지 않았다** - `docs/redesign-v2/`의 W/K/C 문서 어디에도 "사전등록 시스템 연계 매핑 테이블을 지금 만들어야 한다"거나 "모든 사용자 행동을 파티션 테이블에 기록해야 한다"는 현재 Wave 요구가 없다. 두 테이블은 레거시 `docs/db-erd-table-spec.md`(재설계 이전 문서)에만 나온다.
+2. **실제로 이 둘이 필요해지는 시점이 이미 식별되어 있다** - `ExternalReference`는 `.harness/future-waves.md`의 WAVE 2B(`POST /api/v1/events/{event_id}/registration/sync`)가 실제로 사전등록 시스템과 연동할 때, `InteractionEvent`는 CTR-005(이벤트 카탈로그)가 정의하는 이벤트 타입들을 실제로 영속화해야 하는 시점(현재 CTR-005 범위는 "RQ/Celery 큐잉 트리거"이지 "모든 이벤트를 DB에 남기는 분석 테이블"이 아님 - 5절 참고)에 필요하다. 지금 만들면 아직 소비자가 없는 테이블이 된다.
+3. **AGENTS.md §11 "범위 밖 기능을 좋은 아이디어라는 이유로 구현하는 행위" 금지** - CTR-008의 backlog.yaml acceptance는 "SearchSession 계열, KioskDevice/KioskConfig 등"을 신규 마이그레이션 대상으로 명시했고, 이 두 테이블은 그 목록에 없다. 크로스워크 표에는 정직하게 NEW_REQUIRED로 기록하되, 마이그레이션 생성은 별도 CONTRACTS 태스크로 넘긴다.
+
+**등록**: `.harness/backlog.yaml`에 `CTR-009`(가칭, `integration.external_reference`/`integration.source_system`/`integration.sync_job` - Wave 2B 착수 전 필요) 및 `CTR-010`(가칭, `interaction.interaction_event` 파티션 테이블 - CTR-005 이벤트가 실제 영속화 대상이 되는 시점에 필요)로 후속 태스크를 신설했다(아래 §16 참고). 두 태스크 모두 `depends_on: []`, `status: PENDING_DECOMPOSITION`이며 트리거 조건이 명시돼 있다.
+
+---
+
+## 16. 후속 CONTRACTS 태스크 신설 (CTR-008 산출물)
+
+| ID | 제목 | 트리거 조건 |
+| --- | --- | --- |
+| CTR-009 | `integration.external_reference`/`source_system`/`sync_job` 마이그레이션 | Wave 2B(`.harness/future-waves.md`) 착수 확정 시 - 사전등록 시스템 연계가 실제 요구사항이 되는 시점 |
+| CTR-010 | `interaction.interaction_event` 파티션 테이블 마이그레이션 | CTR-005 이벤트 카탈로그의 이벤트들을 RQ/Celery 큐잉을 넘어 영속 로그로 남겨야 한다는 요구가 확정되는 시점(현재는 큐잉만 필요, §5 참고) |
+
+두 태스크는 `.harness/backlog.yaml`에 `status: PENDING_DECOMPOSITION`으로 등록했다(아래 backlog.yaml 변경 참고).

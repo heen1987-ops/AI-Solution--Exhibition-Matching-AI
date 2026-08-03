@@ -1,19 +1,21 @@
-import { MockDataBanner } from "@/components/MockDataBanner";
-import { currentMockProfile } from "@/lib/mock-data";
+import { DataSourceBanner } from "@/components/MockDataBanner";
+import { loadProfile } from "@/lib/api-client";
 import { ProfileEditForm } from "./ProfileEditForm";
 
+export const dynamic = "force-dynamic";
+
 /**
- * S-7. MY 정보. 프로파일 확인·수정, 수신동의 관리(W-6 연동)를 다룬다. 이번 Wave는
- * 로컬 state만 바꾸는 폼(제출 시 실제 저장 없음)으로 골격만 제공한다.
+ * S-7. MY 정보. GET /profile/me를 우선 사용한다.
  */
-export default function MyPage() {
+export default async function MyPage() {
+  const profile = await loadProfile();
   return (
     <div className="flex flex-col gap-6">
-      <MockDataBanner />
+      <DataSourceBanner source={profile.source} notice={profile.notice} />
       <header>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">MY 정보</h1>
       </header>
-      <ProfileEditForm profile={currentMockProfile} />
+      <ProfileEditForm profile={profile.data} />
     </div>
   );
 }

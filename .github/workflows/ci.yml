@@ -26,6 +26,9 @@ name: CI
 #   - docker-build 잡: backend/만 대상. apps/user-web·kiosk·admin·worker는 이번
 #     Wave에서 스캐폴딩 중이라 Dockerfile을 아직 두지 않는다(infra/docker/README.md
 #     참고) - 각 앱이 실제로 존재하게 되면 이 잡에 스텝을 추가한다.
+#   - frontend-web-only/e2e-web-only/performance-web-only 잡: CR-001 이후 MVP 기준인
+#     user-web/admin WEB_ONLY 흐름을 lint/test/build, Playwright, HTTP perf/load smoke로
+#     검증한다.
 #   - build-artifact 잡(main 브랜치 push에만 실행): 실제 배포는 하지 않고 저장소
 #     스냅샷 아티팩트만 생성한다("실제 운영 배포는 아직 구현하지 않음").
 
@@ -61,17 +64,28 @@ jobs:
           EOF
 
   docker-build:
-    name: Docker build (backend)
+    name: Docker stack verifier
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build backend image
-        run: docker build -f infra/docker/backend.Dockerfile -t backju-backend:ci .
+      - name: Verify Docker Compose infrastructure and backend image
+        run: infra/scripts/verify-docker-stack
 
   build-artifact:
     name: Build artifact (main branch only, no deploy)
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [backend, meet-ai-core, ts-boundary, harness-validate, docker-build, secret-scan]
+    needs:
+      [
+        backend,
+        meet-ai-core,
+        ts-boundary,
+        frontend-web-only,
+        e2e-web-only,
+        performance-web-only,
+        harness-validate,
+        docker-build,
+        secret-scan,
+      ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -198,3 +212,93 @@ jobs:
         run: npm install
       - name: Typecheck
         run: npm run typecheck
+
+  frontend-web-only:
+    name: WEB_ONLY frontend (lint + test + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Root typecheck
+        run: npm run typecheck
+      - name: user-web lint
+        run: npm --workspace @backju/user-web run lint
+      - name: user-web tests
+        run: npm --workspace @backju/user-web test
+      - name: user-web build
+        run: npm --workspace @backju/user-web run build
+      - name: admin lint
+        run: npm --workspace @backju/admin run lint
+      - name: admin typecheck
+        run: npm --workspace @backju/admin run typecheck
+      - name: admin tests
+        run: npm --workspace @backju/admin test
+      - name: admin build
+        run: npm --workspace @backju/admin run build
+
+  e2e-web-only:
+    name: WEB_ONLY Playwright E2E
+    runs-on: ubuntu-latest
+    needs: [frontend-web-only]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run WEB_ONLY E2E
+        run: npm run e2e
+
+  performance-web-only:
+    name: WEB_ONLY performance smoke
+    runs-on: ubuntu-latest
+    needs: [frontend-web-only]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run WEB_ONLY HTTP and load smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          USER_LOG="$(mktemp /tmp/meet-ai-user-web-ci.XXXXXX.log)"
+          ADMIN_LOG="$(mktemp /tmp/meet-ai-admin-ci.XXXXXX.log)"
+          npm --workspace @backju/user-web run dev -- --hostname 127.0.0.1 --port 3300 > "$USER_LOG" 2>&1 &
+          USER_PID=$!
+          npm --workspace @backju/admin run dev -- --hostname 127.0.0.1 --port 3320 > "$ADMIN_LOG" 2>&1 &
+          ADMIN_PID=$!
+          cleanup() {
+            kill "$USER_PID" "$ADMIN_PID" >/dev/null 2>&1 || true
+            wait "$USER_PID" "$ADMIN_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          node - <<'NODE'
+          const targets = ['http://127.0.0.1:3300/home', 'http://127.0.0.1:3320/console'];
+          const deadline = Date.now() + 120000;
+          for (const target of targets) {
+            let ready = false;
+            while (Date.now() < deadline) {
+              try {
+                const response = await fetch(target);
+                if (response.ok) {
+                  ready = true;
+                  break;
+                }
+              } catch {}
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            if (!ready) throw new Error(`Timed out waiting for ${target}`);
+          }
+          NODE
+          PERF_STRICT=1 npm run perf:web-only
+          LOAD_STRICT=1 LOAD_DURATION_SECONDS=12 LOAD_CONCURRENCY=4 npm run perf:web-only:load

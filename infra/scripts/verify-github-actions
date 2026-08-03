@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="${GITHUB_REPOSITORY:-}"
+if [[ -z "$REPO" ]]; then
+  REPO="$(git config --get remote.origin.url \
+    | sed -E 's#^https://github.com/##; s#^git@github.com:##; s#\.git$##')"
+fi
+
+if [[ -z "$REPO" ]]; then
+  echo "NOT_RUN: could not determine GitHub repository" >&2
+  exit 125
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "NOT_RUN: gh command is not available in this environment" >&2
+  exit 125
+fi
+
+if ! gh auth status >/dev/null 2>&1; then
+  echo "NOT_RUN: gh is not authenticated" >&2
+  exit 125
+fi
+
+workflow_list="$(gh workflow list --repo "$REPO" || true)"
+if [[ -z "$workflow_list" ]]; then
+  echo "NOT_RUN: no workflows are visible on $REPO. Push .github/workflows/ci.yml first." >&2
+  exit 125
+fi
+
+echo "$workflow_list"
+
+workflow_name="${GITHUB_WORKFLOW_NAME:-CI}"
+run_json="$(gh run list \
+  --repo "$REPO" \
+  --workflow "$workflow_name" \
+  --limit 1 \
+  --json databaseId,status,conclusion,headBranch,headSha,displayTitle,url \
+  --jq '.[0] // empty')"
+
+if [[ -z "$run_json" ]]; then
+  echo "NOT_RUN: workflow '$workflow_name' has no runs on $REPO" >&2
+  exit 125
+fi
+
+echo "$run_json"
+
+status="$(printf '%s' "$run_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')"
+conclusion="$(printf '%s' "$run_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("conclusion") or "")')"
+
+if [[ "$status" != "completed" ]]; then
+  echo "PENDING: latest '$workflow_name' run status is $status" >&2
+  exit 124
+fi
+
+if [[ "$conclusion" != "success" ]]; then
+  echo "FAILED: latest '$workflow_name' run conclusion is $conclusion" >&2
+  exit 1
+fi
+
+echo "PASS: latest '$workflow_name' GitHub Actions run succeeded"

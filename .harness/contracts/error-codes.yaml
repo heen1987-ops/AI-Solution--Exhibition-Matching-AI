@@ -1,7 +1,197 @@
-# Error codes (DRAFT placeholder)
-# 상태: DRAFT. 태스크 CTR-004가 완성한다.
-# 완성본은 기존 EligibilityDecision/filter_result 상태값 어휘
-# (PASS/FAIL/UNKNOWN/CONDITIONAL_PASS/MANUAL_REVIEW/TEMPORARY_BLOCK/POLICY_BLOCK/USER_EXCLUDED)를
-# HTTP 오류코드 체계로 매핑한다.
-status: draft
-codes: []
+# Error codes contract (CTR-004)
+#
+# 상태: CONFIRMED. 두 계열을 통합한다.
+#  (A) 기존 matching.filter_result.result 8종 값(backend/app/models/matching.py의
+#      FILTER_RESULT_TYPES, db-erd-table-spec.md 10단계 상세설계 4절) - 추천·검색 후보가
+#      하드필터를 통과/탈락하는 내부 판정 결과. 이건 HTTP 오류가 아니라 "왜 이 후보가
+#      결과에 없는가"를 설명하는 도메인 판정값이다.
+#  (B) WAVE-1 프롬프트가 요구한 API 오류코드 최소 목록(VALIDATION_ERROR ~ INTERNAL_ERROR) -
+#      이건 실제 HTTP 응답 {error:{code,message,request_id,details}}의 code 필드에 들어가는
+#      값이다.
+# 두 계열은 레이어가 다르다 - (A)는 검색·추천 결과에서 후보가 왜 빠졌는지 설명하는 사유
+# 코드(details.reason_code로 노출 가능)이고, (B)는 요청 자체의 성공/실패를 나타내는 HTTP
+# 오류코드다. 하나의 API 오류 응답이 status=200(정상 응답, 빈 결과)이면서 동시에
+# details.reason_code로 (A)의 값을 담을 수 있다 - 예: SEARCH_NO_RESULT(200) 응답의
+# details.filtered_reasons 배열에 POLICY_BLOCK/USER_EXCLUDED가 들어간다.
+#
+# 개인정보 노출 금지 원칙(AGENTS.md §8, 전역 적용): 아래 모든 user_message는 구체적인
+# 실패 사유(예: 어떤 필터 규칙에 걸렸는지, 어떤 업체가 미승인인지)를 노출하지 않는다.
+# 상세 사유는 details 필드(운영자 전용 로그·관리자 API에서만)로 분리한다.
+
+status: confirmed
+
+# ============================================================================
+# A. 도메인 판정 코드 (matching.filter_result.result, HTTP 오류 아님)
+# ============================================================================
+# 소스: backend/app/models/matching.py FILTER_RESULT_TYPES (8종, CHECK 제약과 1:1 동일)
+domain_filter_results:
+  - value: PASS
+    meaning: "필수조건을 통과함 - 최종 후보에 포함"
+    http_mapping: null
+    note: "정상 통과는 오류가 아니므로 API 오류코드로 노출하지 않는다"
+  - value: FAIL
+    meaning: "필수조건 불충족으로 확정 제외"
+    http_mapping: null
+    exposed_as_detail: "SEARCH_NO_RESULT의 details.filtered_reasons 원소로만 노출 가능"
+  - value: UNKNOWN
+    meaning: "판단에 필요한 데이터 자체가 없음(모름과 불일치를 구분)"
+    http_mapping: null
+    exposed_as_detail: "filter_rule.unknown_policy에 따라 PASS/FAIL/MANUAL_REVIEW로 분기된 뒤에만 사용자에게 영향"
+  - value: CONDITIONAL_PASS
+    meaning: "조건부로 통과(경고 표시와 함께 노출)"
+    http_mapping: null
+    exposed_as_detail: "결과 항목의 reason_codes에 노출 가능(경고 배지)"
+  - value: MANUAL_REVIEW
+    meaning: "운영자 수동 검토 필요 - 자동으로 통과/탈락 결정하지 않음"
+    http_mapping: null
+    exposed_as_detail: "관리자 포털(W-9)에서만 노출, 일반 사용자에게는 노출하지 않음"
+  - value: TEMPORARY_BLOCK
+    meaning: "일시적 운영 사유로 제외(예: 부스 CLOSED)"
+    http_mapping: null
+    exposed_as_detail: "EXHIBITOR_NOT_PUBLISHED와 유사하나 원인이 다름 - 업체 승인상태가 아니라 부스 운영상태"
+  - value: POLICY_BLOCK
+    meaning: "정책상 제외(예: master_approval_status != APPROVED)"
+    http_mapping: null
+    exposed_as_detail: "미승인 업체 차단(AGENTS.md §8) - 사용자에게는 그냥 결과에서 빠진 것으로만 보이고, 사유 문구는 노출하지 않는다"
+  - value: USER_EXCLUDED
+    meaning: "사용자가 명시적으로 제외한 조건과 충돌"
+    http_mapping: null
+    exposed_as_detail: "결과 항목의 reason_codes에 노출 가능(사용자 본인이 설정한 제외 조건이므로 노출 안전)"
+
+# ============================================================================
+# B. HTTP API 오류코드 (응답 포맷: {error:{code,message,request_id,details}})
+# ============================================================================
+error_response_envelope:
+  code: "이 표의 code 값 (SCREAMING_SNAKE_CASE, 폐쇄형 목록)"
+  message: "user_message 필드 그대로 - 개인정보·내부 구현 노출 금지"
+  request_id: "요청 추적용 UUID - 서버가 생성, 로그 상관관계 키"
+  details: "선택적 객체 - 필드별 검증 실패 목록, filtered_reasons 등 (개인정보 금지)"
+
+http_error_codes:
+  # --- WAVE-1 최소 목록 (그대로 채택, 기존 어휘와 이름 충돌 없음을 확인) ---
+  - code: VALIDATION_ERROR
+    http_status: 422
+    user_message: "요청 값이 올바르지 않습니다."
+    retryable: true
+    idempotent_safe: true
+    note: "Pydantic 요청 모델 검증 실패 전반(필수 필드 누락, 형식 오류 등)"
+  - code: AUTHENTICATION_REQUIRED
+    http_status: 401
+    user_message: "로그인이 필요합니다."
+    retryable: true
+    idempotent_safe: true
+  - code: PERMISSION_DENIED
+    http_status: 403
+    user_message: "이 작업을 수행할 권한이 없습니다."
+    retryable: false
+    idempotent_safe: true
+    note: "GUEST_WEB의 /search 403(W-3 §2), role_code 기반 인가 실패, DATA_REVIEWER 스코프 부족(C-6 §1) 등"
+  - code: RESOURCE_NOT_FOUND
+    http_status: 404
+    user_message: "요청한 대상을 찾을 수 없습니다."
+    retryable: false
+    idempotent_safe: true
+    note: "ONTOLOGY_CODE_NOT_FOUND(기존 backend/app/api/v1/endpoints/ontology.py) 등 세부 404를 이 코드 하나로 통합 노출 - 세부 원인은 details.resource_type로 구분"
+  - code: RESOURCE_CONFLICT
+    http_status: 409
+    user_message: "요청이 현재 상태와 충돌합니다."
+    retryable: false
+    idempotent_safe: true
+    note: "saved_recommendable UNIQUE(profile_id, recommendable_id) 위반(이미 저장됨), booth.row_version 낙관적 동시성 충돌 등"
+  - code: INVALID_STATE_TRANSITION
+    http_status: 409
+    user_message: "현재 상태에서는 이 작업을 수행할 수 없습니다."
+    retryable: false
+    idempotent_safe: true
+    note: "interaction.meeting.status 10종 중 허용되지 않는 전이(W-7 §1 - 웹 화면은 REQUESTED->CONFIRMED 또는 REJECTED/CANCELLED_* 두 갈래만), exhibitor_participation 등 상태기계 전반"
+  - code: EXHIBITOR_NOT_PUBLISHED
+    http_status: 404
+    user_message: "요청한 업체 정보를 찾을 수 없습니다."
+    retryable: false
+    idempotent_safe: true
+    note: >
+      master_approval_status != 'APPROVED'인 업체를 조회·검색·추천 요청했을 때 - 미승인
+      업체가 존재한다는 사실 자체를 노출하지 않기 위해 RESOURCE_NOT_FOUND와 동일한
+      404/동일한 문구를 쓴다(AGENTS.md §8 "미승인 업체를 검색·추천에 포함하지 않는다").
+      exhibition.recommendable 사전 등록 게이트(C-4 §4)에 의해 애초에 레지스트리에
+      없으므로 일반 조회 경로에서는 자연스럽게 404가 난다 - 이 코드는 관리자 포털처럼
+      승인 상태를 알아야 하는 컨텍스트에서만 구분 노출한다.
+  - code: SEARCH_QUERY_INVALID
+    http_status: 422
+    user_message: "검색어를 다시 확인해 주세요."
+    retryable: true
+    idempotent_safe: true
+    note: "AIS-005 검증 규칙 위반(빈 질의, 허용 온톨로지 코드 밖 요청 등) - VALIDATION_ERROR의 검색 전용 특수화"
+  - code: SEARCH_NO_RESULT
+    http_status: 200
+    user_message: "조건에 맞는 결과가 없습니다. 조건을 조정해 보세요."
+    retryable: true
+    idempotent_safe: true
+    note: >
+      결과 0건은 오류가 아니라 정상 응답(HTTP 200, 빈 배열 + 이 code를 meta에 표기) -
+      W-10/K-8 "빈 결과 상태 필수" 요구(AGENTS.md §5)와 정합. details.filtered_reasons에
+      위 A절 도메인 판정값을 요약 통계로만 담을 수 있다(개별 업체 식별 없이 "N건이
+      POLICY_BLOCK으로 제외" 같은 집계만).
+  - code: GUEST_SESSION_EXPIRED
+    http_status: 410
+    user_message: "세션이 만료되었습니다. 처음 화면으로 돌아갑니다."
+    retryable: false
+    idempotent_safe: true
+    note: "profile.guest_session.expires_at 경과 - CR-001 이후 GUEST_WEB 세션 TTL 만료"
+  - code: WEB_ENTRY_LINK_EXPIRED
+    http_status: 410
+    user_message: "링크가 만료되었습니다. 다시 접속해 주세요."
+    retryable: false
+    idempotent_safe: true
+    note: "사전등록 개인 링크/배지 QR/Profile Link 단기 토큰 만료 또는 이미 사용됨(CR-001 WEB_ENTRY_OR_PROFILE_LINK)"
+  - code: MEETING_CONFLICT
+    http_status: 409
+    user_message: "이미 처리된 상담 요청입니다."
+    retryable: false
+    idempotent_safe: true
+    note: "동일 meeting에 대한 중복 수락/거절 등 - INVALID_STATE_TRANSITION의 상담 전용 특수화(둘 다 409, 문구만 다름)"
+  - code: RATE_LIMITED
+    http_status: 429
+    user_message: "잠시 후 다시 시도해 주세요."
+    retryable: true
+    idempotent_safe: true
+    note: "Redis 기반 속도 제한(C-7 공통 인프라) 초과"
+  - code: AI_SERVICE_UNAVAILABLE
+    http_status: 503
+    user_message: "지금은 스마트 검색을 사용할 수 없습니다. 카테고리로 찾아보세요."
+    retryable: true
+    idempotent_safe: true
+    note: >
+      AI 추출/의도해석 호출 실패 - AGENTS.md §5 "AI 실패 시 Fallback" 원칙에 따라 이
+      오류를 받은 클라이언트는 구조화 카테고리 브라우징 경로로 폴백해야 한다(AIS-003
+      Fallback 시나리오와 연동). 정확도 저하가 아니라 서비스 불가 상태만 이 코드를 쓴다.
+  - code: INTERNAL_ERROR
+    http_status: 500
+    user_message: "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+    retryable: true
+    idempotent_safe: false
+    note: "예상하지 못한 서버 오류의 최종 폴백 - 상세 스택은 절대 message/details에 노출하지 않고 request_id로만 서버 로그와 상관관계를 맺는다"
+
+  # --- 기존 코드베이스에 이미 있던 세부 코드 (WAVE-1 최소 목록에 없으나 중복 없이 통합) ---
+  - code: ONTOLOGY_CODE_NOT_FOUND
+    http_status: 404
+    user_message: "요청한 분류 코드를 찾을 수 없습니다."
+    retryable: false
+    idempotent_safe: true
+    note: "기존 backend/app/api/v1/endpoints/ontology.py가 이미 이 문자열을 detail로 반환 중 - RESOURCE_NOT_FOUND의 온톨로지 전용 특수화로 유지(엔드포인트 하위 호환)"
+  - code: ONTOLOGY_VALUE_OUT_OF_RANGE
+    http_status: 422
+    user_message: "값이 허용 범위를 벗어났습니다."
+    retryable: true
+    idempotent_safe: true
+    note: "기존 /api/v1/ontology/derive-band가 이미 이 문자열을 detail로 반환 중(범위 밖 alcohol_percentage/price_krw) - VALIDATION_ERROR의 온톨로지 전용 특수화"
+
+# ============================================================================
+# C. 코드 선택 규칙 (구현 가이드)
+# ============================================================================
+selection_rules:
+  - "더 구체적인 코드가 있으면 그것을 쓰고, 없으면 상위 범주(VALIDATION_ERROR/RESOURCE_NOT_FOUND/INVALID_STATE_TRANSITION/RESOURCE_CONFLICT) 중 하나로 폴백한다."
+  - "미승인 업체·비공개 리소스는 존재 여부 자체를 숨기기 위해 403이 아니라 404(EXHIBITOR_NOT_PUBLISHED 또는 RESOURCE_NOT_FOUND)를 쓴다."
+  - "상담 수락 전 연락처 비공개(AGENTS.md §8)를 위반하려는 요청은 PERMISSION_DENIED가 아니라, 애초에 응답 스키마에 연락처 필드 자체를 포함하지 않는 방식으로 처리한다(오류코드로 막지 않고 설계로 막는다)."
+  - "AI 실패는 항상 AI_SERVICE_UNAVAILABLE + Fallback 결과 조합으로 응답하고, 빈 오류 응답만 반환하지 않는다(AGENTS.md §5)."
+  - "idempotent_safe=true인 코드는 클라이언트가 동일 Idempotency-Key로 안전하게 재시도할 수 있다는 뜻이지, 서버가 자동 재시도한다는 뜻이 아니다."

@@ -1,25 +1,33 @@
 import Link from "next/link";
 import { CompanyCard } from "@/components/CompanyCard";
-import { MockDataBanner } from "@/components/MockDataBanner";
-import { currentMockProfile } from "@/lib/mock-data";
-import { fetchRecommendations } from "@/lib/mock-api";
+import { DataSourceBanner } from "@/components/MockDataBanner";
+import { loadProfile, loadRecommendations } from "@/lib/api-client";
+
+export const dynamic = "force-dynamic";
 
 /**
- * S-1. 개인화 홈 (docs/redesign-v2/web/W-3-screen-ia.md).
- * GENERAL_REGISTERED/BUYER_REGISTERED 전용 - 오늘의 추천 상위 N개 + 관심목록/바이어
- * 매칭 바로가기. 이번 Wave는 Mock 데이터만 사용, 사용자 유형 분기는 하드코딩된
- * `currentMockProfile`로 흉내낸다(실 인증은 이후 Wave).
+ * S-1. 개인화 홈. 실제 profile/recommendations API를 우선 사용하고, 로컬 API가 없으면
+ * 동일 화면 타입의 fallback 데이터로 렌더링한다.
  */
 export default async function HomePage() {
-  const recommendations = await fetchRecommendations();
-  const topRecommendations = recommendations.slice(0, 2);
+  const [profileState, recommendationState] = await Promise.all([
+    loadProfile(),
+    loadRecommendations(),
+  ]);
+  const profile = profileState.data;
+  const topRecommendations = recommendationState.data.slice(0, 2);
+  const source =
+    profileState.source === "api" || recommendationState.source === "api" ? "api" : "fallback";
 
   return (
     <div className="flex flex-col gap-6">
-      <MockDataBanner />
+      <DataSourceBanner
+        source={source}
+        notice={profileState.notice ?? recommendationState.notice}
+      />
       <header>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          안녕하세요, {currentMockProfile.displayName}님
+          안녕하세요, {profile.displayName}님
         </p>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
           오늘의 추천 업체·부스
@@ -49,7 +57,7 @@ export default async function HomePage() {
         >
           관심목록 바로가기
         </Link>
-        {currentMockProfile.userType === "BUYER_REGISTERED" ? (
+        {profile.userType === "BUYER_REGISTERED" ? (
           <Link
             href="/buyer-matching"
             className="rounded-full border border-zinc-300 px-4 py-2 font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-200"

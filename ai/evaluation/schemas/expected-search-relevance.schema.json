@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://backju.example/ai/evaluation/expected-search-relevance.schema.json",
+  "title": "GoldSetExpectedSearchRelevance",
+  "description": "ai/evaluation/expected/search-relevance.jsonl 각 줄. Recall@K/Precision@K 평가 기준. 이 태스크 시점에는 실제 시드 데이터(참가업체·제품)가 없어 구체적 recommendable_id 목록을 담지 않는다 - 대신 검색결과가 만족해야 할 질적 기준(relevance_criteria)과 반드시 배제해야 할 기준(must_exclude)만 기록한다. 실제 DB 픽스처가 생기면(Wave 2) 이 파일에 concrete id 목록을 채워 넣는 후속 작업이 필요하다(HANDOFF 참고).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query_id", "expected_search_targets", "relevance_criteria", "must_exclude"],
+  "properties": {
+    "query_id": { "type": "string" },
+    "expected_search_targets": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["EXHIBITOR", "EVENT_PRODUCT"] },
+      "minItems": 1
+    },
+    "relevance_criteria": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "결과 후보가 만족해야 하는 조건(concept 일치 등)을 사람이 읽을 수 있는 문장으로."
+    },
+    "must_exclude": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "AGENTS.md §8 '미승인 업체를 검색·추천에 포함하지 않는다' 등 하드 배제 규칙을 매 샘플에 반복 기록한다."
+    }
+  }
+}

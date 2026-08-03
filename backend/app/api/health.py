@@ -47,7 +47,7 @@ class ReadyResponse(BaseModel):
     checks: ReadyChecks
 
 
-@router.get("/live")
+@router.get("/live", operation_id="getHealthLive")
 async def live() -> dict[str, str]:
     """의존성 체크 없는 순수 liveness 확인. 항상 즉시 200을 반환한다."""
 
@@ -109,7 +109,7 @@ async def _check_s3() -> DependencyStatus:
     return "error" if settings.READY_CHECK_FAILS_ON_S3_DOWN else "warning"
 
 
-@router.get("/ready", response_model=ReadyResponse)
+@router.get("/ready", response_model=ReadyResponse, operation_id="getHealthReady")
 async def ready(response: Response) -> ReadyResponse:
     settings = get_settings()
 

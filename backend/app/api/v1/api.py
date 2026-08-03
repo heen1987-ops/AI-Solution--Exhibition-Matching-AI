@@ -15,8 +15,28 @@ app.main은 이 모듈의 api_router를 settings.API_V1_PREFIX(기본 /api/v1)�
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import ontology, system
+from app.api.v1.endpoints import (
+    admin,
+    buyer,
+    exhibitors,
+    favorites,
+    guest,
+    kiosk,
+    ontology,
+    profile,
+    search,
+    system,
+)
 
 api_router = APIRouter()
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(buyer.buyer_router, prefix="/buyer", tags=["buyer"])
+api_router.include_router(exhibitors.router)
+api_router.include_router(favorites.router, prefix="/favorites", tags=["favorites"])
+api_router.include_router(guest.router, prefix="/guest", tags=["guest"])
+api_router.include_router(kiosk.router, prefix="/kiosk", tags=["kiosk"])
+api_router.include_router(buyer.meetings_router, prefix="/meetings", tags=["meetings"])
 api_router.include_router(ontology.router, prefix="/ontology", tags=["ontology"])
+api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
+api_router.include_router(search.router)
 api_router.include_router(system.router, prefix="/system", tags=["system"])

@@ -1,13 +1,12 @@
 import { notFound } from "next/navigation";
-import { MockDataBanner } from "@/components/MockDataBanner";
+import { DataSourceBanner } from "@/components/MockDataBanner";
 import { SaveFavoriteButton } from "./SaveFavoriteButton";
-import { fetchCompanyById } from "@/lib/mock-api";
-import { currentMockProfile } from "@/lib/mock-data";
+import { loadCompanyById, loadProfile } from "@/lib/api-client";
+
+export const dynamic = "force-dynamic";
 
 /**
- * S-5. 업체·부스 상세. 3개 사용자 유형 모두 접근 가능한 유일한 화면(W-3 §S-5) -
- * 업체 공개 정보는 로그인 여부와 무관하다. GUEST_WEB에게는 "관심 저장" 버튼이
- * 노출되지 않는다(S-4와 동일 원칙) - 이번 Wave는 `currentMockProfile`로 흉내낸다.
+ * S-5. 업체·부스 상세. 공개 getExhibitor/getBooth API를 우선 사용한다.
  */
 export default async function CompanyDetailPage({
   params,
@@ -15,17 +14,21 @@ export default async function CompanyDetailPage({
   params: Promise<{ companyId: string }>;
 }) {
   const { companyId } = await params;
-  const company = await fetchCompanyById(companyId);
+  const [companyState, profileState] = await Promise.all([
+    loadCompanyById(companyId),
+    loadProfile(),
+  ]);
+  const company = companyState.data;
 
   if (!company) {
     notFound();
   }
 
-  const canSaveFavorite = currentMockProfile.userType !== "GUEST_WEB";
+  const canSaveFavorite = profileState.data.userType !== "GUEST_WEB";
 
   return (
     <div className="flex flex-col gap-6">
-      <MockDataBanner />
+      <DataSourceBanner source={companyState.source} notice={companyState.notice} />
       <header>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           {company.categoryLabel} · {company.zone} {company.boothNumber}
@@ -46,7 +49,9 @@ export default async function CompanyDetailPage({
         ))}
       </ul>
 
-      {canSaveFavorite ? <SaveFavoriteButton companyName={company.name} /> : null}
+      {canSaveFavorite ? (
+        <SaveFavoriteButton companyName={company.name} recommendableId={company.recommendableId} />
+      ) : null}
     </div>
   );
 }

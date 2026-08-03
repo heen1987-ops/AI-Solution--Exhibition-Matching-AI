@@ -1,6 +1,186 @@
-# Event catalog (DRAFT placeholder)
-# 상태: DRAFT. 태스크 CTR-005가 완성한다.
-# 완성본은 content_approval 확정, meeting 상태 변경, guest 회원전환 등
-# RQ/Celery 큐잉 수준의 최소 이벤트만 정의한다 (Kafka 등 스트리밍 인프라 전제하지 않음).
-status: draft
-events: []
+# Event catalog contract (CTR-005)
+#
+# 상태: CONFIRMED. 범위: RQ/Celery 워커 큐잉 수준의 최소 이벤트만 정의한다.
+# PROJECT_SCOPE.md 명시적 제외범위("복잡한 이벤트 스트리밍")와 AGENTS.md §3(비동기는
+# RQ 또는 Celery 중 하나, Kafka 금지)에 따라, 이 카탈로그의 이벤트는:
+#   (1) Kafka/스트리밍 인프라를 전제하지 않는다 - 발행자가 큐(Redis 기반 RQ 또는 Celery
+#       broker)에 job을 enqueue하는 것으로 끝나며, 별도 이벤트 버스·토픽 파티셔닝은 없다.
+#   (2) 영속 로그 테이블(예: 파티션된 interaction.interaction_event)에 모든 이벤트를
+#       기록하는 것을 전제하지 않는다 - 그 테이블은 domain-model.md §15.3이 이미
+#       "이번 CTR-008 범위 밖, CTR-010으로 후속 등록"이라고 확정했다. 이 카탈로그의
+#       이벤트는 "무엇을 트리거로 워커 job을 큐잉하는가"를 정의하는 것이지 "모든 사용자
+#       행동을 분석용으로 저장하는 스키마"를 정의하는 것이 아니다.
+#   (3) 개인정보를 payload에 담지 않는다(AGENTS.md §8) - user_id/guest_session_id 등
+#       식별자만 담고 이름·연락처·이메일은 담지 않는다.
+#
+# 소비자: apps/worker(BAC-001이 골격을 만드는 중)가 이 카탈로그의 이벤트를 job으로
+# 변환해 큐잉한다. 실제 워커 처리 로직(예: 임베딩 재계산)은 이 문서 범위 밖(Wave 2).
+
+status: confirmed
+transport: "RQ 또는 Celery (Redis 기반) - Kafka 등 스트리밍 인프라 아님 (PROJECT_SCOPE.md 제외범위)"
+persistence: "이 카탈로그의 이벤트는 워커 큐잉 트리거일 뿐, 영속 이벤트 로그가 아니다 - 영속 로그(interaction.interaction_event)는 CTR-010(후속 태스크, domain-model.md §16)에서 별도로 다룬다."
+naming_convention: "DOMAIN.ACTION (마침표로 구분, SCREAMING_SNAKE_CASE)"
+
+events:
+  # ------------------------------------------------------------------------
+  # PROFILE - 사용자 프로파일 확정 (웹 초개인화)
+  # ------------------------------------------------------------------------
+  - name: PROFILE.CONFIRMED
+    description: "사용자가 관심분야·프로파일 최소 확인/수정을 완료한 시점(W-2 §1-3~1-4)"
+    triggered_by: "profile.user_profile.profile_status가 DRAFT -> COMPLETE로 전이될 때"
+    payload_fields: [profile_id, tenant_id, event_id, user_type]
+    queued_job: "개인화 추천 최초 생성 잡(matching.recommendation_session 생성) 큐잉 후보 - 실제 잡 정의는 BAC-GROUP-001/AIS-GROUP-001(Wave 2) 책임"
+    pii_check: "PASS - 식별자만 포함"
+
+  # ------------------------------------------------------------------------
+  # SEARCH - 자연어·카테고리 검색 (웹 + 키오스크 공통, CTR-008 matching.search_* 테이블과 대응)
+  # ------------------------------------------------------------------------
+  - name: SEARCH.SUBMITTED
+    description: "사용자가 질의(자유텍스트 또는 카테고리)를 제출함"
+    triggered_by: "matching.search_query 신규 행 INSERT (backend/app/models/search.py, CTR-008)"
+    payload_fields: [search_session_id, search_query_id, channel, query_type]
+    queued_job: "AI 의도추출(자유텍스트인 경우) + 하이브리드 검색 실행 잡"
+    pii_check: "PASS - query_text는 사용자가 자발적으로 입력한 검색어이며 신원 필드가 아님. 다만 워커 로그에 원문을 남길 때도 이름·연락처 등 개인정보가 검색어에 섞여 들어올 경우를 대비해 로그 마스킹은 서비스 계층 책임(AGENTS.md §5 AI 절 참고)"
+  - name: SEARCH.RESULTS_VIEWED
+    description: "검색 결과 목록이 사용자에게 표시됨"
+    triggered_by: "matching.search_query.result_count > 0인 응답을 클라이언트가 렌더링 완료"
+    payload_fields: [search_query_id, result_count]
+    queued_job: "없음 (분석 목적 - CTR-010 영속 로그가 만들어지면 그때 소비)"
+    pii_check: "PASS"
+  - name: SEARCH.NO_RESULT
+    description: "검색 결과가 0건 - CTR-004 SEARCH_NO_RESULT 오류코드 응답과 대응"
+    triggered_by: "matching.search_query.result_count = 0"
+    payload_fields: [search_query_id, query_type, fallback_reason]
+    queued_job: "없음 (운영 통계 집계 후보 - Wave 2 이후)"
+    pii_check: "PASS"
+
+  # ------------------------------------------------------------------------
+  # RECOMMENDATION - 개인화 추천 (웹) / 결과 노출 (matching.match_result와 대응)
+  # ------------------------------------------------------------------------
+  - name: RECOMMENDATION.IMPRESSION
+    description: "추천 결과가 사용자에게 노출됨"
+    triggered_by: "matching.match_result 행이 클라이언트에 응답으로 전달됨(meet_ai.ontology.catalog의 CANONICAL_EVENTS RECOMMENDATION_IMPRESSION과 동일 개념)"
+    payload_fields: [recommendation_session_id, match_result_id, rank]
+    queued_job: "없음 (분석 목적)"
+    pii_check: "PASS"
+  - name: RECOMMENDATION.CLICKED
+    description: "사용자가 추천 항목을 열람(상세 진입)함"
+    triggered_by: "S-5(부스·업체 상세) 화면 진입, match_result_id 컨텍스트와 함께"
+    payload_fields: [recommendation_session_id, match_result_id, recommendable_id]
+    queued_job: "없음 (분석 목적 - 향후 재랭킹 피드백 신호 후보, Wave 2 이후 결정)"
+    pii_check: "PASS"
+
+  # ------------------------------------------------------------------------
+  # FAVORITE - 관심 업체 저장 (profile.saved_recommendable, CTR-006)
+  # ------------------------------------------------------------------------
+  - name: FAVORITE.ADDED
+    description: "사용자가 업체·부스를 관심목록에 저장함"
+    triggered_by: "profile.saved_recommendable 신규 행 INSERT (CTR-006)"
+    payload_fields: [profile_id, recommendable_id]
+    queued_job: "없음"
+    pii_check: "PASS"
+  - name: FAVORITE.REMOVED
+    description: "사용자가 관심목록에서 항목을 해제함"
+    triggered_by: "profile.saved_recommendable 행 DELETE (CTR-006 스키마는 UNIQUE 토글 전제 - 소프트 삭제 아님)"
+    payload_fields: [profile_id, recommendable_id]
+    queued_job: "없음"
+    pii_check: "PASS"
+
+  # ------------------------------------------------------------------------
+  # GUEST_WEB - 모바일 웹 게스트 세션 생애주기 (CR-001 WEB_ONLY)
+  # ------------------------------------------------------------------------
+  - name: GUEST_WEB.SESSION_STARTED
+    description: "모바일 웹에서 익명 게스트 세션이 시작됨"
+    triggered_by: "profile.guest_session 신규 행 INSERT (entry_channel='WEB')"
+    payload_fields: [guest_session_id, event_id, entry_method]
+    queued_job: "없음"
+    pii_check: "PASS - 이름·전화번호·이메일·주소·장기 브라우저 지문 없음"
+  - name: GUEST_WEB.QUERY_SUBMITTED
+    description: "게스트 웹에서 검색 질의 제출 - SEARCH.SUBMITTED의 channel=GUEST_WEB 특수화"
+    triggered_by: "matching.search_query INSERT (search_session.channel='GUEST_WEB')"
+    payload_fields: [search_session_id, search_query_id]
+    queued_job: "하이브리드 검색 실행 잡(SEARCH.SUBMITTED와 동일 잡 공유, 채널 파라미터만 다름)"
+    pii_check: "PASS"
+  - name: GUEST_WEB.RESULT_VIEWED
+    description: "게스트 웹에서 검색 결과 또는 업체 상세가 표시됨"
+    triggered_by: "guest web 결과/상세 화면 렌더링 완료"
+    payload_fields: [search_query_id, recommendable_id]
+    queued_job: "없음"
+    pii_check: "PASS"
+  - name: GUEST_WEB.FAVORITE_ADDED
+    description: "게스트 웹 세션에서 임시 관심 항목을 추가함"
+    triggered_by: "guest web temporary favorite 추가(서버 세션/제한된 브라우저 저장소)"
+    payload_fields: [guest_session_id, recommendable_id]
+    queued_job: "없음"
+    pii_check: "PASS"
+  - name: GUEST_WEB.REGISTRATION_STARTED
+    description: "게스트가 사전등록/로그인 연계를 시작함"
+    triggered_by: "guest web convert/profile link flow 시작"
+    payload_fields: [guest_session_id, entry_method]
+    queued_job: "없음"
+    pii_check: "PASS - 이벤트에는 직접식별정보를 넣지 않음"
+  - name: GUEST_WEB.SESSION_EXPIRED
+    description: "게스트 웹 세션이 TTL 만료됨"
+    triggered_by: "profile.guest_session.expires_at 경과"
+    payload_fields: [guest_session_id]
+    queued_job: "임시 관심목록/검색 컨텍스트 정리 잡"
+    pii_check: "PASS"
+
+  # ------------------------------------------------------------------------
+  # MEETING - 상담 요청·상태 전이 (interaction.meeting, W-7)
+  # ------------------------------------------------------------------------
+  - name: MEETING.REQUESTED
+    description: "바이어가 업체에 상담을 요청함"
+    triggered_by: "interaction.meeting 신규 행 INSERT (status='REQUESTED')"
+    payload_fields: [meeting_id, exhibitor_id]
+    queued_job: "업체 담당자 알림 큐잉 후보(이메일만 MVP 포함 - W-6 §3, SMS는 EXPANSION-004로 보류)"
+    pii_check: "PASS - message_enc는 암호화 컬럼이라 payload에 원문을 담지 않는다"
+  - name: MEETING.ACCEPTED
+    description: "업체가 상담 요청을 수락함 - meeting.status=CONFIRMED"
+    triggered_by: "interaction.meeting_status_history 신규 행 INSERT (new_status='CONFIRMED')"
+    payload_fields: [meeting_id]
+    queued_job: "연락처 공개 처리 잡(interaction.meeting_contact_share, disclosed 권한 검사 포함 - AGENTS.md §8 '상담 수락 전 연락처 비공개' 원칙은 CONFIRMED 이후에만 이 잡이 실행되는 것으로 보장)"
+    pii_check: "PASS - payload에는 meeting_id만 담고, 연락처 값 자체는 payload에 넣지 않는다(잡이 DB에서 직접 조회)"
+  - name: MEETING.REJECTED
+    description: "업체가 상담 요청을 거절함"
+    triggered_by: "interaction.meeting_status_history 신규 행 INSERT (new_status='REJECTED')"
+    payload_fields: [meeting_id]
+    queued_job: "바이어 알림 큐잉 후보"
+    pii_check: "PASS"
+  - name: MEETING.COMPLETED
+    description: "상담이 완료 처리됨"
+    triggered_by: "interaction.meeting_status_history 신규 행 INSERT (new_status='COMPLETED')"
+    payload_fields: [meeting_id]
+    queued_job: "없음 (MeetingOutcome/FollowUpAction은 PROJECT_SCOPE.md에 따라 이번 MVP 비노출 - EXPANSION-003)"
+    pii_check: "PASS"
+
+  # ------------------------------------------------------------------------
+  # ADMIN - 업체 승인·부스 상태 변경 (관리자 운영, W-9)
+  # ------------------------------------------------------------------------
+  - name: ADMIN.EXHIBITOR_APPROVED
+    description: "운영자가 업체 마스터 정보를 승인함"
+    triggered_by: "ai.content_approval 신규 행 INSERT (CTR-007, 승인 확정) + exhibition.exhibitor.master_approval_status -> APPROVED 갱신"
+    payload_fields: [exhibitor_id, approved_by]
+    queued_job: "재임베딩 잡 큐잉(C-5 §2 확정 - 승인 확정 시점에 큐잉, 즉시 동기 재계산 아님) + exhibition.recommendable 사전 등록 게이트 통과 처리(C-4 §4)"
+    pii_check: "PASS - approved_by는 운영자(내부 직원) 식별자이지 방문자 개인정보가 아님"
+  - name: ADMIN.EXHIBITOR_REJECTED
+    description: "운영자가 업체 마스터 정보를 반려함"
+    triggered_by: "ai.content_approval 신규 행 INSERT (CTR-007, 반려) + master_approval_status -> REJECTED 갱신"
+    payload_fields: [exhibitor_id, approved_by]
+    queued_job: "업체 담당자 알림 큐잉 후보(반려 사유 재작성 요청)"
+    pii_check: "PASS"
+  - name: ADMIN.BOOTH_STATUS_CHANGED
+    description: "운영자 또는 현장 담당자가 부스 운영상태를 변경함"
+    triggered_by: "exhibition.booth_status_history 신규 행 INSERT"
+    payload_fields: [booth_id, previous_status, new_status]
+    queued_job: "부스 상태 캐시 무효화 잡(Redis - db-erd-table-spec.md §23 캐시 절)"
+    pii_check: "PASS"
+
+# --------------------------------------------------------------------------
+# 이 카탈로그가 다루지 않는 것 (다른 문서/후속 태스크로 이관)
+# --------------------------------------------------------------------------
+out_of_scope:
+  - "모든 이벤트의 영속 로그 테이블(interaction.interaction_event) - domain-model.md §15.3/§16, CTR-010(후속)"
+  - "사전등록 시스템 연계 이벤트(예: REGISTRATION.SYNCED) - integration.external_reference가 만들어지는 CTR-009(후속) 이후"
+  - "Multi-Armed Bandit·실시간 온라인 학습 트리거 - PROJECT_SCOPE.md 명시적 제외범위"
+  - "meet_ai.ontology.catalog.py의 CANONICAL_EVENTS(SERVICE_STARTED 등 20종)는 온톨로지 event_mappings 검증용 별도 목록이다 - 이 카탈로그와 이름이 겹치는 것(RECOMMENDATION_IMPRESSION 등)은 의도적으로 의미를 맞췄으나, catalog.v1.json의 event_mappings 배열을 이 카탈로그가 대체하지는 않는다(서로 다른 소비자: 온톨로지 엔진 내부 검증 vs 워커 큐잉)"

@@ -21,14 +21,17 @@ from alembic import context
 from app.core.config import get_settings
 from app.db.base import SCHEMA_ONTOLOGY, Base
 from app.models import (  # noqa: F401
+    ai,
     consent,
     core,
     exhibitor,
     identity,
+    kiosk,
     matching,
     meeting,
     ontology_refs,
     profile,
+    search,
 )
 
 # Alembic Config 객체: alembic.ini의 값에 접근하는 통로

@@ -6,7 +6,7 @@
 
 `docs/redesign-v2/00-master-spec-v1.md`(v1.0 통합 개발 명세서)를 프로젝트의 단일 기준으로 채택한다. 이전 1~28단계 개별 설계 문서(`docs/01-*.md` ~ `docs/09-10-*.md`)는 모듈별 참고자료로 재분류한다(`docs/redesign-v2/01-module-split-plan.md` §6/§8-11).
 
-## DEC-002: 3모듈 분리 아키텍처
+## DEC-002: 3모듈 분리 아키텍처 (SUPERSEDED by DEC-011)
 
 웹 초개인화 모듈, 키오스크 이식형 검색모듈, 공통 AI·데이터 플랫폼 3개로 서비스를 분리한다. 웹과 키오스크는 사용자 데이터·검색 방식이 분리되지만 업체·부스 DB와 검색엔진은 공유한다(`docs/redesign-v2/01-module-split-plan.md` §2).
 
@@ -41,3 +41,15 @@
 ## DEC-008: DATA_REVIEWER는 신규 role_code가 아니다
 
 마스터 스펙의 `DATA_REVIEWER` 역할은 `profile.role.role_code_allowed` CHECK 제약에 값을 추가하는 대신, 기존 `EVENT_ADMIN`(`OPERATOR`) 권한의 서비스 계층 스코프로 처리한다(`docs/redesign-v2/common/C-6-privacy-and-authorization.md` §1).
+
+## DEC-011: WEB_ONLY 채널 전략
+
+사용자 첨부 `전시회 AI 업체 매칭 서비스 웹 중심 재설계 기준서`
+(`/Users/ppp/.codex/attachments/d6e8f232-34fa-4609-84ba-4cd4e7fd576b/pasted-text.txt`)를
+CR-001로 접수하고, MVP 채널 전략을 `WEB_ONLY`로 변경한다. 채널은
+`REGISTERED_WEB`, `GUEST_WEB`, `BUYER_WEB`, `ADMIN_PARTNER_WEB`으로 고정한다.
+전용 `KIOSK` 모듈과 신규 키오스크 기능은 제외한다. 기존 `apps/kiosk`,
+`/api/v1/kiosk/*`, `KioskDevice`/`KioskConfig` 마이그레이션은 이미 생성된 이력으로 남기되
+신규 개발 대상에서 제외하고, 데이터 존재 여부 확인 후 별도 cleanup migration으로 제거한다.
+QR은 키오스크 결과 인계가 아니라 행사 진입·관심분야 진입·부스 상세·사전등록 개인 링크의
+웹 entry method로 재정의한다.

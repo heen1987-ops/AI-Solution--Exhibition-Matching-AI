@@ -7,11 +7,15 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.health import router as health_router
 from app.api.v1.api import api_router
+from app.api.v1.errors import error_body
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -35,6 +39,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(HTTPException)
+async def api_http_exception_handler(
+    request: Request, exc: HTTPException
+) -> JSONResponse:
+    """Render BAC-002 contract errors as {error:{...}}.
+
+    Older endpoints still raise plain string details, so those keep FastAPI's
+    default shape until each domain migrates to the common helper.
+    """
+
+    if isinstance(exc.detail, dict) and {"code", "message", "request_id"} <= set(
+        exc.detail
+    ):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail},
+            headers=exc.headers,
+        )
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def api_request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Render request validation failures with the v1 contract envelope."""
+
+    return JSONResponse(
+        status_code=422,
+        content=error_body(
+            "VALIDATION_ERROR",
+            "요청 값이 올바르지 않습니다.",
+            details={"errors": exc.errors()},
+        ),
+    )
 
 
 @app.get("/healthz", tags=["health"])

@@ -1,33 +1,70 @@
 import { ADMIN_AREAS } from "../../lib/admin-areas";
+import { loadAdminConsoleSnapshot } from "../../lib/admin-api";
+import { AdminOperationsPanel, ContractPendingPanel } from "./AdminOperationsPanel";
 
-export default function ConsolePage() {
+export const dynamic = "force-dynamic";
+
+const STATUS_LABELS = {
+  LIVE: "운영",
+  CONTRACT_PENDING: "계약 대기",
+  PLANNED: "예정",
+} as const;
+
+export default async function ConsolePage() {
+  const snapshot = await loadAdminConsoleSnapshot();
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div>
         <p className="text-xs font-medium uppercase tracking-wide text-accent">
           /console
         </p>
-        <h1 className="mt-2 text-2xl font-semibold">운영 콘솔 (예정 목록)</h1>
+        <h1 className="mt-2 text-2xl font-semibold">운영 콘솔</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-          아래 {ADMIN_AREAS.length}개 영역은 W-9(관리자 운영 범위)와 공통 플랫폼(C-1~C-8)
-          문서가 정의한 향후 관리자 기능입니다. 실제 인증/RBAC이 없는 이번 Wave에는 각
-          항목을 비활성(예정) 카드로만 나열합니다 - 클릭해도 이동하지 않습니다.
+          W-9 MVP 운영 범위를 실제 API 연결 상태와 함께 표시합니다.
         </p>
       </div>
+
+      <p
+        className={`rounded-md px-3 py-2 text-xs ${
+          snapshot.source === "api"
+            ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+            : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+        }`}
+      >
+        {snapshot.source === "api"
+          ? "백엔드 API 연결 확인됨"
+          : `백엔드 API fallback 표시 중${snapshot.notice ? `: ${snapshot.notice}` : ""}`}
+      </p>
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="기본 통계">
+        {snapshot.metrics.map((metric) => (
+          <div
+            key={metric.key}
+            className="rounded-lg border border-black/10 bg-white p-4 dark:border-white/10 dark:bg-white/5"
+          >
+            <p className="text-xs text-slate-500 dark:text-slate-400">{metric.label}</p>
+            <p className="mt-2 text-lg font-semibold">{metric.value}</p>
+          </div>
+        ))}
+      </section>
+
+      <AdminOperationsPanel />
+      <ContractPendingPanel />
 
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {ADMIN_AREAS.map((area) => (
           <li key={area.key}>
             <div
               role="group"
-              aria-disabled="true"
+              aria-disabled={area.status === "PLANNED" ? "true" : undefined}
               data-testid={`admin-area-${area.key}`}
-              className="flex h-full cursor-not-allowed flex-col gap-2 rounded-xl border border-black/10 bg-white p-5 opacity-80 dark:border-white/10 dark:bg-white/5"
+              className="flex h-full flex-col gap-2 rounded-lg border border-black/10 bg-white p-4 dark:border-white/10 dark:bg-white/5"
             >
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold">{area.title}</h2>
                 <span className="shrink-0 rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-white/10 dark:text-slate-400">
-                  예정
+                  {STATUS_LABELS[area.status]}
                 </span>
               </div>
               <p className="text-sm text-slate-600 dark:text-slate-300">

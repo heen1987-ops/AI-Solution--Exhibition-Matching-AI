@@ -25,7 +25,7 @@ class SystemInfo(BaseModel):
     contract_version: str
 
 
-@router.get("/info", response_model=SystemInfo)
+@router.get("/info", response_model=SystemInfo, operation_id="getSystemInfo")
 async def system_info() -> SystemInfo:
     settings = get_settings()
     return SystemInfo(

@@ -5,8 +5,8 @@ excluded from Alembic autogenerate. These key definitions let other ORM models
 resolve cross-schema foreign keys without duplicating the ontology contract.
 """
 
-from sqlalchemy import Column, ForeignKey, String, Table, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, ForeignKey, String, Table, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.db.base import SCHEMA_ONTOLOGY, Base
 
@@ -43,6 +43,9 @@ concept_revision = Table(
         ForeignKey(f"{SCHEMA_ONTOLOGY}.concept.concept_id"),
         primary_key=True,
     ),
+    Column("assignable", Boolean, nullable=False),
+    Column("status", String(20), nullable=False),
+    Column("validation_json", JSONB, nullable=False),
     schema=SCHEMA_ONTOLOGY,
     info={"migration_managed_externally": True},
 )

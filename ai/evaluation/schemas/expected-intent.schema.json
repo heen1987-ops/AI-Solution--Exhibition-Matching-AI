@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://backju.example/ai/evaluation/expected-intent.schema.json",
+  "title": "GoldSetExpectedIntent",
+  "description": "ai/evaluation/expected/intent.jsonl 각 줄. Intent Accuracy 평가용(ai/README.md 참고) - query_id로 queries/*.jsonl과 조인한다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query_id", "expected_intent", "target_type", "clarification_expected", "confidence_floor"],
+  "properties": {
+    "query_id": { "type": "string" },
+    "expected_intent": { "type": "string", "minLength": 1 },
+    "target_type": { "type": "string", "enum": ["EXHIBITOR", "EVENT_PRODUCT"] },
+    "clarification_expected": { "type": "boolean" },
+    "clarification_question_hint": { "type": ["string", "null"] },
+    "confidence_floor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "이 값 미만 confidence로 답하면 실패로 채점 - 카탈로그 gap이 있는 질의는 낮게 잡는다."
+    }
+  }
+}

@@ -5,6 +5,93 @@
 # effort since Wave 0/1 outcomes will change its shape).
 
 tasks:
+  # ---------------- CHANGE REQUESTS ----------------
+  - id: CR-001
+    title: WEB_ONLY 범위 전환 영향분석·계약 동기화
+    wave: 2
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "AGENTS.md"
+      - "PROJECT_SCOPE.md"
+      - "docs/**"
+      - ".harness/contracts/**"
+      - ".harness/backlog.yaml"
+      - ".harness/state.json"
+      - ".harness/quality-gates.yaml"
+      - "backend/alembic/**"
+      - "backend/app/models/**"
+    acceptance:
+      - "사용자 첨부 웹 중심 기준서의 WEB_ONLY/KIOSK_MODULE=EXCLUDED 결정을 기존 frozen contract와 비교해 영향분석한다"
+      - "키오스크 제거가 승인되면 .harness/contracts/openapi.yaml, domain-model.md, event-catalog.yaml, error-codes.yaml에서 KIOSK/QR_HANDOFF를 GUEST_WEB/WEB_ENTRY_OR_PROFILE_LINK로 동기화한다"
+      - "이미 생성된 KioskDevice/KioskConfig 마이그레이션과 /api/v1/kiosk 구현은 즉시 파괴 삭제하지 않고 사용중지·cleanup migration 계획으로 분리한다"
+      - "apps/kiosk/KSK-GROUP-001/QAS 키오스크 smoke는 웹 게스트 흐름으로 대체하는 백로그를 작성한다"
+      - "CR 완료 전에는 AIS-GROUP-001/BAC-008이 게스트 웹 점수식이나 KIOSK 채널을 추가 구현하지 않는다"
+    note: >
+      2026-08-02 사용자 첨부 `전시회 AI 업체 매칭 서비스 웹 중심 재설계 기준서`가
+      WEB_ONLY=TRUE, KIOSK_MODULE=EXCLUDED를 선언했다. 이는 AGENTS.md DEC-002/기존
+      redesign-v2 3모듈 기준 및 G1 frozen contract와 충돌하므로, BACKEND/AI_SEARCH에서
+      즉시 삭제 구현하지 않고 CONTRACTS 트랙 Change Request로 승격한다.
+    completed_note: >
+      AGENTS.md, PROJECT_SCOPE.md, DEC-011, OpenAPI, domain model, event catalog,
+      error-codes, ontology, quality gates, backlog, state를 WEB_ONLY 기준으로 동기화했다.
+      신규 채널은 REGISTERED_WEB/GUEST_WEB/BUYER_WEB/ADMIN_PARTNER_WEB이며 전용 KIOSK
+      채널은 MVP 제외로 잠갔다. 기존 apps/kiosk, /api/v1/kiosk/*, KioskDevice/KioskConfig
+      migration은 즉시 삭제하지 않고 deprecated cleanup 대상으로 분리했다. 후속 구현은
+      BAC-010(게스트 웹 세션 API 정렬)과 CTR-011(키오스크 deprecated cleanup 계획)로 이어간다.
+
+  - id: CTR-011
+    title: deprecated 키오스크 자산 cleanup migration 계획
+    wave: 2
+    track: CONTRACTS
+    priority: P2
+    status: PENDING_DECOMPOSITION
+    depends_on: ["CR-001"]
+    owned_paths:
+      - ".harness/contracts/**"
+      - "backend/alembic/**"
+      - "backend/app/models/**"
+      - ".harness/reports/**"
+    acceptance:
+      - "KioskDevice/KioskConfig/KIOSK entry_channel 데이터 존재 여부를 확인하는 read-only 점검 절차가 문서화된다"
+      - "배포 환경 적용 여부와 데이터 잔존 여부에 따라 DROP/보존(deprecated)/뷰 호환 중 하나를 선택하는 cleanup plan을 작성한다"
+      - "파괴적 migration은 별도 승인 전 생성하지 않는다"
+    note: >
+      CR-001은 웹 전용 범위 전환을 확정했지만 기존 migration과 구현 이력을 즉시 삭제하지 않는다.
+      이 태스크는 cleanup을 설계하는 CONTRACTS 작업이며, 실제 삭제 작업이 아니다.
+
+  - id: CTR-012
+    title: 검색 persistence 채널·FTS·pgvector 인덱스 migration 정렬
+    wave: 2
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: ["AIS-009", "CR-001"]
+    owned_paths:
+      - ".harness/contracts/**"
+      - "backend/alembic/**"
+      - "backend/app/models/search.py"
+      - "backend/app/models/ai.py"
+    acceptance:
+      - "matching.search_session.channel CHECK가 legacy WEB/KIOSK에서 REGISTERED_WEB/GUEST_WEB/BUYER_WEB/ADMIN_PREVIEW 또는 승인된 호환 전략으로 정렬된다"
+      - "KeywordSearchProvider 계약의 대상 필드에 대한 PostgreSQL FTS GIN index 또는 generated tsvector 전략이 migration으로 확정된다"
+      - "VectorSearchProvider 계약의 ai.embedding_vector ANN index 전략이 pgvector 확장과 호환되게 확정된다"
+      - "이미 적용된 환경의 legacy KIOSK/WEB 데이터가 있으면 파괴하지 않는 backfill/compat plan을 포함한다"
+    note: >
+      AIS-009가 BAC-008 연결 계약을 고정하면서 발견한 후속. 현재 search_provider 계약은
+      WEB_ONLY 채널을 사용하지만 0009_search/model의 channel CHECK는 legacy WEB/KIOSK라
+      BAC-008이 GUEST_WEB 검색을 persistence하면 DB 제약에 걸릴 수 있다. 또한 FTS/vector
+      provider를 READY로 켜려면 인덱스 migration이 먼저 필요하다.
+    completed_note: >
+      backend/app/models/search.py의 SEARCH_CHANNELS와 channel 길이를 WEB_ONLY 채널 기준으로
+      정렬했다. 0013_search_web_only_indexes migration은 legacy WEB/KIOSK 값을
+      REGISTERED_WEB/GUEST_WEB로 backfill한 뒤 CHECK를 재생성한다. 같은 migration에서
+      exhibitor/product/participation/embedding_document FTS GIN index와 embedding_vector
+      model/dimension lookup + active HNSW cosine ANN index를 추가했다. query embedding
+      adapter와 provider SQL은 BAC-008/후속 BACKEND 구현으로 남긴다.
+
   # ---------------- WAVE 0: BOOTSTRAP ----------------
   - id: FND-001
     title: 하네스 초기화
@@ -83,7 +170,7 @@ tasks:
     wave: 0
     track: FOUNDATION
     priority: P0
-    status: READY
+    status: BLOCKED
     depends_on: ["FND-001"]
     owned_paths:
       - ".harness/state.json"
@@ -94,10 +181,11 @@ tasks:
       - "backend/alembic upgrade head가 깨끗한 DB에 성공"
       - "결과를 state.json의 gate_status.G0_BOOTSTRAP에 반영"
     note: >
-      G0_BOOTSTRAP의 "모든 앱이 로컬에서 실행" 기준은 apps/user-web·kiosk·admin이
-      아직 존재하지 않아 이 시점에는 충족 불가 - WAVE 1 스켈레톤 생성 이후 재검사한다
-      (ASSUMPTION-002). Docker가 없는 이 실행 환경에서는 docker compose 관련 항목을
-      NOT_RUN으로 남긴다 - 실제 Docker 가용 환경(로컬 또는 CI)에서 재검증 필요.
+      CR-001 이후 G0의 "모든 앱이 로컬에서 실행" 기준은 WEB_ONLY MVP 실행 앱
+      (user-web/admin/backend live)으로 재해석한다. 2026-08-03 기준 해당 로컬 기동은
+      확인 완료했다. Docker가 없는 이 실행 환경에서는 docker compose health 항목을
+      NOT_RUN으로 남긴다 - 실제 Docker 가용 환경(로컬 또는 CI)에서
+      infra/scripts/verify-docker-stack으로 재검증 필요.
 
   - id: FND-005
     title: 구조 확장(database/ai/infra/tests/docs 신규 서브디렉터리), MinIO, Makefile, 환경변수, 하네스·범위위반 검증 스크립트, CI 확장
@@ -164,7 +252,7 @@ tasks:
     wave: 1
     track: CONTRACTS
     priority: P1
-    status: READY
+    status: DONE
     depends_on: ["CTR-001"]
     owned_paths:
       - "backend/alembic/versions/**"
@@ -178,13 +266,20 @@ tasks:
       CTR-001 실행 중 발견된 공백(도메인 모델 문서 §11, §14) - AI_SEARCH 트랙(AIS-GROUP-001,
       Wave 2)의 키워드·벡터 검색 구현이 이 마이그레이션에 의존하므로 Wave 2 착수 전에
       완료돼야 한다. C-2/C-4 문서(docs/redesign-v2/common/)가 스키마 설계의 1차 근거.
+    completed_note: >
+      backend/app/models/ai.py와 0012_ai_schema 마이그레이션으로 source_document,
+      extracted_attribute, content_approval, ai_execution_log, embedding_document,
+      embedding_vector 6개 테이블을 생성했다. pgvector는 파이썬 의존성을 추가하지 않고
+      PostgreSQL extension + vector 타입으로만 사용한다. PostgreSQL 17 + pgvector 환경에서
+      alembic upgrade head → downgrade 0010_kiosk → upgrade head 왕복 성공. alembic check는
+      기존 문서화된 exhibition.profile_attribute FK 드리프트 1건만 보고했다.
 
   - id: CTR-002
     title: OpenAPI 초안 작성 (.harness/contracts/openapi.yaml)
     wave: 1
     track: CONTRACTS
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["CTR-001"]
     owned_paths:
       - ".harness/contracts/openapi.yaml"
@@ -196,13 +291,26 @@ tasks:
       - "모든 엔드포인트에 operationId·권한·요청/응답 Schema·공통 오류 응답·Pagination·공개범위·멱등성 여부 명시, operationId 중복 없음"
       - "오류 응답은 {error:{code,message,request_id,details}} 구조로 통일"
       - "검색 요청/응답 Schema는 WAVE-1 §7.6/§7.7 예시를 실제 온톨로지 코드 체계(CTR-003)와 정합되게 반영"
+    completed_note: >
+      25개 경로·26개 operationId(중복 0)로 작성. system(BAC-001이 구현 중인 계약만 문서화)/
+      ontology(기존 구현 그대로 문서화)/profile/exhibitors/search/recommendations/favorites/
+      buyer/meetings/kiosk/admin 11개 태그로 WAVE-1 §7.4 그룹과 1:1 대응시켰다. 스키마 이름은
+      CTR-008 크로스워크 결과(domain-model.md §15)를 그대로 반영 - 예: WAVE-1의 평평한
+      "favorites"는 profile.saved_recommendable(CTR-006)으로, "search_sessions"는 CTR-008이
+      신설한 matching.search_session/query/result로 매핑했다. 오류 응답은 전부
+      {error:{code,message,request_id,details}} 구조(error-codes.yaml과 정합). 검증: YAML
+      파싱 성공 + `openapi-spec-validator` 실제 실행 결과 "OK"(pip install 후 실행,
+      가짜로 통과시키지 않음) + operationId 중복 스크립트 검사(0건). GUEST_WEB 403,
+      미승인 업체 404(EXHIBITOR_NOT_PUBLISHED), 상담 수락 전 연락처 비공개
+      (contact_disclosed 필드 자체를 CONFIRMED 이전엔 false 고정), 관심저장 멱등 DELETE 등
+      AGENTS.md §8 원칙을 스키마 수준에서 명시했다.
 
   - id: CTR-003
     title: 온톨로지 계약 파일 작성 (.harness/contracts/ontology.yaml)
     wave: 1
     track: CONTRACTS
     priority: P1
-    status: READY
+    status: DONE
     depends_on: ["FND-001"]
     owned_paths:
       - ".harness/contracts/ontology.yaml"
@@ -211,13 +319,24 @@ tasks:
       - "docs/redesign-v2/common/C-3-ontology.md의 6개 카테고리 매핑 표를 계약 형식으로 반영"
       - "WAVE-1 §7.10의 8개 카테고리(INDUSTRY/TECH/PRODUCT/SERVICE/GOAL/CHANNEL/TRADE/REGION)와 예시 코드를 기존 concept_type·attribute_code 접두어 체계로 매핑(REGION은 C-3 매핑표에 명시적 언급이 없었음 - 신규 매핑 필요 여부 확인)"
       - "코드별 한국어/영어 라벨·설명·상위코드·동의어·상태·버전 필드 정의"
+    completed_note: >
+      catalog.v1.json을 실측(259개 concept, 23개 concept_type)해 WAVE-1의 8개 카테고리를
+      전부 매핑했다. 핵심 발견 2건: (1) REGION은 C-3 §1 표에 없었으나 catalog.v1.json에
+      이미 19개 코드(REGION.*)로 존재하고 backend/app/services/matching/feature_builder.py
+      의 _COMPONENT_BY_CODE_PREFIX가 "REGION":"region"으로 이미 실사용 중임을 코드로
+      확인 - 신규 매핑이 아니라 C-3 문서의 누락이었다. (2) C-3 §1이 "산업→CATEGORY.*"라고
+      적었으나 실제 카탈로그에는 CATEGORY.* 코드가 하나도 없고(전체 코드 접두어 실측),
+      실제로는 PRODUCT.*(concept_type=PRODUCT_CATEGORY)뿐이었다 - C-3의 오탈자로 판단하고
+      실측값을 이 계약의 정본으로 채택, INDUSTRY/PRODUCT 두 WAVE-1 카테고리를 동일 축으로
+      통합했다(신규 concept_type 없음). 나머지 15개 concept_type도 참고용으로 전부 나열.
+      YAML 파싱 검증 완료.
 
   - id: CTR-004
     title: 오류코드 정의 (.harness/contracts/error-codes.yaml)
     wave: 1
     track: CONTRACTS
     priority: P1
-    status: READY
+    status: DONE
     depends_on: ["CTR-001"]
     owned_paths:
       - ".harness/contracts/error-codes.yaml"
@@ -225,13 +344,22 @@ tasks:
       - "기존 EligibilityDecision/filter_result 상태값 어휘(PASS/FAIL/UNKNOWN/CONDITIONAL_PASS/MANUAL_REVIEW/TEMPORARY_BLOCK/POLICY_BLOCK/USER_EXCLUDED)를 HTTP 오류코드 체계로 매핑"
       - "각 오류코드에 사용자 노출 메시지 정책(개인정보 미노출) 명시"
       - "WAVE-1 §7.11 최소 오류코드 목록(VALIDATION_ERROR ~ INTERNAL_ERROR)을 포함, 기존 어휘와 중복되지 않게 통합"
+    completed_note: >
+      backend/app/models/matching.py의 FILTER_RESULT_TYPES(실제 CHECK 제약, 8종)를 그대로
+      domain_filter_results로 옮기고(값 집합 실측 일치 확인), 두 계열(도메인 판정 vs HTTP
+      오류코드)이 서로 다른 레이어임을 명시해 혼동을 막았다. WAVE-1 최소 15종 + 기존
+      ONTOLOGY_CODE_NOT_FOUND/ONTOLOGY_VALUE_OUT_OF_RANGE(기존 ontology.py 엔드포인트가
+      이미 반환 중인 문자열) 2종을 통합해 총 17종, 중복 0건(스크립트 검증). 전 항목에
+      user_message(개인정보 미노출)·retryable·idempotent_safe 명시, 선택 규칙 절에
+      미승인 업체 404 처리·상담 연락처 비공개는 오류코드가 아니라 응답 스키마 설계로
+      막는다는 원칙을 명문화. YAML 파싱 검증 완료.
 
   - id: CTR-005
     title: 이벤트 카탈로그 초안 (.harness/contracts/event-catalog.yaml)
     wave: 1
     track: CONTRACTS
     priority: P2
-    status: READY
+    status: DONE
     depends_on: ["CTR-001"]
     owned_paths:
       - ".harness/contracts/event-catalog.yaml"
@@ -239,13 +367,23 @@ tasks:
       - "content_approval 확정, meeting 상태 변경, guest 회원전환 등 최소 이벤트만 정의"
       - "Kafka 등 스트리밍 인프라를 전제하지 않는 워커 큐잉(RQ/Celery) 수준 이벤트로 한정"
       - "WAVE-1 §7.11 최소 이벤트 목록(PROFILE.CONFIRMED ~ ADMIN.BOOTH_STATUS_CHANGED)을 포함"
+    completed_note: >
+      WAVE-1 최소 20개 이벤트를 전부 정의(중복 0건, 스크립트 검증), 각 이벤트에
+      triggered_by(실제 테이블/컬럼 변화)·payload_fields·queued_job·pii_check를 명시했다.
+      범위를 명확히 좁힘: 이 카탈로그는 "무엇을 트리거로 RQ/Celery job을 큐잉하는가"만
+      정의하고, 모든 이벤트를 영속 로그로 남기는 것은 전제하지 않는다(그 영속 로그
+      테이블 interaction.interaction_event는 CTR-008이 도메인 모델 §15.3에서 이미
+      "이번 범위 밖, CTR-010으로 후속 등록"이라 확정) - PROJECT_SCOPE.md의 "복잡한
+      이벤트 스트리밍" 제외범위와 정합. meet_ai.ontology.catalog.py의 CANONICAL_EVENTS
+      (온톨로지 엔진 내부 검증용 별도 목록)와 이름이 겹치는 것은 의도적으로 의미를
+      맞췄으나 그 목록을 대체하지 않음을 명시. YAML 파싱 검증 완료.
 
   - id: CTR-008
     title: WAVE-1 신규 엔터티 크로스워크 + 진짜 신규분만 마이그레이션(SearchSession 계열, KioskDevice/KioskConfig 등)
     wave: 1
     track: CONTRACTS
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["CTR-001"]
     owned_paths:
       - ".harness/contracts/domain-model.md"
@@ -257,13 +395,75 @@ tasks:
       - "domain-model.md에 없거나 진짜 없는 것으로 확인된 엔터티만(예: SearchSession/SearchQuery/SearchResult, KioskDevice/KioskConfig - GuestSession과 다른 디바이스 프로비저닝 개념인지 확인) 신규 마이그레이션 설계"
       - "alembic upgrade/downgrade 왕복 성공(신규분 있을 경우)"
     note: "ASSUMPTION-010 참고 - 이 태스크가 실질적으로 이번 WAVE-1 CONTRACT-001/003을 대체한다."
+    completed_note: >
+      domain-model.md §15에 30여개 WAVE-1 엔터티 전체 크로스워크 표 작성(REUSE 대다수,
+      backend/app/models/*.py 직접 grep으로 재확인 - 문서만 신뢰하지 않음). 진짜
+      NEW_REQUIRED로 확인된 것: (1) SearchSession/SearchQuery/SearchResult - 기존
+      matching.recommendation_session이 profile_id NOT NULL이라 프로파일 없는 키오스크·
+      GUEST_WEB 검색을 표현 못 함(코드로 확인), backend/app/models/search.py(matching
+      스키마) 신설. (2) KioskDevice/KioskConfig - profile.guest_session(방문자 세션)과
+      물리 단말 등록·설정은 다른 개념(코드에 단말 프로비저닝 테이블 전혀 없음 확인),
+      backend/app/models/kiosk.py(exhibition 스키마) 신설, 개인정보 컬럼 없음 확인.
+      마이그레이션 0009_search/0010_kiosk를 실제 로컬 PostgreSQL 16(homebrew, Docker
+      미가용이라 initdb로 임시 인스턴스 구성)에 대해 upgrade head/downgrade -1 x2/
+      upgrade head 왕복 실제 실행 성공, `alembic check`로 드리프트 없음 확인(사전에
+      알려진 exhibition.profile_attribute FK 갭 1건만 남고 그건 0006/0007이 이미
+      문서화한 무관한 기존 이슈). pytest 전체 101 passed(기존 100 + 회귀 없음,
+      backend/tests/test_exhibitor_models.py의 헤드 리비전 상수 1줄만 DEC-009와 동일한
+      좁은 예외로 갱신 - 순수 상수, 로직 변경 없음). ruff 전체 통과. 추가로
+      ExternalReference/InteractionEvent도 실제 테이블 없음을 확인했으나, 26개
+      redesign-v2 문서 중 이를 지금 요구하는 문서가 없어(레거시 db-erd-table-spec.md
+      에만 존재) AGENTS.md §11(범위 밖 기능 임의 구현 금지) 원칙에 따라 마이그레이션
+      없이 후속 태스크 CTR-009/CTR-010으로만 등록(domain-model.md §15.3/§16, 아래
+      backlog 항목 참고).
+
+  - id: CTR-009
+    title: "(후속) integration.external_reference/source_system/sync_job 마이그레이션"
+    wave: 1
+    track: CONTRACTS
+    priority: P2
+    status: PENDING_DECOMPOSITION
+    depends_on: []
+    owned_paths:
+      - "backend/alembic/versions/**"
+      - "backend/app/models/**"
+    acceptance:
+      - ".harness/contracts/domain-model.md §15.2/§16 참고 - Wave 2B(future-waves.md, 사전등록 시스템 연계) 착수가 확정되는 시점에 세부 분해"
+    note: >
+      CTR-008 실행 중 발견: WAVE-1의 ExternalReference 엔터티는 실제로 어떤 backend
+      모델에도 대응하지 않는다(docs/db-erd-table-spec.md §19.2에만 레거시 설계 존재).
+      그러나 26개 redesign-v2 문서 어디에도 지금 이 테이블을 요구하는 근거가 없어(사전등록
+      연계는 아직 Wave 2B 프롬프트 단계) CTR-008에서 임의로 만들지 않고 후속 등록만 한다
+      (AGENTS.md §11).
+
+  - id: CTR-010
+    title: "(후속) interaction.interaction_event 파티션 테이블 마이그레이션"
+    wave: 1
+    track: CONTRACTS
+    priority: P2
+    status: PENDING_DECOMPOSITION
+    depends_on: []
+    owned_paths:
+      - "backend/alembic/versions/**"
+      - "backend/app/models/**"
+    acceptance:
+      - ".harness/contracts/domain-model.md §15.2/§16, event-catalog.yaml(CTR-005) 참고 - 이벤트 카탈로그의 이벤트를 워커 큐잉을 넘어 영속 로그로 남겨야 한다는 요구가 확정되는 시점에 세부 분해"
+    note: >
+      CTR-008 실행 중 발견: WAVE-1의 InteractionEvent 엔터티도 실제 테이블이 없다
+      (docs/db-erd-table-spec.md §17.1에 파티션 테이블로 상세 설계돼 있고,
+      backend/app/models/profile.py의 ProfileVersion.source_event_id 주석이 이 테이블을
+      가리킬 자리를 이미 예약해뒀으나 실제 구현은 없음). CTR-005(event-catalog.yaml)는
+      "워커 큐잉 트리거" 수준으로만 범위를 좁혔으므로 이번에는 영속 로그 테이블을 만들지
+      않고 후속 등록만 한다(AGENTS.md §11, PROJECT_SCOPE.md "복잡한 이벤트 스트리밍" 제외
+      범위와 혼동하지 않도록 주의 - 이 테이블 자체는 스트리밍 인프라가 아니라 단순 append-only
+      로그이므로 제외범위는 아니지만, 지금 시점에 소비자가 없어 우선순위가 낮다).
 
   - id: CTR-006
     title: profile.saved_recommendable 마이그레이션
     wave: 1
     track: CONTRACTS
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["CTR-001"]
     owned_paths:
       - "backend/alembic/versions/**"
@@ -272,6 +472,11 @@ tasks:
       - "docs/redesign-v2/web/W-8-api-and-db-changes.md §4 스키마대로 마이그레이션 생성"
       - "alembic upgrade/downgrade 왕복 성공"
       - "04-integration-roadmap.md 1단계 1-A"
+    completed_note: >
+      backend/app/models/profile.py에 SavedRecommendable 모델을 추가하고
+      0011_saved_recommendable 마이그레이션으로 profile.saved_recommendable 테이블,
+      UNIQUE(profile_id, recommendable_id), profile/recommendable 조회 인덱스를 생성했다.
+      PostgreSQL 17 + pgvector 환경에서 CTR-007과 함께 upgrade/downgrade 왕복 검증 완료.
 
   - id: WEB-001
     title: apps/user-web 라우트 뼈대 (Mock 데이터)
@@ -378,13 +583,36 @@ tasks:
     wave: 1
     track: AI_SEARCH
     priority: P1
-    status: READY
+    status: DONE
     depends_on: ["CTR-001"]
+    completed_note: >
+      ai/evaluation/{queries,expected,schemas}/ 구조 생성. queries/에 guest-web-ko.jsonl(5건)·
+      consumer-ko.jsonl(3건, 웹/프로파일 있음)·buyer-ko.jsonl(4건, 웹/프로파일 있음)·
+      multilingual.jsonl(3건) 총 15건, expected/에 intent·ontology-mapping·
+      search-relevance.jsonl(각 15건, query_id로 조인). 작업 전 catalog.v1.json을
+      직접 조사(259개 concept, 228개 assignable, synonyms 11건 전부 ko-KR - AIS-002와
+      동일 실측)해 실제 존재·assignable한 코드만 required/preferred/excluded로 채웠고,
+      대응 개념이 없는 표현("AI 기술 보유", "친환경", "스마트공장", "일본"(국가별 수출) 등)은
+      코드를 지어내는 대신 빈 배열 + ontology_gap_notes/unmapped_terms로 gap을 명시했다.
+      multilingual.jsonl 3건은 AIS-002가 확인한 "en/zh/ja 유사어 0건" 사실을 그대로
+      반영(synonym_table_coverage: NONE)하고, 참고용 aspirational_concept_codes_via_llm만
+      남겼다(가짜 다국어 유사어를 만들지 않음). CHANNEL.ONLINE처럼 assignable=false
+      구조 헤더가 필요한 질의(BUYER-KO-002)는 clarification_expected=true로 표시해
+      "확정 대신 되묻기" 사례를 Gold Set에 포함시켰다. ai/evaluation/schemas/에 4개
+      JSON Schema(query-sample/expected-intent/expected-ontology-mapping/
+      expected-search-relevance)를 정의하고 validate_gold_set.py로 (1) 각 jsonl이
+      스키마를 만족하는지 (2) queries<->expected id가 1:1 대응하는지 (3) 모든
+      concept_code가 실제 카탈로그에 존재·assignable한지를 실행 검증 - "PASS - 15 query
+      samples ... 0 schema violations, 0 unknown/invented concept codes, 0 id
+      mismatches"로 실제 통과. expected/search-relevance.jsonl은 아직 시드 데이터(참가업체·
+      제품)가 없어 concrete recommendable_id 대신 질적 relevance_criteria/must_exclude로만
+      기록했다(핸드오프에 후속 필요 명시). 핸드오프:
+      .harness/handoffs/ai-search/AIS-001-005-006.md.
     owned_paths:
       - "ai/evaluation/**"
     acceptance:
       - "ai/evaluation/{queries,expected,schemas}/ 구조(WAVE-1 §11.1)로 생성 - 이전에 계획했던 backend/tests/fixtures/gold_set/ 대신 이미 만들어둔 ai/evaluation/(FND-005)을 사용"
-      - "queries/{consumer-ko,buyer-ko,kiosk-ko,multilingual}.jsonl에 WAVE-1 §11.2 최소 샘플(키오스크 5건, 웹 3건, 바이어 4건) 포함"
+      - "queries/{consumer-ko,buyer-ko,guest-web-ko,multilingual}.jsonl에 WAVE-1 §11.2 최소 샘플(게스트 웹 5건, 웹 3건, 바이어 4건) 포함"
       - "각 샘플에 입력·예상 의도·예상 코드·필수조건·금지 추론·기대 검색 대상 기록"
       - "웹(프로파일 있음)·키오스크(프로파일 없음) 케이스가 모두 포함된다"
       - "expected/{intent,ontology-mapping,search-relevance}.jsonl에 대응 기대값 기록"
@@ -394,8 +622,40 @@ tasks:
     wave: 1
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["CTR-003"]
+    completed_note: >
+      ai/schemas/query_output.py에 QueryInterpretation(intent/target_type/
+      concept_codes/required_conditions/preferred_conditions/excluded_concept_codes/
+      confidence/clarification_required/clarification_question)과 조건 1건용
+      ConceptCondition(concept_code + 숫자형 comparator/value/value_max) Pydantic
+      모델 정의. target_type은 candidate_generator.py가 현재 2채널만 구현했다는
+      상태 대신 domain-model.md §7의 계약값 4종(BOOTH/EVENT_PRODUCT/EXHIBITOR/
+      PROGRAM)을 그대로 사용(계약이 구현 상태보다 우선). 검증 규칙: (1) 허용
+      온톨로지 코드만 - meet_ai.ontology.load_catalog()로 실제 카탈로그 조회,
+      존재하지 않는 코드는 물론 존재하되 assignable=false인 구조 헤더(PRODUCT.ALL
+      등)도 거부, (2) confidence는 Field(ge=0,le=1), (3) 개인정보 필드 금지 -
+      model_config=ConfigDict(extra="forbid")로 스키마를 닫아 exhibitor_id/rank/
+      score 등 스키마 밖 필드를 원천 차단(1차 방어선)하고, intent/
+      clarification_question 자유텍스트에 이메일·전화번호·UUID 패턴이 섞이면
+      거부하는 정규식 검증(2차 방어선) 추가, (4) 업체 ID·추천순위 직접 생성 금지 -
+      스키마 자체에 그런 필드가 없고 extra=forbid로 주입도 막음,
+      (5) clarification_required와 clarification_question의 일관성(필요할 땐
+      비어있으면 거부, 불필요할 땐 값이 있으면 거부)도 model_validator로 강제.
+      "원문에 없는 조건 생성 금지"는 스키마 하나로 기계적 완전검증이 불가능함을
+      docstring에 명시(AIS-001 Gold Set의 forbidden_inferences/AIS-003 Fallback로
+      보강 필요). ai/schemas/tests/test_query_output_schema.py에 25건 유닛
+      테스트(위반 케이스마다 실제 ValidationError 발생 확인 - 미확인 코드/비
+      assignable 코드/confidence 범위 밖·경계값/clarification 불일치 양방향/
+      exhibitor_id·final_score 등 추가 필드 주입/전화번호·이메일·UUID 패턴 포함/
+      target_type 4종 전부 허용/숫자 comparator 조합 오류)로 실제 실행, 25 passed.
+      ruff 통과. 의존성 메모: backlog상 depends_on CTR-003(온톨로지 계약 파일화)이
+      아직 DONE이 아니지만, 이 태스크는 CTR-003이 만들 계약 문서가 아니라 실제
+      카탈로그 원본(src/meet_ai/ontology/catalog.v1.json, status=PUBLISHED)을
+      직접 근거로 삼았으므로 차단되지 않는다고 판단하고 진행 - CTR-003이 나중에
+      다른 코드 표현을 확정하면 이 파일의 카탈로그 조회 로직은 변경 없이 그대로
+      유효하다(원본 파일 자체를 조회하기 때문). 핸드오프:
+      .harness/handoffs/ai-search/AIS-001-005-006.md.
     owned_paths:
       - "ai/schemas/**"
     acceptance:
@@ -408,8 +668,42 @@ tasks:
     wave: 1
     track: AI_SEARCH
     priority: P0
-    status: READY
+    status: DONE
     depends_on: ["AIS-005"]
+    completed_note: >
+      backend/app/services/matching/search_provider.py 신규 생성(같은 디렉터리의
+      기존 candidate_generator.py/hard_filter_engine.py 등은 이번 태스크에서 읽기만
+      하고 수정하지 않았다). SearchProvider Protocol(@runtime_checkable, async
+      search(query, limit) -> list[SearchCandidate]), DTO SearchQuery(event_id/
+      target_type(domain-model.md §7의 4종 계약값)/raw_text/required·preferred·
+      excluded_concept_ids(uuid, 기존 ChannelHit.matched_concept_ids와 동일 관례)/
+      structured_filters(제네릭 매핑)/locale), SearchCandidate(recommendable_id/
+      rank/source_provider/matched_concept_ids/score_breakdown), 점수 결과 DTO
+      SearchScoreBreakdown(structured_score/keyword_score/semantic_score/
+      data_quality_score/availability_score/final_score/reason_codes, §11.6대로
+      전부 Optional - 값 계산은 Wave 2) 정의. 여러 Provider 결과를 합치는 단계의
+      인터페이스만 CandidateCombiner Protocol로 정의(구현 없음). MockSearchProvider
+      (테스트 더블, canned_results를 limit만큼 반환 + call_count/received_queries
+      기록)로 실제 async 유닛 테스트 12건 실행(isinstance Protocol 검사, 순서·limit·
+      call_count·frozen dataclass 등). candidate_generator.py를 실제로 읽고
+      reciprocal_rank_fusion/ChannelHit/ChannelResult 실제 시그니처를 확인한 뒤
+      모듈 docstring에 "대체가 아니라 감싸는 관계"를 근거와 함께 문서화 - Wave 2의
+      CandidateCombiner 구현체가 SearchCandidate<->ChannelHit/ChannelResult 변환
+      어댑터가 되어 기존 reciprocal_rank_fusion을 그대로 호출해야 한다고 명시했고,
+      RRF 수식 자체는 이 파일에 재구현하지 않았다.
+      StructuredSearchProvider/KeywordSearchProvider/VectorSearchProvider/
+      HybridSearchService는 이름조차 빈 스텁으로 만들지 않고 docstring 설명으로만
+      남겼다(존재하지 않는 구현을 스텁으로 보이게 하지 않기 위해서). 테스트 배치
+      메모: backend/tests/**·루트 tests/**가 QA_SECURITY 전속 경로라 이 파일 옆이나
+      그쪽에 테스트를 두지 못해 ai/schemas/tests/test_search_provider_protocol.py
+      (AI_SEARCH 소유 ai/** 경로, sys.path로 backend를 얹어 import)에 두었다 - 이유는
+      해당 테스트 파일 상단 docstring 참고. ruff 통과, backend 전체 회귀
+      `cd backend && pytest -q` 89 passed/11 skipped(변화 없음)/1 failed - 이
+      실패(test_exhibitor_models.py::test_alembic_chain_has_one_exhibition_head,
+      0009_search 마이그레이션 head 불일치)는 이 태스크 시작 전부터 이 워크트리에
+      이미 존재하던 다른 트랙(CONTRACTS로 추정)의 미완료 작업 때문이며 이 태스크의
+      변경과 무관함(alembic/**는 내 소유 경로가 아니라 직접 수정하지 않았다 - RISKS
+      참고). 핸드오프: .harness/handoffs/ai-search/AIS-001-005-006.md.
     owned_paths:
       - "backend/app/services/matching/search_provider.py"
     acceptance:
@@ -521,41 +815,78 @@ tasks:
     wave: 1
     track: QA_SECURITY
     priority: P1
-    status: READY
+    status: DONE
     depends_on: ["BAC-001"]
     owned_paths:
       - "backend/tests/test_health_api.py"
     acceptance:
       - ".harness/handoffs/backend/BAC-001-test-request.md(또는 qa/BAC-001-test-request.md)에 담긴 검증된 테스트 소스를 backend/tests/에 실제로 커밋"
       - "pytest 재실행으로 6 passed/1 skipped(Postgres 없는 환경) 확인"
-    note: "BAC-001이 locks.yaml 소유권 원칙을 지켜 직접 커밋하지 않고 넘긴 케이스 - 코드 재작성 없이 그대로 반영하면 됨."
+    completed_note: >
+      `.harness/handoffs/qa/BAC-001-test-request.md`의 테스트를
+      `backend/tests/test_health_api.py`로 반영했다. 단독 실행 결과
+      6 passed / 1 skipped(Postgres 미기동), 전체 backend 회귀는
+      96 passed / 12 skipped로 통과했다. `ruff check tests/test_health_api.py`도 통과.
 
   - id: QAS-004
     title: 프런트 기본 E2E 하네스 (Playwright smoke)
     wave: 1
     track: QA_SECURITY
     priority: P1
-    status: BLOCKED
+    status: DONE
     depends_on: ["WEB-001", "KSK-001", "ADM-001"]
     owned_paths:
       - "tests/e2e/**"
     acceptance:
       - "WAVE-1 §12.2 3개 앱 smoke 시나리오(user-web /home→검색→상세, kiosk 대기→검색→결과→상세→처음으로, admin 목록→상세→검수탭)"
-    note: "WEB-001/KSK-001/ADM-001이 아직 완료되지 않아 실제 라우트가 없으므로 BLOCKED - 그 3개 완료 후 착수."
+    completed_note: >
+      루트 `@playwright/test` 하네스를 추가하고 `tests/e2e/wave1-smoke.spec.ts`로
+      user-web, kiosk, admin 3개 앱의 Wave 1 라우트 골격 smoke를 검증했다.
+      E2E 전용 포트 3300/3310/3320을 사용해 로컬의 기존 3000번 개발 서버 충돌을 피한다.
+      `npm run e2e` 최종 결과 3 passed. admin 상세/검수탭은 아직 ADM-001 제품 골격에
+      존재하지 않아 `/console`의 검수 예정 카드 표시까지 검증하고, Wave 2 ADM-GROUP-001에서
+      실제 상세/검수탭이 생기면 smoke를 확장해야 한다. kiosk의 sessionStorage 루트 진입
+      자동 삭제는 이번 QAS-004 테스트 범위를 넘는 KSK-GROUP-001 잔여위험으로 handoff에 기록.
 
   - id: QAS-005
     title: 범위위반 탐지 확장 - 키오스크 개인정보 입력필드 검사
     wave: 1
     track: QA_SECURITY
     priority: P0
-    status: BLOCKED
+    status: DONE
     depends_on: ["KSK-001"]
     owned_paths:
       - "infra/scripts/scope-violation-check"
     acceptance:
       - "WAVE-1 §12.4: name/phone/mobile/email/address/company_contact이 키오스크 코드에 '입력 요소'로 존재하면 실패 - 업체정보 표시용 필드(읽기 전용)와 사용자 입력 필드를 구분"
       - "문서에서 제외범위를 설명하는 문자열은 실패시키지 않는다(이미 FND-005 scope-violation-check가 이 원칙을 따름)"
-    note: "apps/kiosk가 아직 없어(KSK-001 진행 중) 검사 대상 코드가 없음 - KSK-001 완료 후 착수."
+    completed_note: >
+      `infra/scripts/scope-violation-check`에 키오스크 소스 전용 정적 검사를 추가했다.
+      `apps/kiosk/src`의 실제 화면 코드에서 `<input>`, `<textarea>`, `<select>` 속성만
+      검사하므로 `exhibitor.name` 같은 읽기 전용 업체정보 표시는 오탐하지 않는다.
+      테스트/fixture 경로는 제외해 반증 테스트용 개인정보 입력 예시는 허용한다.
+      금지 input type(email/tel/password), 금지 autocomplete(name/email/tel 등),
+      name/phone/mobile/email/address/company_contact 및 한국어 개인정보 키워드가
+      입력 요소의 name/id/placeholder/aria-label/autocomplete에 나타나면 실패한다.
+
+  - id: QAS-007
+    title: WEB_ONLY 게스트 웹 개인정보·모바일 smoke 검증 전환
+    wave: 2
+    track: QA_SECURITY
+    priority: P1
+    status: PENDING_DECOMPOSITION
+    depends_on: ["CR-001", "BAC-010"]
+    owned_paths:
+      - "infra/scripts/scope-violation-check"
+      - "tests/e2e/**"
+      - ".harness/reports/**"
+    acceptance:
+      - "scope-violation-check가 GUEST_WEB 화면/컴포넌트의 name/phone/email/address 등 직접식별정보 입력을 탐지한다"
+      - "기존 kiosk smoke 의존 없이 모바일 guest web 진입→검색→상세→임시 관심목록→전환 시작 smoke를 정의한다"
+      - "QR/short URL/email link/registration link는 모두 웹 entry method로만 검증하고 키오스크 결과 인계로 취급하지 않는다"
+    note: >
+      CR-001 수용조건에 따라 QAS-004/QAS-005의 기존 kiosk 검증 이력을 GUEST_WEB 모바일 웹
+      검증으로 대체하는 후속 QA 작업이다.
 
   - id: AIS-002-followup
     title: "(참고) 온톨로지 영어(en) 유사어 데이터 공백"
@@ -580,62 +911,420 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P0
-    status: PENDING_DECOMPOSITION
+    status: DONE
     depends_on: ["CTR-002", "CTR-006"]
     owned_paths:
       - "backend/app/api/**"
     acceptance:
       - "04-integration-roadmap.md 4단계(4-A~4-F) 엔드포인트가 모두 구현된다"
       - "CTR-002 OpenAPI와 실제 응답 스키마가 일치한다(계약 테스트 통과)"
+    note: >
+      2026-08-02 Wave 2 진입 시 CTR-002 OpenAPI 고정 계약 기준으로 BAC-002~BAC-009로
+      세부 분해했다. 이 그룹 자체는 하위 API 태스크 및 계약 테스트가 완료될 때 DONE으로
+      전환한다.
+    completed_note: >
+      BAC-002~BAC-011 완료. 프로파일/게스트 웹 세션/favorites/바이어 매칭/상담/
+      검색·추천/관리자 콘텐츠 승인/전시·부스 조회/부스 상태 변경 API가 등록됐다.
+      BAC-009/BAC-011 계약 테스트 기준 static OpenAPI 대비 runtime missing/mismatch는 0건이다.
+
+  - id: BAC-002
+    title: 백엔드 API 사용자 컨텍스트·권한 가드 스캐폴드
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: ["CTR-002"]
+    owned_paths:
+      - "backend/app/api/**"
+    acceptance:
+      - "OpenAPI security 요구를 구현 API에서 일관되게 사용할 수 있는 요청 컨텍스트 dependency가 존재한다"
+      - "GUEST_WEB은 지속 프로파일이 필요한 favorites/meetings/buyer API에서 403으로 차단된다"
+      - "BUYER_REGISTERED 전용 API는 검증되지 않은 사용자에게 403을 반환한다"
+      - "실제 인증 시스템 도입 전까지 테스트/로컬용 명시적 헤더 기반 컨텍스트만 허용하고 자동 회원가입·PII 수집을 만들지 않는다"
+    note: >
+      W-8 §5의 API 응답 역할 매핑(GENERAL_VISITOR -> GENERAL_REGISTERED,
+      BUYER -> BUYER_REGISTERED)을 코드 경계에서 흡수한다. 장기 CRM·계약·결제·정밀
+      개인추적 범위로 확장하지 않는다.
+    completed_note: >
+      backend/app/api/v1/dependencies.py에 explicit local/test header 기반 API context를
+      추가하고, common error envelope 렌더링을 위해 backend/app/api/v1/errors.py와
+      app.main HTTPException 핸들러를 추가했다. 실제 인증 어댑터는 후속 작업으로 남긴다.
+
+  - id: BAC-003
+    title: 관심목록 Favorites API 구현
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: ["BAC-002", "CTR-006"]
+    owned_paths:
+      - "backend/app/api/**"
+    acceptance:
+      - "GET /favorites가 profile.saved_recommendable 목록을 OpenAPI FavoriteListResponse 형태로 반환한다"
+      - "POST /favorites가 recommendable_id를 저장하고 UNIQUE(profile_id, recommendable_id) 충돌을 409로 반환한다"
+      - "DELETE /favorites/{saved_recommendable_id}가 멱등 204를 반환한다"
+      - "GUEST_WEB 또는 프로파일 없는 요청은 401/403 계약 오류 envelope로 거절된다"
+    completed_note: >
+      backend/app/api/v1/endpoints/favorites.py 구현 및 api_router 등록 완료.
+      recommendable.active=true 확인, UNIQUE 충돌 409, profile-scoped idempotent delete,
+      missing profile 401, GUEST_WEB 403을 구현했다. DB 통합 계약 테스트는 QA 소유 경로라
+      .harness/handoffs/qa/BAC-003-test-request.md로 요청했다.
+
+  - id: BAC-004
+    title: 관리자 콘텐츠 승인 API 구현
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: ["BAC-002", "CTR-007"]
+    owned_paths:
+      - "backend/app/api/**"
+    acceptance:
+      - "POST /admin/content-approvals가 ai.content_approval을 생성하거나 갱신한다"
+      - "승인/반려 상태·검수자·검수시각·근거 메모를 CTR-002 스키마와 일치시킨다"
+      - "승인 API는 AI 자동승인 없이 명시적 운영자 액션으로만 상태를 바꾼다"
+    completed_note: >
+      backend/app/api/v1/endpoints/admin.py로 POST /api/v1/admin/content-approvals 구현.
+      기존 OPERATOR/ADMIN actor role과 X-MeetAI-User-Id를 요구하고, 해당 업체의 최신
+      ai.source_document를 문서 단위 승인 근거로 사용한다. source evidence가 없으면 승인
+      이력을 만들지 않고 404로 거절한다. AI 자동승인은 추가하지 않았다. QA DB 계약 테스트는
+      .harness/handoffs/qa/BAC-004-test-request.md로 요청.
+
+  - id: BAC-005
+    title: 키오스크 세션·QR 인계 API 구현
+    wave: 2
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: ["BAC-002", "CTR-008"]
+    owned_paths:
+      - "backend/app/api/**"
+    acceptance:
+      - "POST /kiosk/sessions가 profile.guest_session을 익명으로 생성한다"
+      - "DELETE /kiosk/sessions/{guest_session_id}가 세션 종료를 멱등 처리한다"
+      - "POST /kiosk/qr-sessions가 단기 1회용 QR 인계 토큰을 발급한다"
+      - "키오스크 API는 이름·전화번호·이메일·주소 등 개인정보 입력을 받지 않는다"
+    completed_note: >
+      backend/app/api/v1/endpoints/kiosk.py 신설 및 /api/v1/kiosk 라우터 등록 완료.
+      ACTIVE kiosk_device만 익명 profile.guest_session(entry_channel=KIOSK) 생성에 사용할 수
+      있으며, 단말별 kiosk_config.idle_timeout_seconds가 있으면 세션 만료에 반영한다.
+      수동 종료는 expires_at을 현재 시각으로 갱신하고 entry_code를 제거해 멱등 처리한다.
+      QR 인계는 신규 테이블 없이 guest_session.entry_code를 재발급하며, 만료·비키오스크 세션은
+      410 QR_HANDOFF_EXPIRED로 거절한다. 요청/응답에 이름·전화번호·이메일·주소 등 PII 입력을
+      추가하지 않았다. QR 소비·게스트 전환은 BAC-007 범위로 남긴다. QA DB 계약 테스트는
+      .harness/handoffs/qa/BAC-005-test-request.md로 요청.
+
+  - id: BAC-006
+    title: 바이어 매칭 후보·상담 요청 API 구현
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: ["BAC-002"]
+    owned_paths:
+      - "backend/app/api/**"
+    acceptance:
+      - "GET /buyer/matches가 BUYER_REGISTERED 사용자에게 최대 비교 가능한 후보 목록을 반환한다"
+      - "POST /buyer/matches/{exhibitor_id}/meetings가 REQUESTED 상담을 생성한다"
+      - "PATCH /meetings/{meeting_id}/status가 허용 전이만 처리하고 잘못된 전이는 409로 반환한다"
+      - "CONFIRMED 이전에는 연락처 공개 필드가 false이고 연락처 원문을 노출하지 않는다"
+    completed_note: >
+      backend/app/api/v1/endpoints/buyer.py 구현 및 buyer/meetings router 등록 완료.
+      최신 recommendation_session/match_result 조회, 승인·상담가능 업체에 한한 REQUESTED 상담
+      생성, REQUESTED에서 CONFIRMED/REJECTED/CANCELLED_*로의 MVP 전이, CONFIRMED 시
+      MeetingContactShare 생성, 연락처 원문 미노출을 구현했다. message는 암호화 어댑터가
+      없어 평문 저장을 피하기 위해 아직 message_enc에 저장하지 않는다. QA DB 계약 테스트는
+      .harness/handoffs/qa/BAC-006-test-request.md로 요청.
+
+  - id: BAC-007
+    title: 프로파일·게스트 전환 API 구현
+    wave: 2
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: ["BAC-002"]
+    owned_paths:
+      - "backend/app/api/**"
+    acceptance:
+      - "OpenAPI의 profile/guest convert 계열 엔드포인트를 실제 profile 모델과 매핑한다"
+      - "키오스크 익명 세션을 웹 사전등록 프로파일로 인계할 때 명시 동의 없이 PII를 생성하지 않는다"
+      - "전환 실패·만료·중복은 공통 오류 envelope로 반환한다"
+    completed_note: >
+      backend/app/api/v1/endpoints/profile.py와 guest.py를 추가하고 /api/v1/profile,
+      /api/v1/guest 라우터를 등록했다. GET /profile/me는 등록 사용자 프로파일과 활성
+      profile_attribute, BUYER일 때 buyer_need를 반환한다. PATCH /profile/me/attributes는
+      row_version 낙관적 동시성 검사, assignable ACTIVE 온톨로지 코드 해석, USER_EDITED
+      속성 재작성, profile_version 스냅샷 생성을 수행한다. GUEST_WEB에는 명시 속성 수정을
+      허용하지 않는다. POST /guest/convert는 QR entry_code와 만료를 확인한 뒤 기존
+      UserAccount에 대해서만 guest_session converted_user_id/converted_at을 기록하고,
+      게스트 UserProfile/VisitSession을 user_id 소유로 승계하거나 기존 등록 프로파일에
+      VisitSession만 연결한다. identity.user_identity 등 직접식별정보 테이블은 생성·수정하지
+      않는다. 중복 전환은 409 RESOURCE_CONFLICT, 만료/불일치 QR은 410 QR_HANDOFF_EXPIRED로
+      반환한다. QA DB 계약 테스트는 .harness/handoffs/qa/BAC-007-test-request.md로 요청.
+
+  - id: BAC-008
+    title: 검색·추천 API 파사드 구현
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: ["BAC-002", "AIS-GROUP-001", "CTR-012"]
+    owned_paths:
+      - "backend/app/api/**"
+    acceptance:
+      - "POST /search가 matching.search_session/search_query/search_result와 검색 서비스를 연결한다"
+      - "GET /recommendations 및 GET /recommendations/{recommendation_session_id}가 추천 세션을 재현 가능하게 반환한다"
+      - "무결과·낮은 신뢰도·필터 제외 사유가 OpenAPI 응답과 오류코드 계약에 맞게 표현된다"
+    note: >
+      CR-001 이후 /search는 REGISTERED_WEB/GUEST_WEB/BUYER_WEB 공통 파사드다.
+      BAC-010과 AIS-GROUP-001은 완료됐지만, AIS-009에서 matching.search_session.channel
+      CHECK와 FTS/vector 인덱스 migration gap을 CTR-012로 분리했다. CTR-012가 완료되어
+      이제 검색 파사드 구현에 착수 가능하다.
+    completed_note: >
+      backend/app/api/v1/endpoints/search.py를 추가하고 /api/v1/search,
+      /api/v1/guest/sessions/{guest_session_id}/search, /api/v1/search/clarify,
+      /api/v1/search/{search_session_id}, /api/v1/recommendations,
+      /api/v1/recommendations/{recommendation_session_id}를 등록했다. 검색 요청은
+      matching.search_session/search_query/search_result에 persistence하며
+      StructuredSearchProvider + ReciprocalRankFusionCombiner + search_recovery 정책을
+      연결한다. STRUCTURED 외 provider는 AIS-009 계약대로 unavailable meta로 남기고,
+      무결과는 SearchResponse.meta.code=SEARCH_NO_RESULT와 fallback_reason=NO_RESULT로
+      표현한다. 검색 세션 조회/clarify와 추천 세션 조회에는 프로파일 또는 게스트 세션
+      접근 검사를 적용했다.
+
+  - id: BAC-010
+    title: 게스트 웹 세션 API 계약 정렬
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: ["CR-001", "BAC-007"]
+    owned_paths:
+      - "backend/app/api/**"
+      - "backend/app/models/**"
+    acceptance:
+      - "POST /guest/sessions가 profile.guest_session(entry_channel=WEB)을 익명으로 생성한다"
+      - "GET /guest/sessions/{guest_session_id}가 만료·전환 상태와 임시 관심목록을 반환한다"
+      - "POST /guest/sessions/{guest_session_id}/favorites와 DELETE /guest/sessions/{guest_session_id}/favorites/{temporary_favorite_id}가 PII 없이 임시 관심목록을 처리한다"
+      - "POST /guest/sessions/{guest_session_id}/convert가 기존 /guest/convert 동작을 session-scoped 계약으로 정렬한다"
+      - "만료·링크 오류는 GUEST_SESSION_EXPIRED/WEB_ENTRY_LINK_EXPIRED 등 CR-001 error-codes.yaml 이름과 일치한다"
+      - "기존 /api/v1/kiosk/* 구현은 신규 기능에서 확장하지 않고 deprecated 상태로 둔다"
+    note: >
+      CR-001 적용 후 static OpenAPI는 /guest/sessions 계열을 정본으로 삼는다. 현재 백엔드에는
+      BAC-005 kiosk API와 BAC-007 /guest/convert가 남아 있어 계약-구현 정렬이 필요하다.
+    completed_note: >
+      backend/app/api/v1/endpoints/guest.py에 /guest/sessions 생성·조회, 임시 관심목록
+      추가/삭제, session-scoped convert를 구현했다. 임시 관심목록은 신규 테이블 없이
+      guest_session 소유 임시 UserProfile과 profile.saved_recommendable을 재사용한다.
+      기존 /guest/convert는 compatibility wrapper로 유지하되 WEB_ONLY 오류코드
+      GUEST_SESSION_EXPIRED/WEB_ENTRY_LINK_EXPIRED를 사용한다. /guest/sessions/{id}/search는
+      AIS-GROUP-001/BAC-008 범위로 남겼다. QA DB 계약 테스트는
+      .harness/handoffs/qa/BAC-010-test-request.md로 요청했다.
+
+  - id: BAC-009
+    title: BAC-GROUP-001 계약 테스트 핸드오프
+    wave: 2
+    track: QA_SECURITY
+    priority: P0
+    status: DONE
+    depends_on: ["BAC-003", "BAC-004", "BAC-005", "BAC-006", "BAC-007", "BAC-008", "BAC-010"]
+    owned_paths:
+      - "backend/tests/**"
+      - "tests/api/**"
+    acceptance:
+      - "CTR-002 OpenAPI의 백엔드 구현 대상 operationId가 실제 응답과 일치한다"
+      - "권한/비공개/멱등/오류 envelope 회귀 테스트가 통과한다"
+      - "테스트 결과가 .harness/reports/tests 또는 QA handoff에 기록된다"
+    completed_note: >
+      backend/tests/test_bac_group_contract.py를 추가해 구현된 백엔드 operationId가
+      .harness/contracts/openapi.yaml과 일치하는지, 공통 인증/권한/검증 오류가
+      {error:{code,message,request_id,details}} envelope를 쓰는지, MeetingResponse가
+      상담 확정 전 연락처 원문을 노출하지 않는지 고정했다. FastAPI RequestValidationError도
+      VALIDATION_ERROR envelope로 통일했다. 테스트 중 발견한 미구현 정적 계약 경로
+      getExhibitor/getBooth/updateBoothStatus는 BAC-011로 후속 분리했다. 리포트:
+      .harness/reports/tests/BAC-009.md.
+
+  - id: BAC-011
+    title: OpenAPI 잔여 전시·부스 조회 및 부스 상태 API 구현
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: ["BAC-009"]
+    owned_paths:
+      - "backend/app/api/**"
+      - "backend/tests/**"
+    acceptance:
+      - "GET /exhibitors/{exhibitor_id}가 getExhibitor operationId와 ExhibitorResponse 계약으로 등록된다"
+      - "GET /booths/{booth_id}가 getBooth operationId와 BoothResponse 계약으로 등록된다"
+      - "PATCH /admin/booths/{booth_id}/status가 updateBoothStatus operationId와 오류 envelope 계약으로 등록된다"
+      - "BAC-009의 known unimplemented operationId 목록이 비워지거나 해당 항목이 제거된다"
+    note: >
+      BAC-009 계약 회귀 테스트가 static OpenAPI 대비 실제 FastAPI에 없는 3개 경로를 발견했다.
+      BAC-GROUP-001을 DONE으로 닫기 전 이 gap을 구현해야 한다.
+    completed_note: >
+      backend/app/api/v1/endpoints/exhibitors.py를 추가해 GET /exhibitors/{exhibitor_id},
+      GET /booths/{booth_id}를 등록하고, backend/app/api/v1/endpoints/admin.py에
+      PATCH /admin/booths/{booth_id}/status를 추가했다. 공개 조회는 승인된 업체/참가만
+      반환하며 미승인/미존재는 404로 숨긴다. 부스 상태 변경은 OPERATOR/ADMIN,
+      X-MeetAI-User-Id, optional row_version 낙관적 동시성, booth_status_history append를
+      적용한다. BAC-009 operationId gap 목록은 빈 집합으로 갱신했다.
 
   - id: AIS-GROUP-001
-    title: 키워드·벡터 검색 채널 + 키오스크 점수식
+    title: 키워드·벡터 검색 채널 + 게스트 웹 검색 품질
     wave: 2
     track: AI_SEARCH
     priority: P0
-    status: PENDING_DECOMPOSITION
-    depends_on: ["CTR-001", "BAC-GROUP-001"]
+    status: DONE
+    depends_on: ["CTR-001", "BAC-010"]
     owned_paths:
       - "backend/app/services/matching/**"
       - "src/meet_ai/scoring/**"
     acceptance:
-      - "04-integration-roadmap.md 3단계(3-A~3-F) 전 항목 구현"
+      - "REGISTERED_WEB/GUEST_WEB/BUYER_WEB 공통 hybrid keyword/vector 후보 검색 채널을 정리한다"
+      - "GUEST_WEB 세션 검색은 프로파일 없이 current intent, selected/excluded concept, language, event context로 재현 가능하게 동작한다"
+      - "무결과·저신뢰 검색은 clarifying question, broadened search, 인기/카테고리 대체 결과 중 하나로 회복한다"
+      - "기존 KIOSK_SEARCH_SCORE_V1 신규 구현은 중단하고 GUEST_WEB_SEARCH_SCORE_V1/session-intent scoring으로 재정의한다"
+    note: >
+      CR-001로 WEB_ONLY가 확정됐다. 전용 키오스크 점수식은 더 이상 만들지 않고, 모바일
+      게스트 웹 검색의 무결과 회복·다국어·세션 의도 품질 기준으로 재분해한다.
+    completed_note: >
+      AIS-007/008/009로 분해 완료. Gold Set을 GUEST_WEB 기준으로 전환했고,
+      RRF combiner/StructuredSearchProvider/GUEST_WEB_SEARCH_SCORE_V1/무결과 회복 정책을
+      구현했다. AIS-009에서 Keyword/Vector Provider는 대상 필드·정규화·fallback 계약만
+      고정하고, 실제 FTS/pgvector 인덱스 및 search_session 채널 migration은 CTR-012로
+      분리했다.
+
+  - id: AIS-007
+    title: WEB_ONLY 검색 평가셋·RRF Combiner·구조화 Provider 정렬
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: ["AIS-GROUP-001"]
+    owned_paths:
+      - "ai/**"
+      - "backend/app/services/matching/**"
+      - "src/meet_ai/scoring/**"
+    acceptance:
+      - "Gold Set의 KIOSK 채널 샘플을 GUEST_WEB 기준으로 전환한다"
+      - "SearchProvider DTO가 REGISTERED_WEB/GUEST_WEB/BUYER_WEB 채널을 표현한다"
+      - "기존 reciprocal_rank_fusion을 재사용하는 CandidateCombiner 구현체가 존재한다"
+      - "기존 구조화 검색 함수를 SearchProvider 계약으로 감싸는 StructuredSearchProvider가 존재한다"
+      - "GUEST_WEB_SEARCH_SCORE_V1 정책이 src/meet_ai/scoring에 정의된다"
+    completed_note: >
+      기존 kiosk-ko Gold Set 샘플을 guest-web-ko.jsonl로 전환하고 query schema의
+      channel enum을 REGISTERED_WEB/GUEST_WEB/BUYER_WEB로 바꿨다. search_provider.py에
+      SearchQuery.channel, ReciprocalRankFusionCombiner, StructuredSearchProvider를 추가했다.
+      src/meet_ai/scoring/engine.py에 GUEST_WEB_SEARCH_SCORE_V1을 추가하고 export했다.
+      ai/schemas/tests에서 RRF 병합과 점수 정책 회귀를 검증했다.
+
+  - id: AIS-008
+    title: 게스트 웹 무결과·저신뢰 검색 회복 정책
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: ["AIS-007"]
+    owned_paths:
+      - "backend/app/services/matching/**"
+      - "ai/**"
+    acceptance:
+      - "결과 0건·저신뢰·엄격 조건·온톨로지 gap을 구분해 회복 action을 결정한다"
+      - "회복 action은 CLARIFY/BROADEN_CONCEPTS/POPULAR_FALLBACK/CATEGORY_FALLBACK 중 하나다"
+      - "clarification 문구는 PII를 요구하지 않는다"
+      - "BAC-008이 matching.search_query.fallback_reason과 SearchResponse.meta에 연결할 수 있는 순수 함수 형태다"
+    completed_note: >
+      backend/app/services/matching/search_recovery.py에 decide_search_recovery 순수 정책을
+      추가했다. 건강한 결과는 NONE, 저신뢰는 CLARIFY, 카테고리 0건은 CATEGORY_FALLBACK,
+      엄격 concept 0건은 BROADEN_CONCEPTS, 온톨로지 gap 자유텍스트는 POPULAR_FALLBACK을
+      반환한다. ai/schemas/tests/test_search_recovery.py에서 8개 케이스로 검증했다.
+
+  - id: AIS-009
+    title: FTS·벡터 Provider 구현 계획 및 BAC-008 연결 계약
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: ["AIS-008"]
+    owned_paths:
+      - "backend/app/services/matching/**"
+      - "ai/**"
+      - "src/meet_ai/scoring/**"
+    acceptance:
+      - "KeywordSearchProvider가 사용할 PostgreSQL FTS 대상 필드·rank normalization·fallback reason을 확정한다"
+      - "VectorSearchProvider가 사용할 ai.embedding_document/embedding_vector 연결 조건과 unavailable fallback을 확정한다"
+      - "HybridSearchService 또는 BAC-008 handoff가 SearchProvider/Combiner/SearchRecoveryDecision 연결 순서를 명시한다"
+      - "실제 DB 인덱스 또는 embedding 데이터가 부족한 부분은 CONTRACTS/BACKEND 후속 요청으로 분리한다"
+    note: >
+      AIS-007/008로 GUEST_WEB 평가셋, RRF combiner, 구조화 Provider, 회복 정책은 준비됐다.
+      남은 gap은 실제 FTS/Vector Provider와 BAC-008 저장 파사드 연결이다.
+    completed_note: >
+      backend/app/services/matching/search_pipeline_contract.py에 KeywordSearchProvider와
+      VectorSearchProvider의 target fields, score component(keyword_score/semantic_score),
+      rank normalization, required DB objects, unavailable fallback을 고정했다. BAC-008의
+      validate_actor → intent → SearchQuery → available providers → RRF → recovery →
+      matching.search_* persistence → SearchResponse 순서를 BAC008_SEARCH_PIPELINE으로
+      문서화했다. 실제 FTS GIN index, pgvector ANN index, legacy search_session.channel
+      CHECK 정렬은 CTR-012 후속으로 분리했다.
 
   - id: WEB-GROUP-001
-    title: user-web 실 API 연동 (Mock 제거)
+    title: user-web 실 API 연동 (등록·게스트·바이어 웹)
     wave: 2
     track: USER_WEB
     priority: P0
-    status: PENDING_DECOMPOSITION
+    status: DONE
     depends_on: ["WEB-001", "BAC-GROUP-001"]
     owned_paths:
       - "apps/user-web/**"
     acceptance:
-      - "W-3 S-1~S-8 전 화면이 실제 API로 동작"
+      - "REGISTERED_WEB 사전등록 사용자 흐름이 실제 profile/search/favorites/recommendations API로 동작한다"
+      - "GUEST_WEB 현장 방문객 흐름이 /guest/sessions 계열과 /search를 사용해 앱 설치·키오스크 없이 동작한다"
+      - "BUYER_WEB 바이어 흐름이 matches/meetings API로 동작하고 상담 수락 전 연락처를 노출하지 않는다"
+    completed_note: >
+      apps/user-web에 API-first loader를 추가해 profile/recommendations/search/favorites/
+      buyer matches/company detail을 실제 `/api/v1/*` 엔드포인트로 호출하고, 백엔드 또는
+      로컬 헤더 컨텍스트가 없으면 동일 UI 타입의 fallback 데이터를 표시한다.
+      검색은 REGISTERED_WEB/GUEST_WEB/BUYER_WEB 채널을 분리하고 GUEST_WEB은
+      `/guest/sessions` 생성 후 `/search`를 호출한다. 추천/검색에서 받은
+      recommendable UUID 상세는 승인 대상 fallback 상세로 열어 관심 저장이 가능하게 했고,
+      상세 저장 버튼은 공개 환경변수가 있으면 `POST /favorites`/`DELETE /favorites/{id}`를
+      호출한다. user-web lint/test/build 및 Playwright smoke 확인 통과.
 
   - id: KSK-GROUP-001
-    title: kiosk 실 API 연동 (Mock 제거)
+    title: kiosk 실 API 연동 (CR-001로 대체됨)
     wave: 2
     track: KIOSK
     priority: P0
-    status: PENDING_DECOMPOSITION
+    status: SUPERSEDED
     depends_on: ["KSK-001", "BAC-GROUP-001", "AIS-GROUP-001"]
     owned_paths:
       - "apps/kiosk/**"
     acceptance:
-      - "K-3 K-S1~K-S8 전 화면이 실제 API로 동작, 세션 초기화·QR 인계 포함"
+      - "CR-001 이후 신규 구현 없음. 필요한 기능은 WEB-GROUP-001의 GUEST_WEB 모바일 웹 흐름으로 대체한다"
+    note: >
+      WEB_ONLY 범위 전환(CR-001)으로 전용 키오스크 모듈은 MVP 제외다. 기존 apps/kiosk
+      스캐폴드와 smoke 이력은 cleanup 참고자료로 남기고 신규 작업은 만들지 않는다.
 
   - id: ADM-GROUP-001
     title: admin 승인·통계 워크플로우 구현
     wave: 2
     track: ADMIN
     priority: P1
-    status: PENDING_DECOMPOSITION
+    status: DONE
     depends_on: ["ADM-001", "BAC-GROUP-001"]
     owned_paths:
       - "apps/admin/**"
     acceptance:
       - "W-9 범위(승인, 바이어 검증, 기본 통계) 구현"
+    completed_note: >
+      apps/admin `/console`을 실제 운영 콘솔로 전환했다. 업체정보 승인은
+      `POST /api/v1/admin/content-approvals`, 부스 운영상태는
+      `PATCH /api/v1/admin/booths/{booth_id}/status`를 호출하는 폼으로 연결했다.
+      frozen OpenAPI에 바이어 검증 플래그 갱신과 기본 통계 집계 엔드포인트가 아직 없어,
+      BuyerNeed.business_email_verified/company_verified 및 W-9 기본 통계 3종은
+      계약 대기 패널과 metric fallback으로 명시했다. admin lint/typecheck/test/build와
+      Playwright console/mobile smoke를 통과했다.
 
   # ---------------- WAVE 3: INTEGRATION (coarse, refine at wave start) ----------------
   - id: QAS-GROUP-001
@@ -643,12 +1332,29 @@ tasks:
     wave: 3
     track: QA_SECURITY
     priority: P0
-    status: PENDING_DECOMPOSITION
-    depends_on: ["BAC-GROUP-001", "WEB-GROUP-001", "KSK-GROUP-001", "ADM-GROUP-001", "AIS-GROUP-001"]
+    status: DONE
+    depends_on: ["BAC-GROUP-001", "WEB-GROUP-001", "ADM-GROUP-001", "AIS-GROUP-001"]
     owned_paths:
       - "tests/**"
       - "backend/tests/**"
       - ".harness/reports/**"
     acceptance:
-      - "docs/redesign-v2/web/W-10-validation-and-mvp-scope.md, kiosk/K-8-validation-and-mvp-scope.md, common/C-8-integration-testing-deployment.md 전 항목 검증"
+      - "WEB_ONLY 기준의 등록 웹·게스트 웹·바이어 웹·관리자 파트너 웹 핵심 시나리오를 검증한다"
+      - "게스트 웹 세션 만료/잔존 0건, PII 미수집, 접근성, 모바일 QR/짧은 URL 진입을 검증한다"
       - "G3_MVP_RELEASE 전 기준 통과"
+    note: >
+      CR-001 이후 kiosk/K-8 기준은 검증 대상에서 제외하고, GUEST_WEB residual
+      session/privacy/accessibility/mobile entry 기준으로 대체한다.
+    completed_note: >
+      Playwright E2E를 WEB_ONLY 기준으로 재작성해 user-web 등록/게스트/바이어 surface와
+      admin 운영 콘솔을 desktop/mobile Chromium에서 검증했다(6 passed). 전용 kiosk
+      webServer와 Wave 1 smoke를 제거했다. 게스트 웹 entry/search/signup 개인정보 입력
+      정적 검사, 이벤트 payload 직접식별정보 금지 검사, 게스트 세션 convert/임시 관심목록
+      생애주기 정적 검사를 추가했다. user-web/admin/backend/AI/harness/scope 전체
+      회귀를 통과했다. 이후 임시 PostgreSQL 17 + pgvector clean DB에서 migration
+      roundtrip까지 통과했다. WEB_ONLY HTTP performance smoke도 로컬 dev 서버 기준
+      및 strict target 기준으로 통과했고, WEB_ONLY load smoke도 로컬/strict 기준
+      0 error로 통과했다. Docker Compose 검증은
+      infra/scripts/verify-docker-stack으로 준비했으나 현재 Docker CLI 부재로 NOT_RUN이다.
+      Docker Compose 실제 기동과 대표 DB/cache/network/동시성 기반 정식 부하 목표는
+      현재 실행 환경 제약으로 partial/env-blocker로 남긴다.

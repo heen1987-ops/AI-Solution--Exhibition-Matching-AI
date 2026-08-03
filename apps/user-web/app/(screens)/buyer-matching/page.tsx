@@ -1,8 +1,10 @@
 import { CompanyCard } from "@/components/CompanyCard";
-import { MockDataBanner } from "@/components/MockDataBanner";
+import { DataSourceBanner } from "@/components/MockDataBanner";
 import { EmptyState } from "@/components/StateViews";
-import { fetchBuyerMatches } from "@/lib/mock-api";
+import { loadBuyerMatches } from "@/lib/api-client";
 import type { MeetingStatus } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
 
 const STATUS_LABEL: Record<MeetingStatus, string> = {
   NONE: "매칭 확인 전",
@@ -12,19 +14,18 @@ const STATUS_LABEL: Record<MeetingStatus, string> = {
 };
 
 /**
- * S-6. 바이어 매칭. BUYER_REGISTERED 전용(W-3 §S-6) - 매칭 확인 → 비교 → 관심
- * 저장 → 상담 요청 흐름과 상담 현황을 한 화면에서 다룬다.
+ * S-6. 바이어 매칭. GET /buyer/matches를 우선 사용한다.
  *
  * 개인정보 규칙(AGENTS.md §8): 상담 수락(CONFIRMED) 전에는 연락처를 절대
  * 노출하지 않는다 - 아래 렌더링에서 `meetingStatus === "CONFIRMED"`일 때만
  * `contact`를 표시한다.
  */
 export default async function BuyerMatchingPage() {
-  const matches = await fetchBuyerMatches();
+  const matches = await loadBuyerMatches();
 
   return (
     <div className="flex flex-col gap-6">
-      <MockDataBanner />
+      <DataSourceBanner source={matches.source} notice={matches.notice} />
       <header>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">바이어 매칭</h1>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -34,11 +35,11 @@ export default async function BuyerMatchingPage() {
         </p>
       </header>
 
-      {matches.length === 0 ? (
+      {matches.data.length === 0 ? (
         <EmptyState title="아직 매칭된 업체가 없습니다" />
       ) : (
         <ul className="flex flex-col gap-3">
-          {matches.map((match) => (
+          {matches.data.map((match) => (
             <CompanyCard
               key={match.company.id}
               company={match.company}

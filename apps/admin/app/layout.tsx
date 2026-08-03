@@ -3,9 +3,9 @@ import "./globals.css";
 import { NavBar } from "./nav-bar";
 
 export const metadata: Metadata = {
-  title: "백주대간 관리자 (Admin) - 스켈레톤",
+  title: "백주대간 관리자 (Admin)",
   description:
-    "행사 운영자용 관리자 포털의 Wave 1 라우트 뼈대. 실제 인증/권한/승인 로직은 아직 구현되지 않았다.",
+    "행사 운영자용 관리자 포털. 업체 승인, 부스 운영상태, 운영 통계 계약 상태를 관리한다.",
 };
 
 export default function RootLayout({

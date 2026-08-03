@@ -1,17 +1,14 @@
 import Link from "next/link";
 import { CompanyCard } from "@/components/CompanyCard";
-import { MockDataBanner } from "@/components/MockDataBanner";
+import { DataSourceBanner } from "@/components/MockDataBanner";
 import { EmptyState } from "@/components/StateViews";
-import { fetchRecommendations } from "@/lib/mock-api";
+import { loadRecommendations } from "@/lib/api-client";
 import { parseMockScenario } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 /**
- * S-2. 추천 업체·부스 목록. GENERAL_REGISTERED/BUYER_REGISTERED는 프로파일 기반
- * 개인화 추천(W-5)을 본다. GUEST_WEB 분기(키오스크 인계 결과 열람)는 이번 Wave
- * 스켈레톤에서는 다루지 않는다(주석으로만 남김 - 실제 분기는 WEB-GROUP-001).
- *
- * `?state=empty` / `?state=error` 쿼리로 빈 결과/오류 상태를 재현할 수 있다
- * (오류 시 이 폴더의 error.tsx가 처리한다).
+ * S-2. 추천 업체·부스 목록. GET /recommendations를 우선 사용한다.
  */
 export default async function RecommendationsPage({
   searchParams,
@@ -20,11 +17,11 @@ export default async function RecommendationsPage({
 }) {
   const { state } = await searchParams;
   const scenario = parseMockScenario(state);
-  const recommendations = await fetchRecommendations(scenario);
+  const recommendations = await loadRecommendations(scenario);
 
   return (
     <div className="flex flex-col gap-6">
-      <MockDataBanner />
+      <DataSourceBanner source={recommendations.source} notice={recommendations.notice} />
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">추천 업체·부스 목록</h1>
         <div className="flex gap-2 text-xs">
@@ -40,14 +37,14 @@ export default async function RecommendationsPage({
         </div>
       </header>
 
-      {recommendations.length === 0 ? (
+      {recommendations.data.length === 0 ? (
         <EmptyState
           title="아직 추천할 업체가 없습니다"
           description="관심영역을 MY 정보(S-7)에서 설정하면 추천이 생성됩니다."
         />
       ) : (
         <ul className="flex flex-col gap-3">
-          {recommendations.map((item) => (
+          {recommendations.data.map((item) => (
             <CompanyCard
               key={item.company.id}
               company={item.company}
