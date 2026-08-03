@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import ProvisionalBoothLayout from "@/components/ProvisionalBoothLayout";
 import VenueDirections from "@/components/VenueDirections";
 
 export const metadata: Metadata = {
@@ -24,7 +25,7 @@ export default function MapPage() {
 
       <VenueDirections />
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="mt-6">
         <section aria-labelledby="transit-heading" className="border border-[var(--color-border)] bg-white p-5 backju-panel md:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -50,30 +51,10 @@ export default function MapPage() {
             </a>
           </div>
         </section>
+      </div>
 
-        <section aria-labelledby="booth-map-heading" className="overflow-hidden border border-[var(--color-border)] bg-white backju-panel">
-          <div className="booth-map-placeholder" aria-hidden="true">
-            <div className="booth-map-gate">ENTRANCE</div>
-            <div className="booth-map-block booth-map-block-a" />
-            <div className="booth-map-block booth-map-block-b" />
-            <div className="booth-map-block booth-map-block-c" />
-            <div className="booth-map-pending">LAYOUT<br />PENDING</div>
-          </div>
-          <div className="p-5 md:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 id="booth-map-heading" className="text-xl font-black">부스 위치도</h2>
-              <span className="rounded-full bg-[#eee0b7] px-3 py-1 text-xs font-bold text-[#594f32]">내부 준비 중 · 배치 미확정</span>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-              현재는 운영자 검수용 준비 상태입니다. 확정되지 않은 부스 번호나 위치를 임의로 표시하지 않으며, 배치 승인 후 추천 업체의 위치와 함께 공개합니다.
-            </p>
-            <ol className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-bold text-[#5f5a51]">
-              <li className="bg-[#faf7f0] px-2 py-3">1. 배치 승인</li>
-              <li className="bg-[#faf7f0] px-2 py-3">2. 업체 매핑</li>
-              <li className="bg-[#faf7f0] px-2 py-3">3. 사용자 공개</li>
-            </ol>
-          </div>
-        </section>
+      <div className="mt-6">
+        <ProvisionalBoothLayout />
       </div>
     </div>
   );
