@@ -9,7 +9,7 @@ import {
 } from "./naver-map";
 
 describe("Naver map directions", () => {
-  it("loads the official Web Dynamic Map SDK with the public ncpKeyId", () => {
+  it("loads the official Web Dynamic Map SDK with the Web SDK ncpKeyId", () => {
     expect(buildNaverMapScriptUrl("public key")).toBe(
       "https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=public%20key",
     );
