@@ -40,6 +40,23 @@ npm run dev
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | 백엔드 API 오리진(예: `http://localhost:8000`). 비우면 같은 오리진 상대경로(`/api/v1/...`)로 호출한다. |
 | `NEXT_PUBLIC_EVENT_ID` | 검색·추천 대상 행사의 UUID. 배포 시 필수이며 미설정/형식 오류이면 게스트 검색은 fail-closed로 안내한다. |
+| `NEXT_PUBLIC_NAVER_MAP_NCP_KEY_ID` | NAVER Cloud Maps의 Web Dynamic Map 공개용 Key ID. Client Secret은 프론트엔드에 넣지 않는다. |
+
+### 네이버 지도 활성화
+
+1. NAVER Cloud Platform의 `Application Services > Maps`에서 Application을 등록하고
+   `Web Dynamic Map`을 선택한다.
+2. Web 서비스 URL에 로컬 검수 주소와 운영 대표 도메인을 등록한다. 현재 로컬 검수 주소는
+   `http://127.0.0.1:3137`이다.
+3. 발급된 **Key ID**만 `.env.local`의 `NEXT_PUBLIC_NAVER_MAP_NCP_KEY_ID`에 넣고 웹을
+   다시 빌드한다. Client Secret/API Secret은 브라우저 환경변수나 소스에 넣지 않는다.
+
+```dotenv
+NEXT_PUBLIC_NAVER_MAP_NCP_KEY_ID=발급받은_공개용_KEY_ID
+```
+
+Web Dynamic Map 키는 등록한 Web 서비스 URL과 실제 접속 도메인이 다르면 인증에 실패한다.
+운영 도메인이 정해지면 해당 대표 도메인도 Maps Application에 추가한다.
 
 ## 디렉터리 구조
 

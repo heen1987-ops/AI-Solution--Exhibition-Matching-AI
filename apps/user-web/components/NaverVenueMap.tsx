@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { buildNaverMapScriptUrl, EXCO_HALL_3 } from "@/lib/naver-map";
+import { buildNaverMapScriptUrl, EXCO_HALL_3, NAVER_MAP_WEB_FALLBACK } from "@/lib/naver-map";
 
 type MapStatus = "loading" | "ready" | "unconfigured" | "error";
 type LocationStatus = "idle" | "locating" | "visible" | "denied" | "error";
@@ -51,6 +51,7 @@ declare global {
 }
 
 let naverMapLoadPromise: Promise<void> | null = null;
+const NAVER_MAP_LOAD_TIMEOUT_MS = 10_000;
 
 function loadNaverMapScript(ncpKeyId: string): Promise<void> {
   if (window.naver?.maps) return Promise.resolve();
@@ -58,20 +59,51 @@ function loadNaverMapScript(ncpKeyId: string): Promise<void> {
 
   naverMapLoadPromise = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>("script[data-meet-ai-naver-map]");
-
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("NAVER_MAP_LOAD_FAILED")), { once: true });
-      return;
-    }
+    // 인증 실패나 중단된 이전 요청의 script가 남아 있으면 load 이벤트가 다시 발생하지
+    // 않는다. 재시도가 멈추지 않도록 새 요청 전에 제거한다.
+    existing?.remove();
 
     const script = document.createElement("script");
     script.src = buildNaverMapScriptUrl(ncpKeyId);
     script.async = true;
     script.defer = true;
     script.dataset.meetAiNaverMap = "true";
-    script.addEventListener("load", () => resolve(), { once: true });
-    script.addEventListener("error", () => reject(new Error("NAVER_MAP_LOAD_FAILED")), { once: true });
+
+    let settled = false;
+    const timeoutId = window.setTimeout(() => fail("NAVER_MAP_LOAD_TIMEOUT"), NAVER_MAP_LOAD_TIMEOUT_MS);
+
+    function cleanup() {
+      window.clearTimeout(timeoutId);
+      script.removeEventListener("load", handleLoad);
+      script.removeEventListener("error", handleError);
+    }
+
+    function succeed() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    }
+
+    function fail(code: string) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      script.remove();
+      reject(new Error(code));
+    }
+
+    function handleLoad() {
+      if (window.naver?.maps) succeed();
+      else fail("NAVER_MAP_SDK_UNAVAILABLE");
+    }
+
+    function handleError() {
+      fail("NAVER_MAP_LOAD_FAILED");
+    }
+
+    script.addEventListener("load", handleLoad, { once: true });
+    script.addEventListener("error", handleError, { once: true });
     document.head.appendChild(script);
   }).catch((error) => {
     naverMapLoadPromise = null;
@@ -104,6 +136,7 @@ export default function NaverVenueMap() {
   const locationMarkerRef = useRef<NaverMarkerInstance | null>(null);
   const [mapStatus, setMapStatus] = useState<MapStatus>(ncpKeyId ? "loading" : "unconfigured");
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const initializeMap = useCallback(() => {
     const maps = window.naver?.maps;
@@ -156,7 +189,13 @@ export default function NaverVenueMap() {
       venueMarkerRef.current = null;
       mapRef.current = null;
     };
-  }, [initializeMap, ncpKeyId]);
+  }, [initializeMap, loadAttempt, ncpKeyId]);
+
+  const retryMap = () => {
+    naverMapLoadPromise = null;
+    setMapStatus("loading");
+    setLoadAttempt((attempt) => attempt + 1);
+  };
 
   const showCurrentLocation = () => {
     const maps = window.naver?.maps;
@@ -206,8 +245,8 @@ export default function NaverVenueMap() {
         <div className="naver-map-state naver-map-state-config" role="status">
           <span className="naver-map-n">N</span>
           <div>
-            <strong>네이버 지도 API 연결 준비 완료</strong>
-            <p>공개용 ncpKeyId와 서비스 URL을 등록하면 이 영역에 실제 지도가 표시됩니다.</p>
+            <strong>행사장 지도를 준비하고 있습니다.</strong>
+            <p>아래 길찾기 버튼이나 네이버 지도 링크로 EXCO 3홀 위치를 확인할 수 있습니다.</p>
           </div>
         </div>
       ) : null}
@@ -216,8 +255,25 @@ export default function NaverVenueMap() {
         <div className="naver-map-state" role="alert">
           <span className="naver-map-n">N</span>
           <div>
-            <strong>네이버 지도를 불러오지 못했습니다.</strong>
-            <p>API 키와 Web 서비스 URL 등록 상태를 확인해 주세요.</p>
+            <strong>네이버 지도를 바로 표시하지 못했습니다.</strong>
+            <p>다시 시도하거나 네이버 지도에서 행사장을 확인해 주세요.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={retryMap}
+                className="tap-target rounded-sm border border-brand-300 bg-white px-4 text-sm font-extrabold text-brand-700"
+              >
+                지도 다시 불러오기
+              </button>
+              <a
+                href={NAVER_MAP_WEB_FALLBACK}
+                target="_blank"
+                rel="noreferrer"
+                className="tap-target rounded-sm border border-[var(--color-border)] bg-white px-4 text-sm font-bold text-[#4d4a43]"
+              >
+                네이버 지도에서 보기
+              </a>
+            </div>
           </div>
         </div>
       ) : null}

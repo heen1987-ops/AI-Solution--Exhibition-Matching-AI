@@ -15,6 +15,12 @@ describe("Naver map directions", () => {
     );
   });
 
+  it("does not allow additional query parameters through the public key", () => {
+    expect(buildNaverMapScriptUrl("key&submodules=geocoder")).toBe(
+      "https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=key%26submodules%3Dgeocoder",
+    );
+  });
+
   it("uses EXCO West Wing Hall 3 as the fixed destination without collecting a start location", () => {
     const url = buildNaverRouteUrl("public", "ios", "https://match.backju.kr");
 
