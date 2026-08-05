@@ -5,7 +5,7 @@ import VenueDirections from "@/components/VenueDirections";
 
 export const metadata: Metadata = {
   title: "행사장 오는 길",
-  description: "현재 위치에서 대구 EXCO 서관 3홀까지 네이버 지도 길찾기와 행사장 안내를 확인합니다.",
+  description: "현재 위치에서 EXCO 서관 전시장까지 네이버 지도 길찾기와 서관 1층 3홀 안내를 확인합니다.",
 };
 
 const TRANSIT_ROWS = [
@@ -20,7 +20,7 @@ export default function MapPage() {
       <header className="mb-6">
         <p className="backju-eyebrow text-brand-600">VISIT · MAP</p>
         <h1 className="backju-section-title mt-2 text-3xl font-black tracking-[-0.04em] text-[#302f2c] md:text-4xl">행사장 오는 길</h1>
-        <p className="mt-3 max-w-2xl text-[var(--color-text-muted)]">먼저 EXCO 3홀까지의 이동 경로를 확인하고, 행사장 도착 후 확정된 부스 위치도를 이어서 볼 수 있습니다.</p>
+        <p className="mt-3 max-w-2xl text-[var(--color-text-muted)]">먼저 EXCO 서관 전시장까지의 이동 경로를 확인하고, 도착 후 서관 1층 3홀의 부스 위치도를 이어서 볼 수 있습니다.</p>
       </header>
 
       <VenueDirections />

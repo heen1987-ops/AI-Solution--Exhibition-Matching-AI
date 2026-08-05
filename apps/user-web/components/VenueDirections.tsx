@@ -6,7 +6,7 @@ import NaverVenueMap from "@/components/NaverVenueMap";
 import {
   buildNaverRouteUrl,
   detectNaverLaunchTarget,
-  EXCO_HALL_3,
+  EXCO_WEST_EXHIBITION_HALL,
   NAVER_MAP_WEB_FALLBACK,
   type NaverTravelMode,
 } from "@/lib/naver-map";
@@ -70,9 +70,11 @@ export default function VenueDirections() {
           <div>
             <p className="backju-eyebrow text-brand-600">행사장 오는 길</p>
             <h2 id="venue-directions-heading" className="mt-2 text-2xl font-black tracking-[-0.03em] text-[#302f2c] md:text-3xl">
-              {EXCO_HALL_3.name}
+              {EXCO_WEST_EXHIBITION_HALL.name}
             </h2>
-            <p className="mt-2 text-sm text-[var(--color-text-muted)]">{EXCO_HALL_3.address} · 1층 전시장</p>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+              {EXCO_WEST_EXHIBITION_HALL.address} · 행사장: {EXCO_WEST_EXHIBITION_HALL.eventHall}
+            </p>
           </div>
           <span className="rounded-full bg-[#cde2cd] px-3 py-1 text-xs font-bold text-[#294b2d]">도착지 고정</span>
         </div>
@@ -85,7 +87,7 @@ export default function VenueDirections() {
             disabled={launchState === "opening"}
           >
             <span className="h-7 w-7"><IconWalk /></span>
-            <span><strong className="block">도보 길찾기</strong><small className="font-medium">현재 위치 → EXCO 3홀</small></span>
+            <span><strong className="block">도보 길찾기</strong><small className="font-medium">현재 위치 → EXCO 서관 전시장</small></span>
           </button>
           <button
             type="button"
@@ -94,7 +96,7 @@ export default function VenueDirections() {
             disabled={launchState === "opening"}
           >
             <span className="h-7 w-7"><IconBus /></span>
-            <span><strong className="block">대중교통 길찾기</strong><small className="font-medium">현재 위치 → EXCO 3홀</small></span>
+            <span><strong className="block">대중교통 길찾기</strong><small className="font-medium">현재 위치 → EXCO 서관 전시장</small></span>
           </button>
           <button
             type="button"
@@ -103,7 +105,7 @@ export default function VenueDirections() {
             disabled={launchState === "opening"}
           >
             <span className="h-7 w-7"><IconCar /></span>
-            <span><strong className="block">차량 길찾기</strong><small className="font-medium">현재 위치 → EXCO 3홀</small></span>
+            <span><strong className="block">차량 길찾기</strong><small className="font-medium">현재 위치 → EXCO 서관 전시장</small></span>
           </button>
         </div>
 

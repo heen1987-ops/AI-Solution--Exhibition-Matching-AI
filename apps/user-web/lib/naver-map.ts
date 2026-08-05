@@ -2,18 +2,19 @@ export type NaverTravelMode = "walk" | "public" | "car";
 export type NaverLaunchTarget = "android" | "ios" | "web";
 
 /**
- * EXCO 공식 오시는 길 페이지의 EXCO 네이버 플레이스 좌표를 WGS84로 변환한 값이다.
- * 전시 3홀은 EXCO 서관 1층에 있으므로 서관 주소와 3홀 명칭을 함께 노출한다.
+ * EXCO 공식 시설 안내는 서관 전시장을 상위 시설로, 전시3홀을 내부 구획으로 구분한다.
+ * 네이버 지도에는 검색 가능한 서관 전시장을 목적지로 전달하고 3홀은 행사장 안내에만 쓴다.
  */
-export const EXCO_HALL_3 = {
-  name: "대구 EXCO 서관 3홀",
+export const EXCO_WEST_EXHIBITION_HALL = {
+  name: "EXCO 서관 전시장",
+  eventHall: "서관 1층 3홀",
   address: "대구광역시 북구 엑스코로 10",
   latitude: 35.9071678,
   longitude: 128.6130954,
   naverPlaceId: "11566331",
 } as const;
 
-export const NAVER_MAP_WEB_FALLBACK = `https://map.naver.com/p/search/${encodeURIComponent(EXCO_HALL_3.name)}`;
+export const NAVER_MAP_WEB_FALLBACK = `https://map.naver.com/p/search/${encodeURIComponent(EXCO_WEST_EXHIBITION_HALL.name)}`;
 
 export function buildNaverMapScriptUrl(ncpKeyId: string): string {
   return `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(ncpKeyId)}`;
@@ -27,9 +28,9 @@ const ROUTE_PATH: Record<NaverTravelMode, string> = {
 
 function routeQuery(appName: string): string {
   const query = new URLSearchParams({
-    dlat: String(EXCO_HALL_3.latitude),
-    dlng: String(EXCO_HALL_3.longitude),
-    dname: EXCO_HALL_3.name,
+    dlat: String(EXCO_WEST_EXHIBITION_HALL.latitude),
+    dlng: String(EXCO_WEST_EXHIBITION_HALL.longitude),
+    dname: EXCO_WEST_EXHIBITION_HALL.name,
     appname: appName,
   });
 

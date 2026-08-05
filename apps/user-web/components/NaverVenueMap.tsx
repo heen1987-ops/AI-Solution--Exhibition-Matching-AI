@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { buildNaverMapScriptUrl, EXCO_HALL_3, NAVER_MAP_WEB_FALLBACK } from "@/lib/naver-map";
+import { buildNaverMapScriptUrl, EXCO_WEST_EXHIBITION_HALL, NAVER_MAP_WEB_FALLBACK } from "@/lib/naver-map";
 
 type MapStatus = "loading" | "ready" | "unconfigured" | "error";
 type LocationStatus = "idle" | "locating" | "visible" | "denied" | "error";
@@ -143,7 +143,7 @@ export default function NaverVenueMap() {
     const container = containerRef.current;
     if (!maps || !container) throw new Error("NAVER_MAP_SDK_UNAVAILABLE");
 
-    const venue = new maps.LatLng(EXCO_HALL_3.latitude, EXCO_HALL_3.longitude);
+    const venue = new maps.LatLng(EXCO_WEST_EXHIBITION_HALL.latitude, EXCO_WEST_EXHIBITION_HALL.longitude);
     const map = new maps.Map(container, {
       center: venue,
       zoom: 17,
@@ -156,7 +156,7 @@ export default function NaverVenueMap() {
     const venueMarker = new maps.Marker({
       position: venue,
       map,
-      title: EXCO_HALL_3.name,
+      title: EXCO_WEST_EXHIBITION_HALL.name,
     });
 
     mapRef.current = map;
@@ -209,7 +209,7 @@ export default function NaverVenueMap() {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         const current = new maps.LatLng(coords.latitude, coords.longitude);
-        const venue = new maps.LatLng(EXCO_HALL_3.latitude, EXCO_HALL_3.longitude);
+        const venue = new maps.LatLng(EXCO_WEST_EXHIBITION_HALL.latitude, EXCO_WEST_EXHIBITION_HALL.longitude);
 
         locationMarkerRef.current?.setMap(null);
         locationMarkerRef.current = new maps.Marker({
@@ -231,7 +231,7 @@ export default function NaverVenueMap() {
   };
 
   return (
-    <div className="naver-map-shell" aria-label="네이버 지도 대구 EXCO 서관 3홀 위치">
+    <div className="naver-map-shell" aria-label="네이버 지도 EXCO 서관 전시장 위치">
       <div ref={containerRef} className="naver-map-canvas" aria-hidden={mapStatus !== "ready"} />
 
       {mapStatus === "loading" ? (
@@ -246,7 +246,7 @@ export default function NaverVenueMap() {
           <span className="naver-map-n">N</span>
           <div>
             <strong>행사장 지도를 준비하고 있습니다.</strong>
-            <p>아래 길찾기 버튼이나 네이버 지도 링크로 EXCO 3홀 위치를 확인할 수 있습니다.</p>
+            <p>아래 길찾기 버튼이나 네이버 지도 링크로 EXCO 서관 전시장 위치를 확인할 수 있습니다.</p>
           </div>
         </div>
       ) : null}
@@ -281,8 +281,8 @@ export default function NaverVenueMap() {
       {mapStatus === "ready" ? (
         <div className="naver-map-control-panel">
           <div>
-            <strong>{EXCO_HALL_3.name}</strong>
-            <span>{EXCO_HALL_3.address}</span>
+            <strong>{EXCO_WEST_EXHIBITION_HALL.name}</strong>
+            <span>{EXCO_WEST_EXHIBITION_HALL.address} · {EXCO_WEST_EXHIBITION_HALL.eventHall}</span>
           </div>
           <button
             type="button"

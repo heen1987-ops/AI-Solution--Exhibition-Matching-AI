@@ -4,7 +4,7 @@ import {
   buildNaverMapScriptUrl,
   buildNaverRouteUrl,
   detectNaverLaunchTarget,
-  EXCO_HALL_3,
+  EXCO_WEST_EXHIBITION_HALL,
   NAVER_MAP_WEB_FALLBACK,
 } from "./naver-map";
 
@@ -25,9 +25,10 @@ describe("Naver map directions", () => {
     const url = buildNaverRouteUrl("public", "ios", "https://match.backju.kr");
 
     expect(url).toContain("nmap://route/public?");
-    expect(url).toContain(`dlat=${EXCO_HALL_3.latitude}`);
-    expect(url).toContain(`dlng=${EXCO_HALL_3.longitude}`);
-    expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(EXCO_HALL_3.name);
+    expect(url).toContain(`dlat=${EXCO_WEST_EXHIBITION_HALL.latitude}`);
+    expect(url).toContain(`dlng=${EXCO_WEST_EXHIBITION_HALL.longitude}`);
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(EXCO_WEST_EXHIBITION_HALL.name);
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).not.toContain(EXCO_WEST_EXHIBITION_HALL.eventHall);
     expect(url).not.toContain("slat=");
     expect(url).not.toContain("slng=");
   });

@@ -212,7 +212,7 @@ export default function TopBar({
         <div className="topbar-status flex items-center gap-2 py-2">
           <div className="flex flex-col items-end text-xs" style={{ color: "var(--color-text-muted)" }}>
             <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>
-              {isVenueDirections ? "EXCO 3홀" : (currentZone ?? "구역 미확인")}
+              {isVenueDirections ? "EXCO 서관" : (currentZone ?? "구역 미확인")}
             </span>
             {zoneObservedAt ? <span>확인 {zoneObservedAt}</span> : null}
           </div>
