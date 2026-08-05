@@ -174,3 +174,26 @@ export function buildDemoRoute(
 
   return route;
 }
+
+export function orderDemoRouteByAisle(
+  numberedStops: readonly RankedDemoExhibitor[],
+): RankedDemoExhibitor[] {
+  const rows = new Map<number, RankedDemoExhibitor[]>();
+  for (const stop of numberedStops) {
+    const row = rows.get(stop.y) ?? [];
+    row.push(stop);
+    rows.set(stop.y, row);
+  }
+
+  const orderedRows = [...rows.entries()].sort(([leftY], [rightY]) => rightY - leftY);
+  const firstRow = orderedRows[0]?.[1] ?? [];
+  const nearestEntranceStop = [...firstRow].sort(
+    (left, right) => Math.abs(left.x - DEMO_HALL.entrance.x) - Math.abs(right.x - DEMO_HALL.entrance.x),
+  )[0];
+  const firstRowAscending = !nearestEntranceStop || nearestEntranceStop.x >= DEMO_HALL.entrance.x;
+
+  return orderedRows.flatMap(([, stops], rowIndex) => {
+    const ascending = rowIndex % 2 === 0 ? firstRowAscending : !firstRowAscending;
+    return [...stops].sort((left, right) => ascending ? left.x - right.x : right.x - left.x);
+  });
+}

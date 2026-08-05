@@ -8,6 +8,7 @@ import {
   DEMO_EXHIBITORS,
   DEMO_HALL,
   DEMO_VISITOR_PROFILE,
+  orderDemoRouteByAisle,
   rankDemoExhibitors,
   selectDemoRecommendations,
   type DemoCategory,
@@ -31,7 +32,6 @@ const SPECIAL_ZONES = [
 ] as const;
 
 function routePointString(route: readonly RankedDemoExhibitor[]): string {
-  const centralAisleX = 50;
   const points: Array<{ x: number; y: number }> = [DEMO_HALL.entrance];
   let previous: RankedDemoExhibitor | null = null;
 
@@ -40,10 +40,18 @@ function routePointString(route: readonly RankedDemoExhibitor[]): string {
     if (previous) {
       const previousAisleY = previous.y + 5.2;
       points.push({ x: previous.x, y: previousAisleY });
-      points.push({ x: centralAisleX, y: previousAisleY });
+      if (previous.y === stop.y) {
+        points.push({ x: stop.x, y: approachY });
+      } else {
+        const turnX = previous.x >= DEMO_HALL.entrance.x ? 96 : 4;
+        points.push({ x: turnX, y: previousAisleY });
+        points.push({ x: turnX, y: approachY });
+        points.push({ x: stop.x, y: approachY });
+      }
+    } else {
+      points.push({ x: DEMO_HALL.entrance.x, y: approachY });
+      points.push({ x: stop.x, y: approachY });
     }
-    points.push({ x: centralAisleX, y: approachY });
-    points.push({ x: stop.x, y: approachY });
     points.push({ x: stop.x, y: stop.y });
     previous = stop;
   }
@@ -57,10 +65,11 @@ export default function BoothMatchSimulation() {
 
   const ranked = useMemo(() => rankDemoExhibitors(interests), [interests]);
   const recommendations = useMemo(() => selectDemoRecommendations(ranked, interests, 10), [interests, ranked]);
-  const route = useMemo(() => buildDemoRoute(recommendations, 6), [recommendations]);
+  const numberedStops = useMemo(() => buildDemoRoute(recommendations, 6), [recommendations]);
+  const visitRoute = useMemo(() => orderDemoRouteByAisle(numberedStops), [numberedStops]);
   const recommendationIds = useMemo(() => new Set(recommendations.map((item) => item.id)), [recommendations]);
-  const routeRanks = useMemo(() => new Map(route.map((item, index) => [item.id, index + 1])), [route]);
-  const selected = ranked.find((item) => item.id === selectedId) ?? route[0] ?? recommendations[0];
+  const routeRanks = useMemo(() => new Map(numberedStops.map((item, index) => [item.id, index + 1])), [numberedStops]);
+  const selected = ranked.find((item) => item.id === selectedId) ?? visitRoute[0] ?? recommendations[0];
 
   const toggleInterest = (category: DemoCategory) => {
     setInterests((current) => {
@@ -123,7 +132,7 @@ export default function BoothMatchSimulation() {
             <span className="text-xs text-[var(--color-text-muted)]">관심사 우선 추천</span>
           </div>
           <div className="border-l-4 border-[#6e9b88] bg-[#f1f7f4] px-4 py-3">
-            <strong className="block text-xl text-[#3f3b33]">{route.length}곳</strong>
+            <strong className="block text-xl text-[#3f3b33]">{visitRoute.length}곳</strong>
             <span className="text-xs text-[var(--color-text-muted)]">현장 추천 경로</span>
           </div>
         </div>
@@ -147,7 +156,7 @@ export default function BoothMatchSimulation() {
 
             <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
               <polyline
-                points={routePointString(route)}
+                points={routePointString(visitRoute)}
                 fill="none"
                 stroke="#a83943"
                 strokeWidth="0.75"
@@ -196,9 +205,14 @@ export default function BoothMatchSimulation() {
 
         <aside className="border-t border-[var(--color-border)] bg-white p-5 xl:border-l xl:border-t-0 xl:p-6" aria-label="추천 경로와 선택 부스 정보">
           <p className="backju-eyebrow text-brand-600">RECOMMENDED ROUTE</p>
-          <h3 className="mt-2 text-xl font-black text-[#302f2c]">입구에서 시작하는 6곳</h3>
+          <h3 className="mt-2 text-xl font-black text-[#302f2c]">통로 기준 방문 순서</h3>
+          <p className="mt-2 text-sm font-extrabold text-[#a83943]">
+            {visitRoute.map((item) => routeRanks.get(item.id)).join(" → ")}
+          </p>
           <ol className="mt-4 space-y-2">
-            {route.map((exhibitor, index) => (
+            {visitRoute.map((exhibitor, index) => {
+              const markerNumber = routeRanks.get(exhibitor.id);
+              return (
               <li key={exhibitor.id}>
                 <button
                   type="button"
@@ -206,15 +220,16 @@ export default function BoothMatchSimulation() {
                   className={`w-full border px-3 py-3 text-left transition ${selected?.id === exhibitor.id ? "border-[#a83943] bg-[#fcf3f4]" : "border-[var(--color-border)] hover:border-brand-300"}`}
                 >
                   <span className="flex items-start gap-3">
-                    <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#a83943] text-xs font-black text-white">{index + 1}</span>
+                    <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#a83943] text-xs font-black text-white">{markerNumber}</span>
                     <span className="min-w-0">
-                      <strong className="block truncate text-sm text-[#3f3b33]">{exhibitor.boothNumber} · {exhibitor.name}</strong>
+                      <strong className="block truncate text-sm text-[#3f3b33]">방문 {index + 1} · {exhibitor.boothNumber} · {exhibitor.name}</strong>
                       <small className="mt-1 block text-xs leading-5 text-[var(--color-text-muted)]">{exhibitor.reason}</small>
                     </span>
                   </span>
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ol>
 
           {selected ? (

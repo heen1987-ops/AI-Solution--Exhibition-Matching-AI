@@ -4,6 +4,7 @@ import {
   buildDemoRoute,
   DEMO_EXHIBITORS,
   DEMO_VISITOR_PROFILE,
+  orderDemoRouteByAisle,
   rankDemoExhibitors,
   selectDemoRecommendations,
 } from "./booth-map-simulation";
@@ -35,5 +36,16 @@ describe("booth map simulation", () => {
     expect(route).toHaveLength(6);
     expect(new Set(route.map((item) => item.id)).size).toBe(6);
     expect(route.every((item) => recommended.some((candidate) => candidate.id === item.id))).toBe(true);
+  });
+
+  it("walks each aisle before turning into the next row", () => {
+    const ranked = rankDemoExhibitors(DEMO_VISITOR_PROFILE.interests);
+    const recommended = selectDemoRecommendations(ranked, DEMO_VISITOR_PROFILE.interests, 10);
+    const numberedStops = buildDemoRoute(recommended, 6);
+    const markerNumber = new Map(numberedStops.map((item, index) => [item.id, index + 1]));
+    const visitRoute = orderDemoRouteByAisle(numberedStops);
+
+    expect(visitRoute.map((item) => markerNumber.get(item.id))).toEqual([1, 3, 2, 4, 5, 6]);
+    expect(visitRoute.slice(1).every((item, index) => item.y <= visitRoute[index].y)).toBe(true);
   });
 });
