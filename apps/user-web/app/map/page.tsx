@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import BoothMatchSimulation from "@/components/BoothMatchSimulation";
+import ParkingMiniPanel from "@/components/ParkingMiniPanel";
 import VenueDirections from "@/components/VenueDirections";
 
 export const metadata: Metadata = {
@@ -46,9 +47,7 @@ export default function MapPage() {
             <a href="https://www.exco.co.kr/Notification/sub03.html#map001" target="_blank" rel="noreferrer" className="tap-target rounded-sm border border-brand-300 px-4 font-bold text-brand-700">
               EXCO 상세 교통안내
             </a>
-            <a href="https://www.exco.co.kr/facility/sub06.html" target="_blank" rel="noreferrer" className="tap-target rounded-sm border border-[var(--color-border)] px-4 font-bold text-[#4d4a43]">
-              주차시설 확인
-            </a>
+            <ParkingMiniPanel />
           </div>
         </section>
       </div>
