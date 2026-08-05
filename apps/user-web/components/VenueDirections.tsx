@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import NaverVenueMap from "@/components/NaverVenueMap";
+import NaverVenueLinkCard from "@/components/NaverVenueLinkCard";
 import {
   buildNaverRouteUrl,
   detectNaverLaunchTarget,
@@ -63,7 +63,7 @@ export default function VenueDirections() {
 
   return (
     <section aria-labelledby="venue-directions-heading" className="overflow-hidden border border-[var(--color-border)] bg-white backju-panel">
-      <NaverVenueMap />
+      <NaverVenueLinkCard />
 
       <div className="p-5 md:p-7">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -110,11 +110,11 @@ export default function VenueDirections() {
         </div>
 
         <p className="mt-5 text-base leading-7 text-[#4d4a43]">
-          지도에서 행사장과 현재 위치를 확인할 수 있습니다. 실제 도보·대중교통·차량 경로는 교통수단을 선택하면 네이버 지도의 길찾기 화면에서 이어집니다.
+          네이버 지도에서 행사장 위치와 길찾기를 확인할 수 있습니다. 모바일에서는 교통수단을 선택하면 길찾기로 이어지고, PC에서는 서관 전시장 장소 화면이 열립니다.
         </p>
 
         <div className="mt-4 flex flex-col gap-2 border-l-4 border-[#eee0b7] bg-[#faf7f0] px-4 py-3 text-sm text-[#5c574f] sm:flex-row sm:items-center sm:justify-between">
-          <p><strong className="text-[#3b3935]">위치정보 안내</strong><br />현재 위치는 네이버 지도에서만 사용하며 이 서비스는 수집하거나 저장하지 않습니다.</p>
+          <p><strong className="text-[#3b3935]">위치정보 안내</strong><br />현재 위치는 네이버 지도 길찾기에서 처리하며 이 서비스는 위치 권한을 요청하거나 수집·저장하지 않습니다.</p>
           <a href={NAVER_MAP_WEB_FALLBACK} target="_blank" rel="noreferrer" className="tap-target flex-none justify-start font-bold text-brand-700 underline underline-offset-4">
             웹에서 장소 보기
           </a>

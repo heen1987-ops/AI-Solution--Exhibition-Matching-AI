@@ -16,10 +16,6 @@ export const EXCO_WEST_EXHIBITION_HALL = {
 
 export const NAVER_MAP_WEB_FALLBACK = `https://map.naver.com/p/search/${encodeURIComponent(EXCO_WEST_EXHIBITION_HALL.name)}`;
 
-export function buildNaverMapScriptUrl(ncpKeyId: string): string {
-  return `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(ncpKeyId)}`;
-}
-
 const ROUTE_PATH: Record<NaverTravelMode, string> = {
   walk: "route/walk",
   public: "route/public",

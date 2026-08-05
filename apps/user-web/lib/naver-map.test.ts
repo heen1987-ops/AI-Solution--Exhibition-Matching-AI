@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildNaverMapScriptUrl,
   buildNaverRouteUrl,
   detectNaverLaunchTarget,
   EXCO_WEST_EXHIBITION_HALL,
@@ -9,18 +8,6 @@ import {
 } from "./naver-map";
 
 describe("Naver map directions", () => {
-  it("loads the official Web Dynamic Map SDK with the Web SDK ncpKeyId", () => {
-    expect(buildNaverMapScriptUrl("public key")).toBe(
-      "https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=public%20key",
-    );
-  });
-
-  it("does not allow additional query parameters through the public key", () => {
-    expect(buildNaverMapScriptUrl("key&submodules=geocoder")).toBe(
-      "https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=key%26submodules%3Dgeocoder",
-    );
-  });
-
   it("uses EXCO West Wing Hall 3 as the fixed destination without collecting a start location", () => {
     const url = buildNaverRouteUrl("public", "ios", "https://match.backju.kr");
 
@@ -47,6 +34,8 @@ describe("Naver map directions", () => {
 
   it("falls back to a Naver Map web search on desktop", () => {
     expect(buildNaverRouteUrl("car", "web", "https://match.backju.kr")).toBe(NAVER_MAP_WEB_FALLBACK);
+    expect(NAVER_MAP_WEB_FALLBACK).toMatch(/^https:\/\/map\.naver\.com\/p\/search\//);
+    expect(decodeURIComponent(NAVER_MAP_WEB_FALLBACK)).toContain(EXCO_WEST_EXHIBITION_HALL.name);
   });
 
   it("selects the launch target from the browser user agent", () => {

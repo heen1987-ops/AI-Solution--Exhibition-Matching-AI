@@ -40,28 +40,13 @@ npm run dev
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | 백엔드 API 오리진(예: `http://localhost:8000`). 비우면 같은 오리진 상대경로(`/api/v1/...`)로 호출한다. |
 | `NEXT_PUBLIC_EVENT_ID` | 검색·추천 대상 행사의 UUID. 배포 시 필수이며 미설정/형식 오류이면 게스트 검색은 fail-closed로 안내한다. |
-| `NEXT_PUBLIC_NAVER_MAP_NCP_KEY_ID` | NAVER Cloud Maps Dynamic Map의 Web SDK용 Client ID/Key ID. Client Secret은 프론트엔드에 넣지 않는다. |
 
-### 네이버 지도 활성화
+### 네이버 지도 연결
 
-1. NAVER Cloud Platform 콘솔의 VPC 환경에서 `Application Services > Maps` 이용을
-   신청한 뒤 Application을 등록하고 `Dynamic Map`을 선택한다.
-2. Web 서비스 URL에 로컬 검수 주소와 운영 대표 도메인을 등록한다. 현재 로컬 검수 주소는
-   `http://127.0.0.1:3137`이다.
-3. 인증 정보에서 확인한 Web SDK용 **Client ID/Key ID**만 `.env.local`의
-   `NEXT_PUBLIC_NAVER_MAP_NCP_KEY_ID`에 넣고 웹을 다시 빌드한다. Client Secret/API
-   Secret은 브라우저 환경변수나 소스에 넣지 않는다.
-
-```dotenv
-NEXT_PUBLIC_NAVER_MAP_NCP_KEY_ID=발급받은_WEB_SDK_CLIENT_ID
-```
-
-Web Dynamic Map 키는 등록한 Web 서비스 URL과 실제 접속 도메인이 다르면 인증에 실패한다.
-운영 도메인이 정해지면 해당 대표 도메인도 Maps Application에 추가한다.
-
-이 화면은 확대·축소, 마커, 사용자 요청 기반 현재 위치 표시가 필요한 동적 지도이므로
-Static Map의 `/raster` 또는 `/raster-cors`로 대체하지 않는다. REST API 인증이 필요한
-기능을 추가할 때는 Client Secret을 브라우저에 전달하지 않고 서버 어댑터에서 호출한다.
+`/map`은 NAVER Cloud Maps API를 사용하지 않는다. EXCO 서관 전시장 장소 검색 URL과
+네이버 지도 앱의 공식 길찾기 URL Scheme만 사용하므로 Application 등록, Client ID,
+Client Secret, 별도 환경변수가 필요 없다. 모바일에서는 선택한 도보·대중교통·차량
+길찾기를 네이버 지도 앱으로 열고, PC에서는 서관 전시장 장소 화면으로 연결한다.
 
 ## 디렉터리 구조
 
