@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import ProvisionalBoothLayout from "@/components/ProvisionalBoothLayout";
+import BoothMapPending from "@/components/BoothMapPending";
 import VenueDirections from "@/components/VenueDirections";
 
 export const metadata: Metadata = {
@@ -20,7 +20,7 @@ export default function MapPage() {
       <header className="mb-6">
         <p className="backju-eyebrow text-brand-600">VISIT · MAP</p>
         <h1 className="backju-section-title mt-2 text-3xl font-black tracking-[-0.04em] text-[#302f2c] md:text-4xl">행사장 오는 길</h1>
-        <p className="mt-3 max-w-2xl text-[var(--color-text-muted)]">먼저 EXCO 서관 전시장까지의 이동 경로를 확인하고, 도착 후 서관 1층 3홀의 부스 위치도를 이어서 볼 수 있습니다.</p>
+        <p className="mt-3 max-w-2xl text-[var(--color-text-muted)]">EXCO 서관 전시장까지 오는 길을 먼저 확인하세요. 공식 부스 배치도가 확정되면 추천 업체의 위치도 이 화면에서 이어서 안내합니다.</p>
       </header>
 
       <VenueDirections />
@@ -54,7 +54,7 @@ export default function MapPage() {
       </div>
 
       <div className="mt-6">
-        <ProvisionalBoothLayout />
+        <BoothMapPending />
       </div>
     </div>
   );
