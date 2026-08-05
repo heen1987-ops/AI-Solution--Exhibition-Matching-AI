@@ -197,3 +197,15 @@ export function orderDemoRouteByAisle(
     return [...stops].sort((left, right) => ascending ? left.x - right.x : right.x - left.x);
   });
 }
+
+export function getDemoBoothNotePosition(
+  booth: Pick<DemoExhibitor, "x" | "y">,
+): { left: number; top: number } {
+  const left = booth.x > 68 ? booth.x - 31 : booth.x + 5;
+  const top = booth.y > 58 ? booth.y - 22 : booth.y + 5;
+
+  return {
+    left: Math.min(Math.max(left, 2), 70),
+    top: Math.min(Math.max(top, 18), 76),
+  };
+}

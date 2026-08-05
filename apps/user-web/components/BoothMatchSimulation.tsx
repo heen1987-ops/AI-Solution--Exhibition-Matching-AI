@@ -8,6 +8,7 @@ import {
   DEMO_EXHIBITORS,
   DEMO_HALL,
   DEMO_VISITOR_PROFILE,
+  getDemoBoothNotePosition,
   orderDemoRouteByAisle,
   rankDemoExhibitors,
   selectDemoRecommendations,
@@ -69,7 +70,8 @@ export default function BoothMatchSimulation() {
   const visitRoute = useMemo(() => orderDemoRouteByAisle(numberedStops), [numberedStops]);
   const recommendationIds = useMemo(() => new Set(recommendations.map((item) => item.id)), [recommendations]);
   const routeRanks = useMemo(() => new Map(numberedStops.map((item, index) => [item.id, index + 1])), [numberedStops]);
-  const selected = ranked.find((item) => item.id === selectedId) ?? visitRoute[0] ?? recommendations[0];
+  const selected = selectedId ? ranked.find((item) => item.id === selectedId) ?? null : null;
+  const selectedNotePosition = selected ? getDemoBoothNotePosition(selected) : null;
 
   const toggleInterest = (category: DemoCategory) => {
     setInterests((current) => {
@@ -197,6 +199,42 @@ export default function BoothMatchSimulation() {
               );
             })}
 
+            {selected && selectedNotePosition ? (
+              <div
+                role="dialog"
+                aria-modal="false"
+                aria-label={`${selected.boothNumber} ${selected.name} 부스 설명`}
+                className="absolute z-40 w-[28%] min-w-[230px] rotate-[-0.35deg] border border-[#d5bd63] bg-[#fff7c9] p-4 text-left text-[#3f3928] shadow-[0_16px_34px_rgba(61,48,22,0.24)]"
+                style={{ left: `${selectedNotePosition.left}%`, top: `${selectedNotePosition.top}%` }}
+              >
+                <span aria-hidden="true" className="absolute -top-2 left-1/2 h-4 w-16 -translate-x-1/2 rotate-[-2deg] bg-white/65 shadow-sm" />
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-[0.62rem] font-black tracking-[0.14em] text-[#8a6d16]">BOOTH MEMO</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(null)}
+                    aria-label="부스 설명 닫기"
+                    className="-mr-1 -mt-1 flex h-7 w-7 items-center justify-center rounded-full text-lg font-black text-[#66572f] transition hover:bg-black/5"
+                  >
+                    ×
+                  </button>
+                </div>
+                <strong className="mt-1 block text-base leading-5 text-[#302f2c]">{selected.name}</strong>
+                <span className="mt-1 block text-xs font-extrabold text-[#a83943]">{selected.boothNumber} · {selected.category}</span>
+                <dl className="mt-3 border-y border-[#dfcd86] py-2 text-xs leading-5">
+                  <div className="grid grid-cols-[4.7rem_1fr] gap-2">
+                    <dt className="font-bold text-[#7a6b3e]">회사</dt>
+                    <dd className="font-extrabold">{selected.name}</dd>
+                  </div>
+                  <div className="mt-1 grid grid-cols-[4.7rem_1fr] gap-2">
+                    <dt className="font-bold text-[#7a6b3e]">주종·품목</dt>
+                    <dd className="font-extrabold">{selected.product}</dd>
+                  </div>
+                </dl>
+                <p className="mt-2 text-xs leading-5 text-[#675d3d]">{selected.reason}</p>
+              </div>
+            ) : null}
+
             <div className="absolute bottom-[1.5%] left-1/2 z-20 -translate-x-1/2 border-t-4 border-brand-600 px-16 pt-1 text-center text-xs font-black tracking-[0.18em] text-brand-700">
               ↑ 입구
             </div>
@@ -231,15 +269,6 @@ export default function BoothMatchSimulation() {
               );
             })}
           </ol>
-
-          {selected ? (
-            <div className="mt-5 border-l-4 border-[#d6b168] bg-[#faf7f0] p-4" aria-live="polite">
-              <span className="text-xs font-black text-brand-700">선택 부스 · {selected.category}</span>
-              <strong className="mt-1 block text-base text-[#302f2c]">{selected.boothNumber} · {selected.name}</strong>
-              <span className="mt-1 block text-sm text-[#5b574f]">대표 품목: {selected.product}</span>
-              <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]">{selected.reason}</p>
-            </div>
-          ) : null}
 
           <div className="mt-5 flex flex-wrap gap-x-3 gap-y-2" aria-label="부스 범례">
             {DEMO_CATEGORIES.map((category) => (

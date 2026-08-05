@@ -4,6 +4,7 @@ import {
   buildDemoRoute,
   DEMO_EXHIBITORS,
   DEMO_VISITOR_PROFILE,
+  getDemoBoothNotePosition,
   orderDemoRouteByAisle,
   rankDemoExhibitors,
   selectDemoRecommendations,
@@ -47,5 +48,12 @@ describe("booth map simulation", () => {
 
     expect(visitRoute.map((item) => markerNumber.get(item.id))).toEqual([1, 3, 2, 4, 5, 6]);
     expect(visitRoute.slice(1).every((item, index) => item.y <= visitRoute[index].y)).toBe(true);
+  });
+
+  it("keeps every booth memo inside the hall canvas", () => {
+    const positions = DEMO_EXHIBITORS.map(getDemoBoothNotePosition);
+
+    expect(positions.every((position) => position.left >= 2 && position.left <= 70)).toBe(true);
+    expect(positions.every((position) => position.top >= 18 && position.top <= 76)).toBe(true);
   });
 });
