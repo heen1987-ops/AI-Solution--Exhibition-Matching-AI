@@ -38,9 +38,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, NoReturn
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +52,7 @@ from app.core.site_context import verify_site_context
 from app.db.session import get_db
 from app.models.ai import ModelVersion
 from app.models.common import new_uuid7
+from app.models.core import Event
 from app.models.exhibitor import Booth, EventProduct, ExhibitorParticipation
 from app.models.matching import (
     InteractionClientEventDedupe,
@@ -82,9 +84,17 @@ from app.schemas.recommendation import (
     RecommendationResponse,
     RecommendationSessionItemsResponse,
 )
+from app.services.interaction_event.masking import mask_search_query
+from app.services.interaction_event.rate_limit import (
+    RATE_LIMIT_WINDOW_SECONDS,
+    check_rate_limit,
+)
+from app.services.interaction_event.validation import find_forbidden_kiosk_keys
 from app.services.matching.errors import (
     RecommendationError,
     auth_required,
+    payload_too_large,
+    rate_limited,
     recommendation_not_ready,
     resource_forbidden,
     service_temporarily_unavailable,
@@ -97,6 +107,12 @@ from app.services.matching.types import (
     SubjectContext,
     score_to_match_level,
 )
+from app.services.notification.service import (
+    NotificationService,
+    SqlAlchemyNotificationRepository,
+)
+from app.services.notification.triggers import notify_recommendation_ready
+from app.services.notification_delivery import enqueue_recommendation_ready
 
 router = APIRouter()
 DbSession = Annotated[AsyncSession, Depends(get_db)]
@@ -359,6 +375,53 @@ def _outcome_response(outcome: RecommendationOutcome) -> RecommendationResponse:
     )
 
 
+async def _fire_recommendation_ready(
+    db: AsyncSession, *, subject: SubjectContext, outcome: RecommendationOutcome
+) -> None:
+    """MERGE STEP 26: RECOMMENDATION_READY 배선 - 이 라우터가 지금까지 유일한 실사용
+    호출자다 (``enqueue_recommendation_ready``는 main에 있었지만 프로덕션 호출자가
+    없었다). 게스트(비인증) 주체나 빈 배치는 대상이 없어 건너뛴다. 두 트리거 모두
+    ``BusinessEvent``/``dedupe_key`` 자체가 멱등이므로(각 함수 docstring 참고),
+    같은 recommendation_session_id로 두 번 불려도 행이 늘지 않는다 - 별도 방어 코드를
+    두지 않는다.
+    """
+
+    if subject.user_id is None or not outcome.items:
+        return
+
+    event_code = await db.scalar(
+        select(Event.event_code).where(
+            Event.tenant_id == subject.tenant_id, Event.event_id == subject.event_id
+        )
+    )
+    if event_code is None:
+        return
+
+    # SqlAlchemyNotificationRepository owns its own short-lived session per operation
+    # (app/services/notification/service.py class docstring) and hard-rejects an
+    # AsyncSession argument - it must NOT be given this router's request-scoped ``db``.
+    notification_service = NotificationService(SqlAlchemyNotificationRepository())
+    await notify_recommendation_ready(
+        notification_service,
+        tenant_id=subject.tenant_id,
+        event_id=subject.event_id,
+        recipient_user_id=subject.user_id,
+        recommendation_session_id=outcome.recommendation_session_id,
+        batch_date=outcome.generated_at.astimezone(UTC).date(),
+    )
+    await enqueue_recommendation_ready(
+        db,
+        tenant_id=subject.tenant_id,
+        event_id=subject.event_id,
+        event_code=event_code,
+        user_id=subject.user_id,
+        profile_id=subject.profile_id,
+        recommendation_session_id=outcome.recommendation_session_id,
+        recommendation_count=len(outcome.items),
+        public_base_url=get_settings().GUEST_WEB_BASE_URL,
+    )
+
+
 @router.post("/recommendations", response_model=Envelope[RecommendationResponse])
 async def create_recommendation(
     payload: RecommendationRequest,
@@ -381,6 +444,8 @@ async def create_recommendation(
     except RecommendationError as error:
         _raise_http(error)
         raise  # pragma: no cover - _raise_http는 항상 예외를 던진다.
+
+    await _fire_recommendation_ready(db, subject=subject, outcome=outcome)
 
     return Envelope(data=_outcome_response(outcome), meta=_meta(subject.request_id))
 
@@ -731,24 +796,115 @@ _ALLOWED_CONTEXT_KEYS = frozenset(
 
 
 def _sanitize_context(
-    context: dict[str, Any] | None, *, zone: str | None
+    context: dict[str, Any] | None,
+    *,
+    zone: str | None,
+    search_query: str | None = None,
 ) -> dict[str, Any] | None:
     """16.2절 마지막 문단: 직접 식별정보·자유메모 원문·OTP·토큰·전체 URL query string 금지.
 
     스키마만으로는 강제할 수 없어(자유 dict) 여기서 명백히 위험한 키·값을 걸러낸다.
+
+    키 허용목록을 통과한 문자열 값과 ``search_query``는 추가로
+    ``app/services/interaction_event/masking.py::mask_search_query``를 거친다 - 허용된 키에
+    담겨 들어온 자유입력에도 전화번호/이메일/주민등록번호/계좌번호 형태가 섞일 수 있고,
+    interaction.interaction_event는 append-only 분석 테이블이라 한 번 들어간 원문은 회수할
+    수 없기 때문이다. 마스킹 결과가 비면 키 자체를 버린다.
     """
 
-    sanitized: dict[str, Any] = {"zone": zone} if zone else {}
+    sanitized: dict[str, Any] = {}
+    masked_zone = mask_search_query(zone)
+    if masked_zone:
+        sanitized["zone"] = masked_zone
     for key, value in (context or {}).items():
         if key not in _ALLOWED_CONTEXT_KEYS:
             continue
         if isinstance(value, str):
             if len(value) > _MAX_CONTEXT_STRING_LENGTH:
                 continue
+            masked = mask_search_query(value)
+            if masked is None:
+                continue
+            value = masked
         elif not isinstance(value, bool | int | float) and value is not None:
             continue
         sanitized[key] = value
+    masked_query = mask_search_query(search_query)
+    if masked_query is not None:
+        # 서버가 구성한 값이므로 같은 이름의 클라이언트 키보다 우선한다.
+        sanitized["search_query"] = masked_query
     return sanitized or None
+
+
+# ---------------------------------------------------------------------------
+# 클라이언트 비콘 남용 방지 (WAVE 2E BACKEND-EVENT-COLLECTION에서 이관)
+# ---------------------------------------------------------------------------
+# 이 네 가지 통제는 원래 별도의 공개 무인증 라우터(routers/interaction_event.py)에 있었다.
+# 같은 interaction.interaction_event 테이블에 두 개의 쓰기 경로를 두면 /admin/analytics의
+# k<5 억제가 위조 이벤트로 무력화될 수 있으므로, 라우터를 등록하는 대신 통제만 인증된
+# 이 핸들러로 옮겼다.
+
+#: 사전 파싱 본문 상한. app/schemas/interaction_event.py:MAX_BATCH_PAYLOAD_BYTES와 동일.
+MAX_INTERACTION_BATCH_PAYLOAD_BYTES = 256 * 1024
+
+#: context.source가 이 값이면 키오스크에서 온 이벤트로 보고 익명성 규칙을 강제한다.
+_KIOSK_CONTEXT_SOURCE = "KIOSK"
+
+
+def _declares_kiosk_source(context: dict[str, Any] | None) -> bool:
+    source = (context or {}).get("source")
+    return isinstance(source, str) and source.strip().upper() == _KIOSK_CONTEXT_SOURCE
+
+
+def _interaction_rate_limit_key(verified: VerifiedPrincipal | VerifiedGuest) -> str:
+    """검증된 세션에서만 파생한다 - 요청 본문/헤더는 위조 가능하므로 키로 쓰지 않는다."""
+
+    if isinstance(verified, VerifiedPrincipal):
+        return f"user:{verified.user_id}"
+    return f"guest:{verified.guest_session_id}"
+
+
+class _PayloadCappedRoute(APIRoute):
+    """Pydantic 파싱 이전에 원문 바이트 수를 강제하는 라우트.
+
+    FastAPI는 의존성 해석보다 먼저 본문을 읽고 ``json.loads``까지 수행하므로, 상한을
+    Depends로는 구현할 수 없다. Starlette가 ``request.body()`` 결과를 캐시하므로 여기서 한 번
+    읽어도 아래 기본 핸들러가 본문을 다시 읽지 않는다.
+    """
+
+    def get_route_handler(self):  # type: ignore[no-untyped-def]
+        original_route_handler = super().get_route_handler()
+
+        async def custom_route_handler(request: Request) -> Response:
+            body = await request.body()
+            if len(body) > MAX_INTERACTION_BATCH_PAYLOAD_BYTES:
+                error = payload_too_large(
+                    "요청 본문이 "
+                    f"{MAX_INTERACTION_BATCH_PAYLOAD_BYTES} 바이트 상한을 초과했습니다."
+                )
+                return JSONResponse(
+                    status_code=error.http_status,
+                    content=jsonable_encoder(
+                        ErrorEnvelope(
+                            error=ErrorBody(
+                                code=error.code,
+                                message=error.message,
+                                field_errors=[],
+                                retryable=error.retryable,
+                                retry_after_seconds=error.retry_after_seconds,
+                            ),
+                            meta=_meta(
+                                request.headers.get("X-Request-ID") or str(new_uuid7())
+                            ),
+                        )
+                    ),
+                )
+            return await original_route_handler(request)
+
+        return custom_route_handler
+
+
+interaction_router = APIRouter(route_class=_PayloadCappedRoute)
 
 
 def _event_payload_hash(event: InteractionEventIn) -> str:
@@ -836,19 +992,56 @@ async def _resolve_recommendable_id(
     ).scalar_one_or_none()
 
 
-@router.post("/interactions/batch", response_model=Envelope[InteractionBatchResponse])
+@interaction_router.post(
+    "/interactions/batch", response_model=Envelope[InteractionBatchResponse]
+)
 async def submit_interaction_batch(
     payload: InteractionBatchRequest,
     request: Request,
     db: DbSession,
     verified: VerifiedSubject,
 ) -> Envelope[InteractionBatchResponse]:
+    if not check_rate_limit(_interaction_rate_limit_key(verified)):
+        _raise_http(
+            rate_limited(
+                "짧은 시간에 너무 많은 행동 이벤트를 전송했습니다.",
+                retry_after_seconds=int(RATE_LIMIT_WINDOW_SECONDS),
+            )
+        )
     subject = await resolve_subject_context(request, db, verified)
 
     results: list[InteractionEventResult] = []
     accepted = 0
 
     for event in payload.events:
+        if _declares_kiosk_source(event.context):
+            # 키오스크는 장기 신원을 수집하지 않는다(PROJECT_SCOPE.md 키오스크 제외 항목).
+            # 조용히 지우지 않고 거절한다 - 신원 필드를 보내는 키오스크 빌드는 운영자가
+            # 알아야 할 프라이버시 결함이지 세탁해 줄 페이로드가 아니다.
+            forbidden = find_forbidden_kiosk_keys(event.context)
+            if forbidden:
+                results.append(
+                    InteractionEventResult(
+                        client_event_id=event.client_event_id,
+                        interaction_event_id=None,
+                        accepted=False,
+                        reason="KIOSK_IDENTITY_FIELD_FORBIDDEN",
+                    )
+                )
+                continue
+            if subject.user_id is not None:
+                # 키오스크에는 로그인 세션이 없다. 인증된 principal이 KIOSK를 자칭하면
+                # 그 행은 user_id가 붙은 '키오스크 이벤트'가 되어 익명성 규약을 깬다.
+                results.append(
+                    InteractionEventResult(
+                        client_event_id=event.client_event_id,
+                        interaction_event_id=None,
+                        accepted=False,
+                        reason="KIOSK_SUBJECT_FORBIDDEN",
+                    )
+                )
+                continue
+
         if event.event_type not in CANONICAL_EVENTS:
             results.append(
                 InteractionEventResult(
@@ -997,7 +1190,9 @@ async def submit_interaction_batch(
             match_result_id=event.match_result_id,
             rank_at_event=event.rank_at_event,
             screen_code=event.screen,
-            context_json=_sanitize_context(event.context, zone=event.zone),
+            context_json=_sanitize_context(
+                event.context, zone=event.zone, search_query=event.search_query
+            ),
             client_event_id=event.client_event_id,
             consent_snapshot_id=event.consent_snapshot_id,
             occurred_at=event.occurred_at,
@@ -1105,3 +1300,8 @@ async def submit_interaction_batch(
         ),
         meta=_meta(subject.request_id),
     )
+
+
+# ``interaction_router``는 ``_PayloadCappedRoute``를 쓰기 위해 분리된 하위 라우터일 뿐이며,
+# prefix 없이 그대로 합쳐지므로 공개 경로는 여전히 POST /api/v1/interactions/batch 하나뿐이다.
+router.include_router(interaction_router)

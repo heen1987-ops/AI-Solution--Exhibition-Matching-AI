@@ -72,6 +72,10 @@ SCHEMA_ANALYTICS = "analytics"
 SCHEMA_LEARNING = "learning"
 SCHEMA_CONVERSATION = "conversation"
 SCHEMA_KIOSK = "kiosk"
+SCHEMA_DOCUMENT = "document"
+SCHEMA_INDEXING = "indexing"
+SCHEMA_NOTIFICATION = "notification"
+SCHEMA_EVENT_MESSAGE = "event_message"
 
 ALL_SCHEMAS: tuple[str, ...] = (
     SCHEMA_CORE,
@@ -90,6 +94,10 @@ ALL_SCHEMAS: tuple[str, ...] = (
     SCHEMA_LEARNING,
     SCHEMA_CONVERSATION,
     SCHEMA_KIOSK,
+    SCHEMA_DOCUMENT,
+    SCHEMA_INDEXING,
+    SCHEMA_NOTIFICATION,
+    SCHEMA_EVENT_MESSAGE,
 )
 
 # alembic autogenerate가 제약조건에 예측 가능한 이름을 붙이도록 하는 표준 네이밍 컨벤션.

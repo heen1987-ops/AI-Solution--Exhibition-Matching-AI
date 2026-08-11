@@ -5,8 +5,10 @@
  *
  * 근거: docs/user-ia-wireframes.md 4.2절(상단 공통 영역) - "행사 로고 또는 축약 행사명",
  * "선택한 방문일", "현재 구역과 `위치 갱신` 액션", "동기화 또는 네트워크 상태"의 1차 근거.
- * 같은 절이 "알림 진입점은 2차 확장", "추천 조건 수정은 홈·목록의 명시적 액션으로 제공"이라고
- * 명시하므로 이 컴포넌트에는 알림 아이콘과 추천 조건 수정 버튼을 넣지 않는다.
+ * 같은 절이 "알림 진입점은 2차 확장"이라고 명시했던 시점에는 인앱 알림함이 아직 없었다 -
+ * WAVE 2C에서 `/notifications`(features/notifications)가 실제로 만들어졌으므로 이제
+ * "2차 확장"이 도달했다: 알림 진입점(벨 아이콘)을 이 컴포넌트에 추가한다. 추천 조건 수정
+ * 버튼은 여전히 홈·목록의 명시적 액션으로만 제공한다(이 컴포넌트에 넣지 않는다).
  *
  * 화면 에이전트 연동 메모: 이 컴포넌트는 상태를 직접 조회하지 않는다(세션·프로파일 상태
  * 관리는 이 작업 범위 밖). 방문일·구역 등은 상위 레이아웃/화면이 props로 내려주고, 값이
@@ -119,6 +121,26 @@ function IconOffline(props: { className?: string }) {
   );
 }
 
+function IconBell(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={20}
+      height={20}
+      aria-hidden="true"
+      className={props.className}
+    >
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
 function IconWarning(props: { className?: string }) {
   return (
     <svg
@@ -227,6 +249,14 @@ export default function TopBar({
               <IconRefresh />
             </button>
           ) : null}
+          <Link
+            href="/notifications"
+            className="tap-target rounded-full"
+            style={{ color: "var(--color-text)" }}
+            aria-label="알림"
+          >
+            <IconBell />
+          </Link>
           <SyncBadge status={effectiveStatus} />
         </div>
       </div>

@@ -950,3 +950,429 @@ tasks:
       - "PROJECT_SCOPE.md 제외목록 위반이 없는지 현재 apps/api/apps/user-web 코드 스캔"
       - "결과를 .harness/reports/integration/scope-audit.md로 저장"
     note: "현재 리포 구조 스냅샷인 FND-002가 게시된 뒤 범위 감사를 수행한다."
+
+  # ---------- WAVE 2C/2D/2E: 31 parallel tracks (2026-08-03), ported 2026-08-11 from the
+  # worktree's own run-log/state.json summary + copied contracts/QA reports during the
+  # WAVE2C/2D/2E -> main unification merge. The worktree's own backlog.yaml never itemized these
+  # 31 tracks individually (it only carries the pre-WAVE2CDE task set above, byte-similar to
+  # main's); state.json rolled all 31 into one string per wave. Entries below individualize that
+  # string against .harness/handoffs/contracts/WAVE2{C,D,E}-CONTRACTS.md and the copied QA
+  # reports. depends_on is left empty where the source material does not state an explicit
+  # ordering; all statuses reflect the code actually merged into apps/api, apps/admin,
+  # apps/user-web, apps/worker, and ai/ by this integration, not aspirational scope.
+
+  - id: WAVE2C-BUYER-PROFILE
+    title: "WAVE2C: verified-buyer profile surface (profile.buyer_need extension + buyer_profile domain)"
+    wave: 2C
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/buyer_profile.py"
+      - "apps/api/alembic/versions/20260803_0022_buyer_profile.py"
+    acceptance:
+      - "Buyer profile fields extend the pre-existing profile.buyer_need table rather than duplicating it"
+    evidence: ".harness/contracts/buyer-matching.md; .harness/handoffs/contracts/WAVE2C-CONTRACTS.md item 4"
+
+  - id: WAVE2C-EXHIBITOR-PREFERENCE
+    title: "WAVE2C: exhibitor trade preference model + public preference read"
+    wave: 2C
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/exhibitor_preference.py"
+      - "apps/api/alembic/versions/20260803_0021_exhibitor_preference.py"
+      - "apps/api/app/api/v1/routers/exhibitor_preference.py"
+    acceptance:
+      - "GET /exhibitor-preference/{id} only surfaces availability for the row's own APPROVED master_approval_status (fixed during this merge — see the PUBLIC-tier data leaks resolved-conflict entry)"
+    evidence: ".harness/contracts/buyer-matching.md §4"
+
+  - id: WAVE2C-AI-BUYER-MATCH
+    title: "WAVE2C: deterministic B2B hard-filter/scoring engine (ai/buyer_matching/)"
+    wave: 2C
+    track: AI_SEARCH
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths: ["ai/buyer_matching/", "ai/evaluation/buyer_matching/"]
+    acceptance:
+      - "Reproducible hard-filter/scoring separate from the general /recommendations engine by design (DECISION-023)"
+    evidence: ".harness/contracts/buyer-matching.md §5"
+
+  - id: WAVE2C-BUYER-MATCH
+    title: "WAVE2C: POST /buyer/matches + POST /buyer/compare endpoints"
+    wave: 2C
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-AI-BUYER-MATCH]
+    owned_paths:
+      - "apps/api/app/models/buyer_match.py"
+      - "apps/api/alembic/versions/20260803_0023_buyer_match.py"
+      - "apps/api/app/api/v1/routers/buyer_match.py"
+    acceptance:
+      - "Coexists deliberately with /recommendations rather than replacing it (DECISION-023, supersedes DECISION-005's original mapping)"
+      - "Router identifies the caller via main's principal-derived dependency, not X-Actor-User-Id/X-Profile-Id headers (ROUTER AUTHENTICATION resolved conflict)"
+    evidence: ".harness/decisions.md DECISION-023; run-log.md 2026-08-03 WAVE2C/2D/2E entry"
+
+  - id: WAVE2C-MEETING
+    title: "WAVE2C: three-gate buyer<->exhibitor contact-disclosure service layer"
+    wave: 2C
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/services/meeting/buyer_matching.py"
+      - "apps/api/app/api/v1/routers/meetings.py"
+      - "apps/api/app/models/meeting.py"
+      - "apps/api/alembic/versions/20260803_0020_interaction_domain.py"
+    acceptance:
+      - "contact_reveal_allowed() gates on meeting.status == accepted AND buyer consent AND exhibitor_enabled_at/exhibitor_enabled_by_staff_id (all three), not main's pre-merge two-of-three check"
+      - "Collapsed into main's single routers/meetings.py surface; meeting_buyer_extension.py is not a second registered router (MEETING SURFACE resolved conflict)"
+    evidence: ".harness/contracts/meeting.md; .harness/decisions.md (meeting-surface collapse decision, this merge)"
+
+  - id: WAVE2C-USERWEB-BUYER
+    title: "WAVE2C: apps/user-web buyer profile + matches screens"
+    wave: 2C
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-BUYER-MATCH]
+    owned_paths: ["apps/user-web/app/buyer/", "apps/user-web/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md"
+
+  - id: WAVE2C-USERWEB-MEETING
+    title: "WAVE2C: apps/user-web meeting request/detail screens"
+    wave: 2C
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-MEETING]
+    owned_paths:
+      - "apps/user-web/app/meetings/"
+      - "apps/user-web/features/meeting/"
+    acceptance:
+      - "Meeting status values are the lowercase requested/accepted/... tuple matching models/meeting.py, not the uppercase set main's own pre-merge lib/types.ts used (MeetingStatus vocabulary resolved conflict, take-worktree)"
+    evidence: ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md; .harness/decisions.md MeetingStatus vocabulary entry"
+
+  - id: WAVE2C-ADMIN-BUYER
+    title: "WAVE2C: apps/admin buyer verification screens"
+    wave: 2C
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-BUYER-PROFILE]
+    owned_paths: ["apps/admin/app/buyers/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md item on /admin/buyers"
+
+  - id: WAVE2C-EXHIBITOR-MEETING
+    title: "WAVE2C: apps/admin partner-side meeting accept/reject screens"
+    wave: 2C
+    track: ADMIN
+    priority: P0
+    status: DONE
+    depends_on: [WAVE2C-MEETING]
+    owned_paths: ["apps/admin/app/meetings/", "apps/admin/app/partner/"]
+    acceptance:
+      - "Calls apiGet/apiPost from lib/api-client.ts (X-CSRF-Token + HttpOnly cookie); the worktree's own hand-rolled X-Staff-Id client (staff-session.ts/StaffSessionBar.tsx) was deleted during this merge, not ported (apps/admin/features/partner-meeting/api.ts resolved conflict)"
+    evidence: ".harness/decisions.md (apps/admin/features/partner-meeting/api.ts resolved-conflict entry, this merge)"
+
+  - id: WAVE2C-QA-BUYER
+    title: "WAVE2C: buyer/meeting privacy + e2e test suite"
+    wave: 2C
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-MEETING, WAVE2C-BUYER-MATCH]
+    owned_paths:
+      - "apps/api/tests/integration/test_buyer_meeting_e2e.py"
+      - "apps/api/tests/security/test_buyer_meeting_privacy.py"
+    evidence: ".harness/reports/buyer-matching/WAVE2C-QA.md — 44 passed/1 skipped (live-DB gated) at WAVE2C time; retargeted onto the merged /meetings and /buyer/matches surfaces during this merge, see the final pytest count in this merge's closing run-log entry"
+
+  - id: WAVE2C-CONTRACTS
+    title: "WAVE2C: buyer-matching.md + meeting.md contract docs"
+    wave: 2C
+    track: CONTRACTS
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - ".harness/contracts/buyer-matching.md"
+      - ".harness/contracts/meeting.md"
+      - ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md"
+    note: "TL;DR items 3-4 in WAVE2C-CONTRACTS.md ('do not build /buyer/matches or /me/buyer-profile') were overtaken within the same wave — see the 2026-08-11 superseded-annotation in run-log.md."
+
+  - id: WAVE2D-DOCUMENT-UPLOAD
+    title: "WAVE2D: exhibitor document upload model + API"
+    wave: 2D
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/document.py"
+      - "apps/api/alembic/versions/20260803_0024_document_storage.py"
+      - "apps/api/app/api/v1/routers/document.py"
+    evidence: ".harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-PARSING
+    title: "WAVE2D: worker document parsing job (DOCX/XLSX/PDF text extraction)"
+    wave: 2D
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-DOCUMENT-UPLOAD]
+    owned_paths: ["apps/worker/worker/jobs/document_parsing.py"]
+    acceptance:
+      - "XlsxParser/PdfTextParser are openpyxl/pypdf-backed, not the worktree's stdlib-only versions that silently dropped inlineStr cells and mojibake'd CID Korean text (apps/worker dependency-policy resolved conflict, ASSUMPTION-005)"
+    evidence: "ASSUMPTION-005; .harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-AI-EXTRACTION
+    title: "WAVE2D: grounded AI attribute extraction (ai/extraction/)"
+    wave: 2D
+    track: AI_SEARCH
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-PARSING]
+    owned_paths: ["ai/extraction/", "ai/schemas/", "ai/prompts/", "apps/api/app/models/extraction.py"]
+    acceptance:
+      - "Extraction is evidence-linked and never auto-published — exhibitor confirm AND operator approve are both required (AI-output-is-a-proposal invariant)"
+    evidence: ".harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-EXTRACTION-REVIEW
+    title: "WAVE2D: exhibitor-confirm -> operator-approve extraction review pipeline"
+    wave: 2D
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [WAVE2D-AI-EXTRACTION]
+    owned_paths:
+      - "apps/api/app/models/extraction.py"
+      - "apps/api/alembic/versions/20260803_0025_extraction_review.py"
+      - "apps/api/app/api/v1/routers/extraction.py"
+    acceptance:
+      - "content_review_request/published_content_version enforce the exhibitor-confirm -> operator-approve gate at the DB level, not just in application code"
+      - "/admin/ai-review routes require require_roles('EVENT_ADMIN','DATA_REVIEWER') to inherit AAL2/MFA (ROUTER AUTHENTICATION resolved conflict)"
+    evidence: ".harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-EXHIBITOR-REVIEW
+    title: "WAVE2D: exhibitor-facing confirm/edit screen for AI-extracted attributes"
+    wave: 2D
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths: ["apps/admin/app/partner/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2D-CONTRACTS.md"
+
+  - id: WAVE2D-ADMIN-AI-REVIEW
+    title: "WAVE2D: operator AI-review approval dashboard"
+    wave: 2D
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths: ["apps/admin/app/ai-review/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2D-CONTRACTS.md"
+
+  - id: WAVE2D-INDEXING
+    title: "WAVE2D: PUBLIC/VERIFIED_BUYER search-tier indexing model"
+    wave: 2D
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths:
+      - "apps/api/app/models/indexing.py"
+      - "apps/api/alembic/versions/20260803_0026_search_indexing.py"
+      - "apps/worker/worker/jobs/indexing.py"
+    acceptance:
+      - "Complementary to, not a duplicate of, main's ai.object_embedding vector recall layer (EMBEDDING/SEMANTIC SEARCH resolved conflict); its own stale docstring claiming no object_embedding implementation was corrected during this merge (DECISION-025)"
+    evidence: ".harness/decisions.md DECISION-025"
+
+  - id: WAVE2D-EMBEDDING
+    title: "WAVE2D: ai/embedding/ provider + versioning scaffold"
+    wave: 2D
+    track: AI_SEARCH
+    priority: P2
+    status: SUPERSEDED
+    depends_on: []
+    owned_paths: []
+    note: "Retired during this merge in favor of main's ai.object_embedding + services/object_embeddings.py + migration 0017 (DECISION-025). ai/embedding/{provider,service,versioning,types}.py and ai/evaluation/embedding/ were not ported — main's UnconfiguredEmbeddingProvider-class stub had no persistence layer and its own docstring's premise (no object_embedding implementation exists) was false against main."
+    evidence: ".harness/decisions.md DECISION-025"
+
+  - id: WAVE2D-QA-AI-STRUCTURING
+    title: "WAVE2D: document/extraction privacy + e2e test suite"
+    wave: 2D
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths:
+      - "apps/api/tests/integration/test_ai_structuring_e2e.py"
+      - "apps/api/tests/security/test_document_security.py"
+    evidence: ".harness/reports/ai-structuring/WAVE2D-QA.md"
+
+  - id: WAVE2D-CONTRACTS
+    title: "WAVE2D: document-structuring.md contract doc"
+    wave: 2D
+    track: CONTRACTS
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - ".harness/contracts/document-structuring.md"
+      - ".harness/handoffs/contracts/WAVE2D-CONTRACTS.md"
+
+  - id: WAVE2E-EVENT-COLLECTION
+    title: "WAVE2E: interaction-event ingestion model + privacy/abuse controls"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/interaction_event.py"
+      - "apps/api/alembic/versions/20260803_0030_event_ingestion_failure.py"
+      - "apps/api/app/api/v1/routers/recommendations.py"
+    acceptance:
+      - "PII masking, kiosk-forbidden-key checks, rate limiting, and the 256KB body cap are folded into main's authenticated POST /interactions/batch; the worktree's own anonymous POST /events/interaction[/batch] router is not registered as a second public write path (INTERACTION EVENT INGESTION resolved conflict)"
+    evidence: ".harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-WORKER-ANALYTICS
+    title: "WAVE2E: worker analytics aggregation + data-quality jobs"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-EVENT-COLLECTION]
+    owned_paths:
+      - "apps/worker/worker/jobs/analytics_aggregation.py"
+      - "apps/worker/worker/jobs/data_quality.py"
+      - "apps/worker/worker/sinks/analytics_sink.py"
+    acceptance:
+      - "SUPPRESSION_THRESHOLD = 5 and _suppress() preserved exactly; MetricSink/DataQualitySink/SegmentStore are async (main has no sync engine to implement them against)"
+    evidence: ".harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-ANALYTICS
+    title: "WAVE2E: k<5-suppressed analytics query/access layer"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-WORKER-ANALYTICS]
+    owned_paths:
+      - "apps/api/app/models/analytics.py"
+      - "apps/api/alembic/versions/20260803_0029_analytics_aggregation.py"
+      - "apps/api/app/services/analytics/"
+    acceptance:
+      - "DB-level CHECK '(suppressed=false) OR (event_count IS NULL AND distinct_actor_count IS NULL)' makes a suppressed row physically incapable of carrying counts"
+      - "X-Analytics-Role only narrows the actor's DB-derived permitted role set, never widens it"
+    evidence: ".harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-NOTIFICATION
+    title: "WAVE2E: in-app notification inbox (notification.* schema)"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/notification.py"
+      - "apps/api/alembic/versions/20260803_0027_notification.py"
+      - "apps/api/app/api/v1/routers/notification.py"
+    acceptance:
+      - "NotificationDelivery renamed to NotificationChannelDelivery to resolve the configure_mappers() class-name collision with integration.py's outbound NotificationDelivery (NotificationDelivery class-name collision resolved conflict)"
+      - "notification_templates carries CR-012's INFORMATIONAL-only, no-raw-contact rule (DECISION-024)"
+    evidence: ".harness/decisions.md DECISION-024; .harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-USERWEB-NOTIFICATION
+    title: "WAVE2E: apps/user-web notification bell + inbox screens"
+    wave: 2E
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-NOTIFICATION]
+    owned_paths: ["apps/user-web/app/notifications/"]
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-ADMIN-ANALYTICS
+    title: "WAVE2E: apps/admin analytics dashboard screens"
+    wave: 2E
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-ANALYTICS]
+    owned_paths: ["apps/admin/app/analytics/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-ADMIN-OPERATIONS
+    title: "WAVE2E: apps/admin operations dashboard + event-message publishing"
+    wave: 2E
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-ANALYTICS]
+    owned_paths:
+      - "apps/admin/app/operations/"
+      - "apps/api/app/models/event_message.py"
+      - "apps/api/alembic/versions/20260803_0028_event_message.py"
+    acceptance:
+      - "event_message approve/schedule/publish require require_roles('EVENT_ADMIN', fresh_mfa=True), matching how main already treats bulk import (ROUTER AUTHENTICATION resolved conflict)"
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-ADMIN-NOTIFICATION
+    title: "WAVE2E: apps/admin event-message / notification operations screens"
+    wave: 2E
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-NOTIFICATION]
+    owned_paths: ["apps/admin/app/event-messages/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-QA-OPERATIONS
+    title: "WAVE2E: analytics/notification privacy + operations e2e test suite"
+    wave: 2E
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-ANALYTICS, WAVE2E-NOTIFICATION]
+    owned_paths:
+      - "apps/api/tests/integration/test_operations_analytics_e2e.py"
+      - "apps/api/tests/security/test_analytics_notification_privacy.py"
+    evidence: ".harness/reports/operations/WAVE2E-QA.md"
+
+  - id: WAVE2E-CONTRACTS
+    title: "WAVE2E: operations-analytics.md contract doc"
+    wave: 2E
+    track: CONTRACTS
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - ".harness/contracts/operations-analytics.md"
+      - ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: BACKEND-014
+    title: "Rewire ported WAVE2C/2D/2E routers onto main's principal-derived auth (post-merge follow-up)"
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on:
+      - WAVE2C-BUYER-MATCH
+      - WAVE2C-EXHIBITOR-MEETING
+      - WAVE2D-EXTRACTION-REVIEW
+      - WAVE2E-ADMIN-OPERATIONS
+    owned_paths:
+      - "apps/api/app/core/router_auth.py"
+      - "apps/api/app/api/v1/api.py"
+    acceptance:
+      - "All ten ported routers take identity from main's principal-derived dependency (app/core/router_auth.py), never from X-Actor-User-Id/X-Profile-Id/X-Staff-Id/X-Tenant-Id headers"
+      - "Authorization logic (legacy profile.role/user_role queries) is preserved unchanged — only the identity half is swapped"
+    evidence: "ROUTER AUTHENTICATION resolved conflict in this merge; see the individual WAVE2C/2D/2E router entries above for router-specific auth notes"

@@ -37,6 +37,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import InlinePhoneVerify from "@/components/InlinePhoneVerify";
+import { listMeetings } from "@/features/meeting/api";
 import {
   ApiClientError,
   createFavorite,
@@ -44,7 +45,6 @@ import {
   getBooth,
   getProduct,
   listFavorites,
-  listMeetings,
 } from "@/lib/api-client";
 import {
   getAuthState,
@@ -82,15 +82,14 @@ interface SavedEntry extends NormalizedFavorite {
 }
 
 const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
-  DRAFT: "작성 중",
-  REQUESTED: "상담 예정",
-  CONFIRMED: "상담 예정",
-  COMPLETED: "완료",
-  COUNTER_PROPOSED: "상담 예정",
-  REJECTED: "거절됨",
-  CANCELLED_BY_BUYER: "취소됨",
-  CANCELLED_BY_EXHIBITOR: "취소됨",
-  NO_SHOW: "노쇼",
+  draft: "작성 중",
+  requested: "상담 예정",
+  accepted: "상담 예정",
+  completed: "완료",
+  counter_proposed: "상담 예정",
+  rejected: "거절됨",
+  cancelled: "취소됨",
+  no_show: "노쇼",
 };
 
 function StatusBadge({ children, tone = "default" }: { children: ReactNode; tone?: "default" | "closed" }) {

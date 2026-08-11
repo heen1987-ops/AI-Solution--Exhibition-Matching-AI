@@ -892,16 +892,25 @@ export interface RouteResponse {
 // 12절 상담 - backend/app/schemas/meeting.py 1:1 대응
 // ---------------------------------------------------------------------------
 
+/** apps/api/app/models/meeting.py MEETING_STATUSES를 그대로 따른다(단일 진실 공급원).
+ * 이전에는 대문자 값(DRAFT/…/CONFIRMED)으로 정의돼 있었는데, 실제 백엔드
+ * (schemas/meeting.py MeetingResponse.status)는 소문자 값을 반환하므로 실제 API 응답과
+ * 전혀 겹치지 않아 상태 분기가 런타임에 항상 falsy였다 - "확정 상담" 대시보드 블록이
+ * listMeetings({ status: "CONFIRMED" })를 호출해도 언제나 빈 결과만 받는 사전 버그였다.
+ * 백엔드의 status_allowed CHECK 제약이 MEETING_STATUSES를 강제하므로 이 값을 바꿀 때는
+ * 이 소문자 튜플을 정본으로 유지한다(대문자로 되돌리지 말 것). */
 export type MeetingStatus =
-  | "DRAFT"
-  | "REQUESTED"
-  | "CONFIRMED"
-  | "COMPLETED"
-  | "COUNTER_PROPOSED"
-  | "REJECTED"
-  | "CANCELLED_BY_BUYER"
-  | "CANCELLED_BY_EXHIBITOR"
-  | "NO_SHOW";
+  | "draft"
+  | "requested"
+  | "accepted"
+  | "counter_proposed"
+  | "rejected"
+  | "cancelled"
+  | "completed"
+  | "no_show";
+
+/** apps/api/app/models/meeting.py MEETING_CONFIRMED_STATUS. */
+export const MEETING_CONFIRMED_STATUS: MeetingStatus = "accepted";
 
 export const ALLOWED_CONTACT_SHARE_FIELDS = ["NAME", "PHONE", "BUSINESS_EMAIL", "EMAIL"] as const;
 export type ContactShareField = (typeof ALLOWED_CONTACT_SHARE_FIELDS)[number];

@@ -9,25 +9,25 @@
  *   "수락 시 연락처를 공유합니다" 체크박스와 "공유 항목 자세히 보기", "전송 버튼을 누르면
  *   외부 상대에게 요청이 전달되므로 제출 직전에 업체, 시간, 공유정보를 요약한다", "전송 중
  *   버튼을 잠그고 멱등 키로 중복 요청을 막는다".
- * - docs/user-ia-wireframes.md 6.2절(상담 상태모델): `requested` 이후 중복 제출은 동일 멱등
- *   키로 같은 결과를 반환한다.
  * - docs/user-ia-wireframes.md 11.4절: 상담요청처럼 외부 상대에게 전달되는 작업은 네트워크
  *   단절 시 로컬 큐잉 대상이며, 장시간 지연되면 재확인이 필요하다.
- * - docs/frontend-backend-ai-interface-spec.md 12.2~12.3절: 가능시간 조회
- *   `GET /exhibitors/{id}/availability?date=...&topic=...`, 상담 요청
- *   `POST /meetings` 요청 바디(`exhibitor_id`, `topic`, `requested_slot_ids`, `message`,
- *   `contact_share{accepted,document_version,fields}`, `match_result_id`), "연락처 공유
- *   동의는 요청 시 기록하지만 실제 공개는 상담 확정 후".
- * - frontend/lib/types.ts `MeetingCreateRequest`/`ContactShareRequest`/`AvailabilitySlotItem`
- *   그대로 사용.
+ * - 작업 지시(WAVE 2C USER-WEB-MEETING): "meeting request form (exhibitor, product/service,
+ *   topic, up to 3 preferred time slots, order-scale range, message, contact_share_consent
+ *   checkbox DEFAULTED UNCHECKED - never pre-check it)".
  *
- * 상담 주제 메모: 6단계(매칭 온톨로지) 문서가 아직 없어 `topic`의 정식 코드 목록은
- * `GET /api/v1/ontology/concepts?concept_type=BUSINESS_GOAL`로 채워야 한다(12.3절 주석,
- * frontend/lib/types.ts MeetingCreateRequest.topic 주석). 그 엔드포인트는 아직 표준 응답
- * 봉투를 쓰지 않아 `frontend/lib/api-client.ts` 범위 밖이므로, 이 화면은 우선 와이어프레임
- * 문구 그대로의 기본 주제 목록을 쓰고, 마운트 시 온톨로지 엔드포인트를 얇게 직접 호출해
- * 성공하면 그 목록으로 교체한다(실패하면 조용히 기본값을 유지 - TODO: 6단계 문서 확정 후
- * 정식 파싱 로직으로 교체).
+ * 백엔드 계약과의 차이(작업 지시 항목 중 계약에 없는 것)
+ * --------------------------------------------------------
+ * `apps/api/app/schemas/meeting.py`의 `MeetingCreateRequest`는
+ * `exhibitor_id/topic/requested_slot_ids/message/contact_share/match_result_id`만 받는다.
+ * "product/service"·"order-scale range" 전용 컬럼은 없다(이 트랙 owned path 밖이라 백엔드에
+ * 새 필드를 추가할 수 없음). 그래서 이 화면은 두 값을 입력받아 기존 자유메모(`message`)
+ * 필드에 라벨을 붙여 함께 보낸다(`features/meeting/logic.ts`의 `buildMeetingMessage`).
+ * 통합 담당자에게: 백엔드가 이 두 값을 구조화된 필드로 받고 싶다면
+ * `MeetingCreateRequest`에 `product_or_service`/`order_scale` 같은 선택 필드를 추가하고,
+ * 이 화면은 `buildMeetingMessage` 호출을 그 필드 전달로 바꾸면 된다.
+ *
+ * 희망 시간은 백엔드가 1~5개까지 허용하지만, 작업 지시가 명시적으로 "최대 3개"를 요구해
+ * `MAX_PREFERRED_SLOTS`(=3)로 더 좁힌다.
  *
  * 진입 경로: 부스 상세 등에서 `?exhibitorId=ex_031&exhibitorName=A양조장&matchResultId=mr_001`
  * 쿼리스트링으로 이 화면을 연다(그 화면들은 이 작업 범위 밖이라 실제 링크는 만들지 않았다).
@@ -36,43 +36,22 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import {
-  ApiClientError,
-  generateClientId,
-  getExhibitorAvailability,
-  postMeetingRequest,
-} from "@/lib/api-client";
+import { ApiClientError, generateClientId } from "@/lib/api-client";
 import { enqueueTask, useIsOnline, useOfflineFlush } from "@/lib/offline-queue";
+
+import { getExhibitorAvailability, postMeetingRequest } from "@/features/meeting/api";
+import ContactShareConsent from "@/features/meeting/components/ContactShareConsent";
+import { CONTACT_FIELD_LABEL, DEFAULT_TOPICS, MAX_PREFERRED_SLOTS } from "@/features/meeting/constants";
+import { buildMeetingMessage, toggleSlotSelection } from "@/features/meeting/logic";
 import type {
   AvailabilitySlotItem,
   ContactShareField,
   MeetingCreateRequest,
-} from "@/lib/types";
-import { ALLOWED_CONTACT_SHARE_FIELDS } from "@/lib/types";
+  TopicOptionLike,
+} from "@/features/meeting/types";
 
 const QUEUE_KIND = "MEETING_REQUEST";
 const CONTACT_SHARE_DOCUMENT_VERSION = "meeting-share-2026.1";
-
-interface TopicOption {
-  code: string;
-  label: string;
-}
-
-// 와이어프레임 U-14 그대로의 기본값. TODO(6단계 온톨로지 문서 확정 후 대조).
-const DEFAULT_TOPICS: TopicOption[] = [
-  { code: "DISTRIBUTION", label: "입점·유통" },
-  { code: "OEM_PB", label: "OEM·PB" },
-  { code: "EXPORT", label: "수출" },
-  { code: "PRODUCT_PRICE", label: "제품·가격" },
-  { code: "TECH_FACILITY", label: "기술·설비" },
-];
-
-const CONTACT_FIELD_LABEL: Record<ContactShareField, string> = {
-  NAME: "이름",
-  PHONE: "휴대전화",
-  BUSINESS_EMAIL: "업무용 이메일",
-  EMAIL: "이메일",
-};
 
 function todayIsoDate(): string {
   const now = new Date();
@@ -90,7 +69,7 @@ function formatSlotLabel(slot: AvailabilitySlotItem): string {
 }
 
 /** 온톨로지 원시 응답의 다양한 가능한 모양을 최선 노력으로 파싱한다. 실패하면 null. */
-function tryParseTopicOptions(payload: unknown): TopicOption[] | null {
+function tryParseTopicOptions(payload: unknown): TopicOptionLike[] | null {
   const list = Array.isArray(payload)
     ? payload
     : Array.isArray((payload as { items?: unknown[] })?.items)
@@ -106,7 +85,7 @@ function tryParseTopicOptions(payload: unknown): TopicOption[] | null {
       const label = record.display_name ?? record.label ?? record.name ?? code;
       return typeof code === "string" && typeof label === "string" ? { code, label } : null;
     })
-    .filter((v): v is TopicOption => v !== null);
+    .filter((v): v is TopicOptionLike => v !== null);
   return parsed.length > 0 ? parsed : null;
 }
 
@@ -135,14 +114,17 @@ function MeetingRequestPageContent() {
   const exhibitorName = searchParams?.get("exhibitorName") ?? "업체";
   const matchResultId = searchParams?.get("matchResultId");
 
-  const [topics, setTopics] = useState<TopicOption[]>(DEFAULT_TOPICS);
+  const [topics, setTopics] = useState<TopicOptionLike[]>(DEFAULT_TOPICS);
   const [topic, setTopic] = useState<string>("");
+  const [productOrService, setProductOrService] = useState("");
+  const [orderScale, setOrderScale] = useState("");
   const [date] = useState(todayIsoDate());
   const [slots, setSlots] = useState<AvailabilitySlotItem[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
   const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  // 절대 규칙: 연락처 공유 체크박스는 항상 미체크로 시작한다. 절대 true로 초기화하지 않는다.
   const [shareContact, setShareContact] = useState(false);
   const [showShareDetail, setShowShareDetail] = useState(false);
   const [shareFields, setShareFields] = useState<ContactShareField[]>(["NAME", "PHONE"]);
@@ -155,7 +137,7 @@ function MeetingRequestPageContent() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // 온톨로지 주제 목록을 얇게 직접 호출로 시도한다 (api-client.ts 범위 밖, 실패해도 기본값 유지).
+  // 온톨로지 주제 목록을 얇게 직접 호출로 시도한다 (실패해도 기본값 유지).
   useEffect(() => {
     let cancelled = false;
     fetch("/api/v1/ontology/concepts?concept_type=BUSINESS_GOAL", { credentials: "include" })
@@ -195,9 +177,7 @@ function MeetingRequestPageContent() {
   }, [topic, exhibitorId, date]);
 
   function toggleSlot(slotId: string) {
-    setSelectedSlotIds((prev) =>
-      prev.includes(slotId) ? prev.filter((id) => id !== slotId) : [...prev, slotId],
-    );
+    setSelectedSlotIds((prev) => toggleSlotSelection(prev, slotId, MAX_PREFERRED_SLOTS));
   }
 
   function toggleShareField(field: ContactShareField) {
@@ -220,7 +200,7 @@ function MeetingRequestPageContent() {
       exhibitor_id: exhibitorId,
       topic,
       requested_slot_ids: selectedSlotIds,
-      message: message.trim() || null,
+      message: buildMeetingMessage({ productOrService, orderScale, freeText: message }),
       contact_share: {
         accepted: shareContact,
         document_version: shareContact ? CONTACT_SHARE_DOCUMENT_VERSION : null,
@@ -331,9 +311,24 @@ function MeetingRequestPageContent() {
             </div>
           </section>
 
+          <section aria-labelledby="product-heading" className="flex flex-col gap-2">
+            <h2 id="product-heading" className="text-base font-semibold">
+              제품/서비스
+            </h2>
+            <input
+              type="text"
+              value={productOrService}
+              onChange={(event) => setProductOrService(event.target.value)}
+              maxLength={100}
+              placeholder="상담하고 싶은 제품이나 서비스를 적어 주세요. (선택)"
+              className="rounded-lg border px-3 py-2 text-base"
+              style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
+            />
+          </section>
+
           <section aria-labelledby="slots-heading" className="flex flex-col gap-2">
             <h2 id="slots-heading" className="text-base font-semibold">
-              희망시간
+              희망시간 (최대 {MAX_PREFERRED_SLOTS}개)
             </h2>
             {!topic ? (
               <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
@@ -352,16 +347,18 @@ function MeetingRequestPageContent() {
                 오늘은 가능한 시간이 없습니다.
               </p>
             ) : (
-              <div className="flex flex-wrap gap-2" role="group" aria-label="희망 시간 선택(복수 선택)">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="희망 시간 선택(최대 3개)">
                 {slots.map((slot) => {
                   const full = slot.reserved_count >= slot.capacity;
                   const selected = selectedSlotIds.includes(slot.slot_id);
+                  const disabledByLimit =
+                    !selected && selectedSlotIds.length >= MAX_PREFERRED_SLOTS;
                   return (
                     <button
                       key={slot.slot_id}
                       type="button"
                       onClick={() => !full && toggleSlot(slot.slot_id)}
-                      disabled={full}
+                      disabled={full || disabledByLimit}
                       aria-pressed={selected}
                       className="tap-target rounded-full border px-4 py-2 text-sm disabled:opacity-40"
                       style={{
@@ -380,6 +377,21 @@ function MeetingRequestPageContent() {
             )}
           </section>
 
+          <section aria-labelledby="order-scale-heading" className="flex flex-col gap-2">
+            <h2 id="order-scale-heading" className="text-base font-semibold">
+              예상 발주 규모
+            </h2>
+            <input
+              type="text"
+              value={orderScale}
+              onChange={(event) => setOrderScale(event.target.value)}
+              maxLength={100}
+              placeholder="예: 월 500박스, 샘플 소량 등 (선택)"
+              className="rounded-lg border px-3 py-2 text-base"
+              style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
+            />
+          </section>
+
           <section aria-labelledby="message-heading" className="flex flex-col gap-2">
             <h2 id="message-heading" className="text-base font-semibold">
               전달할 내용
@@ -395,48 +407,14 @@ function MeetingRequestPageContent() {
             />
           </section>
 
-          <section aria-labelledby="share-heading" className="flex flex-col gap-2">
-            <h2 id="share-heading" className="sr-only">
-              연락처 공유
-            </h2>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={shareContact}
-                onChange={(event) => setShareContact(event.target.checked)}
-                className="tap-target"
-              />
-              수락 시 연락처를 공유합니다
-            </label>
-            <button
-              type="button"
-              onClick={() => setShowShareDetail((v) => !v)}
-              className="self-start text-sm underline"
-              style={{ color: "var(--color-brand)" }}
-              aria-expanded={showShareDetail}
-            >
-              공유 항목 자세히 보기
-            </button>
-            {showShareDetail ? (
-              <div className="flex flex-col gap-1 rounded-lg border p-3" style={{ borderColor: "var(--color-border)" }}>
-                <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                  업체가 상담을 수락한 뒤에만 아래에서 선택한 항목이 공개됩니다.
-                </p>
-                {ALLOWED_CONTACT_SHARE_FIELDS.map((field) => (
-                  <label key={field} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      disabled={!shareContact}
-                      checked={shareFields.includes(field)}
-                      onChange={() => toggleShareField(field)}
-                      className="tap-target"
-                    />
-                    {CONTACT_FIELD_LABEL[field]}
-                  </label>
-                ))}
-              </div>
-            ) : null}
-          </section>
+          <ContactShareConsent
+            checked={shareContact}
+            onCheckedChange={setShareContact}
+            selectedFields={shareFields}
+            onToggleField={toggleShareField}
+            showDetail={showShareDetail}
+            onToggleDetail={() => setShowShareDetail((v) => !v)}
+          />
 
           {formError ? (
             <p role="alert" className="text-sm" style={{ color: "var(--color-danger)" }}>
@@ -484,10 +462,12 @@ function MeetingRequestPageContent() {
                   : "공유하지 않음"}
               </dd>
             </div>
-            {message.trim() ? (
+            {message.trim() || productOrService.trim() || orderScale.trim() ? (
               <div className="flex flex-col gap-1">
                 <dt style={{ color: "var(--color-text-muted)" }}>전달할 내용</dt>
-                <dd>{message.trim()}</dd>
+                <dd style={{ whiteSpace: "pre-wrap" }}>
+                  {buildMeetingMessage({ productOrService, orderScale, freeText: message })}
+                </dd>
               </div>
             ) : null}
           </dl>

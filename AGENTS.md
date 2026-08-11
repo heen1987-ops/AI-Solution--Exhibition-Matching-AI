@@ -74,7 +74,10 @@ conflict with CR-009.
 - Trust only published contracts for other tracks' implementations — never guess.
 - Database schema changes go through Alembic migrations only, owned by the CONTRACTS track.
 - Dedicated kiosk runtime/deployment is excluded from MVP/v1.x. Retained kiosk source is compatibility-only and receives no feature work.
-- Meeting/contact details stay hidden until the exhibitor accepts a request.
+- Meeting/contact details stay hidden until all three hold: the meeting is accepted, the buyer
+  consented to sharing, and the exhibitor has itself explicitly enabled contact sharing for that
+  meeting (`meeting_contact_share.exhibitor_enabled_at`) — acceptance alone is not sufficient. See
+  `PROJECT_SCOPE.md` and `.harness/decisions.md` DECISION-026.
 - Unapproved exhibitor data never reaches search or recommendation output.
 
 ### Monorepo layout (pnpm workspace, canonical since 2026-08-02, DECISION-006)
@@ -84,8 +87,13 @@ conflict with CR-009.
 names — see `.harness/assumptions.md` for that history). The repo now uses a pnpm workspace
 (`pnpm-workspace.yaml`: `apps/*`, `packages/*`) with all app names canonical:
 `apps/api`, `apps/user-web`, `apps/admin`, `apps/worker`. `apps/kiosk` exists only as an inactive
-compatibility source under CR-009; do not include it in the default release path. `apps/worker`,
-`ai/`, and parts of `packages/**` remain planned and should be created only by their backlog tasks.
+compatibility source under CR-009; do not include it in the default release path. `apps/worker`
+(document parsing/search indexing/analytics aggregation/notification-outbox jobs, `worker` import
+root — not `app`, see DECISION-028) and `ai/` (buyer_matching/, extraction/, prompts/, schemas/,
+evaluation/) were materialized by the WAVE2C/2D/2E work and the 2026-08-11 unification merge; both
+are active, not planned. `packages/**` and `database/**` remain reserved namespaces that neither
+side of the merge materialized — `apps/api/app/models/**` + `apps/api/alembic/**` are the de facto
+schema/contract location instead (see `.harness/locks.yaml`).
 
 Two hardcoded-path bugs were found and fixed during the migration (Alembic DDL-file lookups and
 test `ROOT` path constants that assumed the old `backend/` nesting depth) — if you find another

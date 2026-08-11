@@ -1,0 +1,228 @@
+{
+  "metadata": {
+    "name": "AI-EXTRACTION 허용 속성 스키마 (ALLOWED SCHEMA) v1",
+    "version": "1.0.0",
+    "note": "attribute_code는 이 목록에 있는 값만 유효하다. 여기 없는 attribute_code는 ai/extraction/validator.py가 무조건 버린다(ISSUE_UNKNOWN_ATTRIBUTE_CODE). concept_codes[]가 참조하는 온톨로지 코드는 이 파일이 아니라 src/meet_ai/ontology/catalog.v1.json(DECISION-004)이 유일한 소스다 - allowed_concept_types는 프롬프트에서 '이 속성엔 보통 이 개념유형의 코드를 붙인다'는 안내용 힌트일 뿐, 강제 소속 검사에는 쓰지 않는다(카탈로그에 실재하기만 하면 통과)."
+  },
+  "attributes": [
+    {
+      "attribute_code": "company.name",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "TEXT",
+      "trade_condition": false,
+      "critical": true,
+      "allowed_concept_types": [],
+      "description_ko": "업체(전시업체)명"
+    },
+    {
+      "attribute_code": "company.description",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "TEXT",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": [],
+      "description_ko": "업체 소개/설명"
+    },
+    {
+      "attribute_code": "company.established_year",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "NUMBER",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": [],
+      "description_ko": "설립연도"
+    },
+    {
+      "attribute_code": "company.region",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "CODE_LIST",
+      "trade_condition": false,
+      "critical": true,
+      "allowed_concept_types": ["REGION"],
+      "description_ko": "소재 지역(온톨로지 REGION 코드)"
+    },
+    {
+      "attribute_code": "company.certifications",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "TEXT_LIST",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": [],
+      "description_ko": "보유 인증(HACCP, 유기가공식품 등 자유 텍스트 - 온톨로지에 없는 인증명도 있을 수 있어 코드 강제 안 함)"
+    },
+    {
+      "attribute_code": "trade.oem_capability",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "ENUM",
+      "allowed_values": ["SUPPORTED", "NOT_SUPPORTED"],
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": ["TRADE_TYPE", "SUPPLY_CAPACITY"],
+      "description_ko": "OEM 생산 지원 여부(TRADE.OEM / CAPACITY.OEM)"
+    },
+    {
+      "attribute_code": "trade.private_label_capability",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "ENUM",
+      "allowed_values": ["SUPPORTED", "NOT_SUPPORTED"],
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": ["TRADE_TYPE", "SUPPLY_CAPACITY"],
+      "description_ko": "PB(자체브랜드) 생산 지원 여부(TRADE.PRIVATE_LABEL / CAPACITY.PRIVATE_LABEL)"
+    },
+    {
+      "attribute_code": "trade.export_capability",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "ENUM",
+      "allowed_values": ["SUPPORTED", "NOT_SUPPORTED"],
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": ["TRADE_TYPE", "SUPPLY_CAPACITY"],
+      "description_ko": "수출 지원 여부(TRADE.EXPORT / CAPACITY.EXPORT)"
+    },
+    {
+      "attribute_code": "trade.supply_capacity",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "CODE_LIST",
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": ["SUPPLY_CAPACITY"],
+      "description_ko": "생산·공급 능력(소량생산/대량생산/정기공급 등)"
+    },
+    {
+      "attribute_code": "trade.preferred_trade_types",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "CODE_LIST",
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": ["TRADE_TYPE"],
+      "description_ko": "선호 거래유형(위탁판매/도매거래/정기납품 등)"
+    },
+    {
+      "attribute_code": "trade.moq",
+      "applies_to": ["EXHIBITOR", "PRODUCT"],
+      "data_type": "NUMBER",
+      "trade_condition": true,
+      "critical": true,
+      "allowed_concept_types": [],
+      "description_ko": "최소주문수량(MOQ)"
+    },
+    {
+      "attribute_code": "trade.moq_unit",
+      "applies_to": ["EXHIBITOR", "PRODUCT"],
+      "data_type": "TEXT",
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": [],
+      "description_ko": "MOQ 단위(박스, 병, 케이스 등)"
+    },
+    {
+      "attribute_code": "trade.lead_time_days",
+      "applies_to": ["EXHIBITOR", "PRODUCT"],
+      "data_type": "NUMBER",
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": [],
+      "description_ko": "납기(영업일 기준 일수)"
+    },
+    {
+      "attribute_code": "trade.payment_terms",
+      "applies_to": ["EXHIBITOR"],
+      "data_type": "TEXT",
+      "trade_condition": true,
+      "critical": false,
+      "allowed_concept_types": [],
+      "description_ko": "결제조건(선입금, 60일 어음 등)"
+    },
+    {
+      "attribute_code": "product.name",
+      "applies_to": ["PRODUCT"],
+      "data_type": "TEXT",
+      "trade_condition": false,
+      "critical": true,
+      "allowed_concept_types": [],
+      "description_ko": "제품명"
+    },
+    {
+      "attribute_code": "product.category",
+      "applies_to": ["PRODUCT"],
+      "data_type": "CODE_LIST",
+      "trade_condition": false,
+      "critical": true,
+      "allowed_concept_types": ["PRODUCT_CATEGORY"],
+      "description_ko": "제품 카테고리"
+    },
+    {
+      "attribute_code": "product.ingredients",
+      "applies_to": ["PRODUCT"],
+      "data_type": "CODE_LIST",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": ["INGREDIENT"],
+      "description_ko": "원재료"
+    },
+    {
+      "attribute_code": "product.abv_percent",
+      "applies_to": ["PRODUCT"],
+      "data_type": "NUMBER",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": ["ALCOHOL_LEVEL"],
+      "description_ko": "알코올 도수(%)"
+    },
+    {
+      "attribute_code": "product.taste_notes",
+      "applies_to": ["PRODUCT"],
+      "data_type": "CODE_LIST",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": ["TASTE"],
+      "description_ko": "맛 특성"
+    },
+    {
+      "attribute_code": "product.aroma_notes",
+      "applies_to": ["PRODUCT"],
+      "data_type": "CODE_LIST",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": ["AROMA"],
+      "description_ko": "향 특성"
+    },
+    {
+      "attribute_code": "product.price_krw",
+      "applies_to": ["PRODUCT"],
+      "data_type": "NUMBER",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": ["PRICE_BAND"],
+      "description_ko": "소비자가(원)"
+    },
+    {
+      "attribute_code": "product.package_size_ml",
+      "applies_to": ["PRODUCT"],
+      "data_type": "NUMBER",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": [],
+      "description_ko": "용량(ml)"
+    },
+    {
+      "attribute_code": "product.use_cases",
+      "applies_to": ["PRODUCT"],
+      "data_type": "CODE_LIST",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": ["USE_CASE"],
+      "description_ko": "용도(선물용, 자가소비 등)"
+    },
+    {
+      "attribute_code": "product.features",
+      "applies_to": ["PRODUCT"],
+      "data_type": "CODE_LIST",
+      "trade_condition": false,
+      "critical": false,
+      "allowed_concept_types": ["PRODUCT_FEATURE"],
+      "description_ko": "제품 특징(프리미엄, 디자인 등)"
+    }
+  ]
+}

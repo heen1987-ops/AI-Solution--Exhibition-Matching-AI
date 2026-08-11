@@ -4,6 +4,14 @@
 > 기준일: 2026-08-01  
 > 인터페이스 기준: [프론트엔드·백엔드·AI 인터페이스 명세](./frontend-backend-ai-interface-spec.md)  
 > 매칭 처리 기준: [5단계 AI 매칭엔진 아키텍처](./05-ai-matching-engine-architecture.md)
+>
+> **2026-08-11 안내**: 이 문서는 2026-08-01 기준 초기 설계안이며, 이후 CONTRACT-004(검색 임베딩),
+> BACKEND-010(인증/세션/RBAC), CR-011/012(추천 스냅샷·알림), 그리고 2026-08-11 WAVE2C/2D/2E
+> 통합 병합(검증바이어·미팅 3게이트·문서구조화·상호작용분석·인앱알림·이벤트메시지 스키마 추가,
+> 135 ORM 테이블·단일 Alembic head `0031_integration_source_sync`)으로 실제 스키마가 크게
+> 확장됐다. 이 문서의 원안 설계 원칙(§1, §2)은 여전히 유효하지만, 테이블 목록·컬럼 상세의
+> 최신 정본은 `apps/api/app/models/**` + `apps/api/alembic/versions/**`이고, 요약본은
+> `.harness/contracts/domain-model.md`다. 불일치가 있으면 코드가 우선한다.
 
 ## 1. 설계 목표
 

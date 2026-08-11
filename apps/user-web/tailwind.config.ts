@@ -12,6 +12,7 @@ const config: Config = {
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
     "./lib/**/*.{ts,tsx}",
+    "./features/**/*.{ts,tsx}",
   ],
   theme: {
     // 13.1절: 모바일 360~430px, 태블릿·키오스크, 데스크톱 3단 반응형 기준.

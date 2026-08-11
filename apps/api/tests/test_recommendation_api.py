@@ -7,6 +7,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.api.v1.routers import recommendations
 from app.core.auth import VerifiedGuest, get_verified_subject
 from app.core.config import Settings
@@ -30,9 +34,6 @@ from app.services.matching.types import (
     RecommendationOutcome,
     SubjectContext,
 )
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
 
 
 def _subject_headers() -> dict[str, str]:
@@ -691,6 +692,331 @@ def test_interaction_client_event_dedupe_reuses_or_rejects_by_payload() -> None:
     assert data["results"][1]["reason"] == "DUPLICATE_IGNORED"
     assert data["results"][2]["reason"] == "IDEMPOTENCY_CONFLICT"
     assert session.flush_count == 1
+
+
+# ---------------------------------------------------------------------------
+# MERGE STEP 25: retargeted worktree tests/test_interaction_event_api.py coverage.
+# The four privacy/abuse controls (PII masking, kiosk-identity ban, rate limit, 256KB
+# pre-parse cap) were folded into this authenticated handler instead of registering a
+# second public router (module docstring near recommendations.py's
+# ``_PayloadCappedRoute``) - these tests prove each control is actually wired, not just
+# importable.
+# ---------------------------------------------------------------------------
+
+
+def test_kiosk_event_with_forbidden_identity_context_is_rejected() -> None:
+    session = _InteractionSession(fail_at_flush=None)
+
+    async def fake_db():
+        yield session
+
+    occurred_at = datetime.now(UTC).isoformat()
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        response = TestClient(app).post(
+            "/api/v1/interactions/batch",
+            headers=_subject_headers(),
+            json={
+                "events": [
+                    {
+                        "event_type": "SERVICE_STARTED",
+                        "occurred_at": occurred_at,
+                        "context": {"source": "KIOSK", "user_id_hash": "abc123"},
+                    }
+                ]
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["accepted"] == 0
+    assert data["rejected"] == 1
+    assert data["results"][0]["reason"] == "KIOSK_IDENTITY_FIELD_FORBIDDEN"
+    assert session.rows == []
+
+
+def test_kiosk_source_event_from_an_authenticated_user_is_rejected() -> None:
+    """A KIOSK-labelled event carrying a real user_id would attach long-term identity to
+    an otherwise-anonymous kiosk row (PROJECT_SCOPE.md kiosk exclusion) - rejected, not
+    silently laundered."""
+
+    session = _InteractionSession(fail_at_flush=None)
+
+    async def fake_db():
+        yield session
+
+    app.dependency_overrides[get_db] = fake_db
+
+    async def resolve_with_user(request, db, verified):
+        del request, db, verified
+        return SubjectContext(
+            tenant_id=uuid.uuid4(),
+            event_id=uuid.uuid4(),
+            profile_id=uuid.uuid4(),
+            visit_session_id=None,
+            user_id=uuid.uuid4(),
+            guest_session_id=None,
+            request_id="req-kiosk-subject",
+            idempotency_key=None,
+            server_time=datetime.now(UTC),
+        )
+
+    from app.api.v1.routers import recommendations as recommendations_module
+
+    monkeypatch_target = recommendations_module.resolve_subject_context
+    recommendations_module.resolve_subject_context = resolve_with_user
+    try:
+        response = TestClient(app).post(
+            "/api/v1/interactions/batch",
+            headers=_subject_headers(),
+            json={
+                "events": [
+                    {
+                        "event_type": "SERVICE_STARTED",
+                        "occurred_at": datetime.now(UTC).isoformat(),
+                        "context": {"source": "KIOSK"},
+                    }
+                ]
+            },
+        )
+    finally:
+        recommendations_module.resolve_subject_context = monkeypatch_target
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["rejected"] == 1
+    assert data["results"][0]["reason"] == "KIOSK_SUBJECT_FORBIDDEN"
+
+
+def test_search_query_pii_is_masked_before_persisting_to_context_json() -> None:
+    session = _InteractionSession(fail_at_flush=None)
+
+    async def fake_db():
+        yield session
+
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        response = TestClient(app).post(
+            "/api/v1/interactions/batch",
+            headers=_subject_headers(),
+            json={
+                "events": [
+                    {
+                        "event_type": "SERVICE_STARTED",
+                        "occurred_at": datetime.now(UTC).isoformat(),
+                        "search_query": "연락처 010-1234-5678 или a@b.com 900101-1234567",
+                    }
+                ]
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["accepted"] == 1
+    persisted_row = session.rows[0]
+    stored_query = persisted_row.context_json["search_query"]
+    assert "010-1234-5678" not in stored_query
+    assert "a@b.com" not in stored_query
+    assert "900101-1234567" not in stored_query
+    assert "[PHONE]" in stored_query
+    assert "[EMAIL]" in stored_query
+
+
+def test_oversized_interaction_batch_body_rejected_with_413_before_json_parsing() -> None:
+    session = _InteractionSession(fail_at_flush=None)
+
+    async def fake_db():
+        yield session
+
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        oversized_query = "x" * (recommendations.MAX_INTERACTION_BATCH_PAYLOAD_BYTES + 1)
+        response = TestClient(app).post(
+            "/api/v1/interactions/batch",
+            headers=_subject_headers(),
+            content=oversized_query.encode("utf-8"),
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert session.rows == []
+
+
+def test_interaction_batch_rate_limit_is_enforced_per_subject_not_globally() -> None:
+    from app.services.interaction_event.rate_limit import (
+        RATE_LIMIT_MAX_REQUESTS,
+        reset_rate_limiter,
+    )
+
+    reset_rate_limiter()
+    try:
+        session = _InteractionSession(fail_at_flush=None)
+
+        async def fake_db():
+            yield session
+
+        fixed_guest_a = VerifiedGuest(
+            guest_session_id=uuid.uuid4(), tenant_id=uuid.uuid4(), event_id=uuid.uuid4()
+        )
+        fixed_guest_b = VerifiedGuest(
+            guest_session_id=uuid.uuid4(), tenant_id=uuid.uuid4(), event_id=uuid.uuid4()
+        )
+        app.dependency_overrides[get_db] = fake_db
+        app.dependency_overrides[get_verified_subject] = lambda: fixed_guest_a
+        try:
+            client = TestClient(app)
+            occurred_at = datetime.now(UTC).isoformat()
+            body = {
+                "events": [{"event_type": "SERVICE_STARTED", "occurred_at": occurred_at}]
+            }
+            for _ in range(RATE_LIMIT_MAX_REQUESTS):
+                ok_response = client.post(
+                    "/api/v1/interactions/batch", headers=_subject_headers(), json=body
+                )
+                assert ok_response.status_code == 200
+
+            limited_response = client.post(
+                "/api/v1/interactions/batch", headers=_subject_headers(), json=body
+            )
+            assert limited_response.status_code == 429
+            assert limited_response.json()["error"]["code"] == "RATE_LIMITED"
+
+            # A different subject is not affected by subject A's exhausted window.
+            app.dependency_overrides[get_verified_subject] = lambda: fixed_guest_b
+            other_subject_response = client.post(
+                "/api/v1/interactions/batch", headers=_subject_headers(), json=body
+            )
+            assert other_subject_response.status_code == 200
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+    finally:
+        reset_rate_limiter()
+
+
+@pytest.mark.asyncio
+async def test_recommendation_ready_fires_in_app_and_outbound_notification_for_a_real_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MERGE STEP 26: this endpoint is the first real caller of both trigger functions -
+    ``enqueue_recommendation_ready`` previously had no production caller in main at all."""
+
+    calls: dict[str, dict[str, Any]] = {}
+
+    async def fake_notify(service: Any, **kwargs: Any) -> SimpleNamespace:
+        del service
+        calls["notify"] = kwargs
+        return SimpleNamespace()
+
+    async def fake_enqueue(db: Any, **kwargs: Any) -> SimpleNamespace:
+        del db
+        calls["enqueue"] = kwargs
+        return SimpleNamespace()
+
+    monkeypatch.setattr(recommendations, "notify_recommendation_ready", fake_notify)
+    monkeypatch.setattr(recommendations, "enqueue_recommendation_ready", fake_enqueue)
+
+    class _EventOnlyDb:
+        async def scalar(self, statement: Any) -> str:
+            del statement
+            return "BJDG2026"
+
+    subject = SubjectContext(
+        tenant_id=uuid.uuid4(),
+        event_id=uuid.uuid4(),
+        profile_id=uuid.uuid4(),
+        visit_session_id=None,
+        user_id=uuid.uuid4(),
+        guest_session_id=None,
+        request_id="req-notify-1",
+        idempotency_key=None,
+        server_time=datetime.now(UTC),
+    )
+    outcome = SimpleNamespace(
+        recommendation_session_id=uuid.uuid4(),
+        generated_at=datetime.now(UTC),
+        items=[SimpleNamespace()],
+    )
+
+    await recommendations._fire_recommendation_ready(
+        _EventOnlyDb(), subject=subject, outcome=outcome
+    )
+
+    assert calls["notify"]["recipient_user_id"] == subject.user_id
+    assert calls["notify"]["tenant_id"] == subject.tenant_id
+    assert calls["notify"]["recommendation_session_id"] == outcome.recommendation_session_id
+    assert calls["enqueue"]["user_id"] == subject.user_id
+    assert calls["enqueue"]["profile_id"] == subject.profile_id
+    assert calls["enqueue"]["recommendation_count"] == 1
+    assert calls["enqueue"]["event_code"] == "BJDG2026"
+    assert (
+        calls["enqueue"]["recommendation_session_id"] == outcome.recommendation_session_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_recommendation_ready_skips_anonymous_guests_and_empty_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fired = False
+
+    async def fail_if_called(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        nonlocal fired
+        fired = True
+
+    monkeypatch.setattr(recommendations, "notify_recommendation_ready", fail_if_called)
+    monkeypatch.setattr(recommendations, "enqueue_recommendation_ready", fail_if_called)
+
+    class _MustNotBeQueriedDb:
+        async def scalar(self, statement: Any) -> None:
+            del statement
+            raise AssertionError("must not resolve event_code for guest/empty batches")
+
+    guest_subject = SubjectContext(
+        tenant_id=uuid.uuid4(),
+        event_id=uuid.uuid4(),
+        profile_id=uuid.uuid4(),
+        visit_session_id=None,
+        user_id=None,
+        guest_session_id=uuid.uuid4(),
+        request_id="req-notify-2",
+        idempotency_key=None,
+        server_time=datetime.now(UTC),
+    )
+    outcome_with_items = SimpleNamespace(
+        recommendation_session_id=uuid.uuid4(),
+        generated_at=datetime.now(UTC),
+        items=[SimpleNamespace()],
+    )
+    await recommendations._fire_recommendation_ready(
+        _MustNotBeQueriedDb(), subject=guest_subject, outcome=outcome_with_items
+    )
+    assert fired is False
+
+    user_subject = SubjectContext(
+        tenant_id=uuid.uuid4(),
+        event_id=uuid.uuid4(),
+        profile_id=uuid.uuid4(),
+        visit_session_id=None,
+        user_id=uuid.uuid4(),
+        guest_session_id=None,
+        request_id="req-notify-3",
+        idempotency_key=None,
+        server_time=datetime.now(UTC),
+    )
+    empty_outcome = SimpleNamespace(
+        recommendation_session_id=uuid.uuid4(), generated_at=datetime.now(UTC), items=[]
+    )
+    await recommendations._fire_recommendation_ready(
+        _MustNotBeQueriedDb(), subject=user_subject, outcome=empty_outcome
+    )
+    assert fired is False
 
 
 def test_visible_impression_projects_the_verified_slate_item() -> None:

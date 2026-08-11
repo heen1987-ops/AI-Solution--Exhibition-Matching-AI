@@ -32,6 +32,14 @@ from app.api.v1.routers import (
     sessions,
     webhooks,
 )
+from app.api.v1.routers.analytics import build_analytics_router
+from app.api.v1.routers.buyer_match import build_buyer_match_router
+from app.api.v1.routers.buyer_profile import build_buyer_profile_router
+from app.api.v1.routers.document import build_document_router
+from app.api.v1.routers.event_message import build_event_message_router
+from app.api.v1.routers.exhibitor_preference import build_exhibitor_preference_router
+from app.api.v1.routers.extraction import build_extraction_router
+from app.api.v1.routers.notification import build_notification_router
 
 api_router = APIRouter()
 api_router.include_router(auth.router, tags=["authentication"])
@@ -49,3 +57,22 @@ api_router.include_router(webhooks.router, tags=["webhooks"])
 api_router.include_router(exhibitors.router, tags=["public-catalog"])
 api_router.include_router(search.router, tags=["search"])
 api_router.include_router(kiosk.router, tags=["kiosk"])
+
+# --- MERGE STEP 27: WAVE 2C/2D/2E ported routers (additive only) -----------
+# meeting_buyer_extension.py and interaction_event.py are DELIBERATELY not
+# registered here - steps 22 and 25 folded their capabilities into the
+# existing meetings.py / recommendations.py surfaces (see those modules'
+# docstrings). Registering either would create a second, unauthenticated or
+# doubly-governed write path over the same rows.
+api_router.include_router(build_buyer_profile_router(), tags=["buyer-profile"])
+api_router.include_router(build_buyer_match_router(), tags=["buyer-match"])
+api_router.include_router(
+    build_exhibitor_preference_router(), tags=["exhibitor-preference"]
+)
+api_router.include_router(build_document_router(), tags=["documents"])
+api_router.include_router(build_extraction_router(), tags=["ai-extraction-review"])
+api_router.include_router(build_analytics_router(), tags=["operator-analytics"])
+api_router.include_router(build_notification_router(), tags=["notifications"])
+api_router.include_router(
+    build_event_message_router(), prefix="/admin", tags=["event-messages"]
+)
