@@ -21,7 +21,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiClientError, getProfile, getRecommendations, listMeetings } from "@/lib/api-client";
+import { listMeetings } from "@/features/meeting/api";
+import { ApiClientError, getProfile, getRecommendations } from "@/lib/api-client";
 import { parseLocalPersonalizationPreview } from "@/lib/personalization-preview";
 import type { MeetingResponse, ProfileView, RecommendationResponse } from "@/lib/types";
 
@@ -229,7 +230,7 @@ export default function MyEventDashboard() {
     let cancelled = false;
     async function loadNextMeeting() {
       try {
-        const page = await listMeetings({ status: "CONFIRMED", limit: 1 });
+        const page = await listMeetings({ status: "accepted", limit: 1 });
         if (!cancelled) setNextMeeting(page.items[0] ?? null);
       } catch {
         if (!cancelled) setNextMeeting(null);
@@ -375,6 +376,22 @@ export default function MyEventDashboard() {
             추천 전체 보기
           </Link>
         ) : null}
+      </section>
+
+      <section aria-labelledby="buyer-matches-heading" className="space-y-2">
+        <h2 id="buyer-matches-heading" className="backju-section-title text-lg font-bold">
+          바이어 매칭
+        </h2>
+        <p className="text-sm leading-6" style={{ color: "var(--color-text-muted)" }}>
+          바이어 프로필 조건으로 정밀 매칭된 참가업체를 확인해요.
+        </p>
+        <Link
+          href="/buyer/matches"
+          className="tap-target inline-flex rounded-lg border px-4 text-sm font-semibold"
+          style={{ borderColor: "var(--color-border)" }}
+        >
+          바이어 매칭 보기
+        </Link>
       </section>
 
       {nextMeeting ? (

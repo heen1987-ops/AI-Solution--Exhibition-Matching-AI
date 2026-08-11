@@ -1,5 +1,19 @@
 # 재설계 선언: 웹 초개인화 모듈 · 키오스크 검색모듈 분리안
 
+> ## ⚠️ SUPERSEDED (2026-08-11, CR-009 / DECISION-014)
+> 이 문서의 핵심 축인 "웹 모듈 vs 키오스크 모듈"의 대등한 이원 분리는 CR-009(웹 중심 채널
+> 전환)로 대체됐다. 전용 키오스크(②)는 MVP/v1.x 신규 개발·기본 빌드·배포 대상에서 제외된
+> 비활성 호환 자산(`apps/kiosk`)이며, 행사장 QR·배지·안내판은 "키오스크 인계"가 아니라
+> GUEST_WEB(게스트 웹)으로 직접 진입하는 링크로 재정의됐다(DECISION-014). 활성 채널은
+> REGISTERED_WEB/GUEST_WEB/BUYER_WEB/ADMIN_PARTNER_WEB 네 개다. ③ 공통 AI·데이터 플랫폼의
+> 기본 방향(백엔드에서 공유하는 공통 기반)은 여전히 유효하며 실제로 그렇게 구현됐다.
+>
+> 이 문서는 CR-009 이전의 최초 재설계 결정을 설명하는 역사적 기록으로 보존한다 — "12단계에서
+> 30단계 순차 설계를 중단하고 재설계로 전환한다"는 DECISION-001 자체는 여전히 유효한 결정이고,
+> 뒤집힌 것은 그 재설계 *내부의* 웹/키오스크 대등 분리 구조뿐이다. 새 작업의 출발점은
+> `PROJECT_SCOPE.md`(현재 채널 정의)와 `.harness/decisions.md` DECISION-014(CR-009 web-first
+> 전환)로 시작할 것.
+
 > 문서 상태: 30단계 순차 설계를 12단계에서 중단하고 새 체계로 전환하는 선언 문서
 > 로드맵: [30단계 통합 설계 로드맵](./00-roadmap.md)
 > 후속: 이 재설계의 상세 통합본은 [vibe-coding-master-spec-v1.md](./vibe-coding-master-spec-v1.md) 참고. 실행 방법론은 [harness-orchestrator-prompt-pack.md](./harness-orchestrator-prompt-pack.md) 참고.

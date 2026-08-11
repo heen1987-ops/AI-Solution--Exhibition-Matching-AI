@@ -27,8 +27,12 @@ Personalized routes use profile, consent, recommendation, favorite, visit, and m
 
 ### `apps/admin`
 
-Next.js operator and exhibitor-partner frontend. Production access remains blocked until the shared
-authentication/RBAC/MFA contract is implemented. It must not expose unapproved extracted content.
+Next.js operator and exhibitor-partner frontend. The shared authentication/RBAC/MFA contract
+(CR-006/BACKEND-010) is implemented — opaque one-time personal-link exchange, Secure/HttpOnly
+browser sessions, allowlisted-Origin plus session-bound CSRF, scoped RBAC, and WebAuthn/TOTP/
+recovery MFA — so production access is no longer categorically blocked; ADMIN-002 (exhibitor/
+AI-extraction review screens) remains BLOCKED on BACKEND-007 specifically (see
+`.harness/backlog.yaml`), not on authentication. It must not expose unapproved extracted content.
 
 ### `apps/api`
 
@@ -49,17 +53,26 @@ This package has no FastAPI, SQLAlchemy, network, or provider dependency.
 - PostgreSQL stores canonical, versioned business and consent records.
 - pgvector is an optional candidate-recall channel; keyword/structured fallback remains available.
 - Redis stores bounded sessions/cache, not canonical identity data.
-- S3-compatible storage is planned for uploaded documents.
-- `apps/worker` is the planned asynchronous boundary for parsing, embedding, notification, and
-  aggregation. No separate service is created before measured operational need.
+- Uploaded documents are stored through `apps/api/app/services/document/storage.py`'s
+  `ObjectStorageAdapter` Protocol. The shipped implementation is
+  `LocalFilesystemStorageAdapter` (an `InMemoryStorageAdapter` exists for tests); a real
+  S3-compatible adapter behind the same Protocol remains future work, but "storage is planned" is
+  no longer accurate — the storage boundary and a working adapter both exist today.
+- `apps/worker` is a materialized asynchronous service (`apps/worker/worker/**`, `worker` import
+  root — see `.harness/decisions.md` DECISION-028) running document parsing, search indexing,
+  analytics aggregation, and notification-outbox draining jobs, added by the WAVE2C/2D/2E work and
+  the 2026-08-11 unification merge.
 
 ### Adapters, Netlify, and deployment
 
-Provider adapters currently live near their owning API services; a top-level `adapters/` directory
-does not exist. Netlify functions/config exist only where explicitly committed; there is no active
-`.openai/hosting.json` or canonical `netlify/` application directory in this snapshot. Deployment
-must target `apps/user-web`, `apps/admin` when auth-ready, and `apps/api`; it must not target
-`apps/kiosk` under CR-009.
+Most provider adapters live near their owning API services (e.g.
+`apps/api/app/services/document/storage.py`), but a top-level `adapters/` directory does exist for
+one integration: `adapters/php/BackjuAiSiteContext.php`. Netlify functions also exist and are
+committed: `netlify/functions/ontology-extract.ts` and `netlify/functions/conversation-extract.ts`
+(plus `netlify/functions/_shared/`). Neither is part of the active `apps/api`/`apps/user-web`/
+`apps/admin`/`apps/worker` request path described above; they are legacy integration points kept
+for the sites that call them. Deployment must target `apps/user-web`, `apps/admin`, `apps/api`,
+and `apps/worker`; it must not target `apps/kiosk` under CR-009.
 
 ### Database paths
 

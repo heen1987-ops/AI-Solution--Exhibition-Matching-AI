@@ -1,3 +1,11 @@
+// @vitest-environment node
+//
+// 통합 시 추가: vitest.config.ts의 전역 environment는 features/**의 RTL 테스트를 위해
+// "jsdom"이다. 이 파일은 실제 Node file:// URL 시맨틱(new URL(..., import.meta.url) +
+// fileURLToPath)으로 소스 파일을 직접 읽는데, jsdom 환경에서는 그 URL이 file: 스킴이 아닌
+// 것으로 취급돼 "The URL must be of scheme file"로 깨진다 - 이 파일만 다시 node 환경으로
+// 되돌린다(포팅 전 main의 기본 동작과 동일 - 그때는 vitest.config.ts 자체가 없어 전역이
+// node였다).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 

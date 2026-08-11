@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
 from app.core.config import (
     SEARCH_EMBEDDING_MODEL_CONFIG_HASH_V1,
     SEARCH_EMBEDDING_MODEL_VERSION_ID_V1,
@@ -14,10 +16,12 @@ from app.services.object_embeddings import (
     MAX_EMBEDDING_REQUEST_BYTES,
     MAX_EMBEDDING_SOURCE_BYTES,
     EmbeddingDocument,
+    UnapprovedEmbeddingSourceError,
     _embedding_batches,
     _public_text,
     _summary_public_text,
     backfill_catalog_embeddings,
+    load_approved_catalog_documents,
 )
 
 
@@ -94,6 +98,8 @@ class _BackfillSession:
                 "승인 양조장",
                 "공개 업체 소개",
                 "현장 공개 행사",
+                "APPROVED",  # exhibitor_participation.participation_status
+                "APPROVED",  # exhibitor.master_approval_status
             )
         ]
         product_rows = [
@@ -105,12 +111,16 @@ class _BackfillSession:
                 "승인 전통주",
                 "공개 제품 소개",
                 "저온 숙성",
+                "APPROVED",  # event_product.approval_status
+                "APPROVED",  # product.master_approval_status
+                "APPROVED",  # exhibitor_participation.participation_status
+                "APPROVED",  # exhibitor.master_approval_status
             )
         ]
         latest_product_rows = product_rows
         if snapshot_changed:
             latest_product_rows = [
-                (*product_rows[0][:5], "catalog changed", product_rows[0][6])
+                (*product_rows[0][:5], "catalog changed", *product_rows[0][6:])
             ]
         self._results = [
             _Result(exhibitor_rows),
@@ -321,3 +331,91 @@ async def test_backfill_commits_inactive_batches_for_retry_reuse() -> None:
     assert session.commits == 2
     assert len(session.added) == 1
     assert session.added[0].active is False
+
+
+class _LoadOnlySession:
+    """Answers exactly the two SELECTs load_approved_catalog_documents issues."""
+
+    def __init__(self, exhibitor_rows: list[Any], product_rows: list[Any]) -> None:
+        self._results = [_Result(exhibitor_rows), _Result(product_rows)]
+
+    async def execute(self, statement: Any) -> _Result:
+        del statement
+        return self._results.pop(0) if self._results else _Result([])
+
+
+def test_contact_details_pasted_into_approved_public_text_never_reach_an_embedding() -> (
+    None
+):
+    """An operator-typed contact detail inside an approved summary must not become
+    permanently searchable through semantic recall."""
+
+    text = _public_text("contact us at sales@example.com or 010-1234-5678")
+
+    assert "sales@example.com" not in text
+    assert "010-1234-5678" not in text
+
+    event_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    participation_id = uuid.uuid4()
+    session = _LoadOnlySession(
+        [
+            (
+                tenant_id,
+                event_id,
+                uuid.uuid4(),
+                participation_id,
+                "승인 양조장",
+                "contact us at sales@example.com or 010-1234-5678",
+                "현장 공개 행사",
+                "APPROVED",
+                "APPROVED",
+            )
+        ],
+        [],
+    )
+
+    documents = asyncio.run(
+        load_approved_catalog_documents(
+            session,  # type: ignore[arg-type]
+            event_id=event_id,
+            language="und",
+        )
+    )
+
+    assert len(documents) == 1
+    assert "sales@example.com" not in documents[0].text
+    assert "010-1234-5678" not in documents[0].text
+    assert "승인 양조장" in documents[0].text
+
+
+def test_an_unapproved_row_that_slips_past_the_where_clause_raises() -> None:
+    """Second line of defence: the WHERE clauses already exclude these rows, so reaching the
+    builder at all means the approval boundary was breached upstream."""
+
+    event_id = uuid.uuid4()
+    session = _LoadOnlySession(
+        [
+            (
+                uuid.uuid4(),
+                event_id,
+                uuid.uuid4(),
+                uuid.uuid4(),
+                "미승인 양조장",
+                "검수 전 소개",
+                None,
+                "APPROVED",
+                "PENDING_REVIEW",  # exhibitor.master_approval_status
+            )
+        ],
+        [],
+    )
+
+    with pytest.raises(UnapprovedEmbeddingSourceError, match="master_approval_status"):
+        asyncio.run(
+            load_approved_catalog_documents(
+                session,  # type: ignore[arg-type]
+                event_id=event_id,
+                language="und",
+            )
+        )

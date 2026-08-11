@@ -11,6 +11,20 @@
 - backend/app/models/meeting.py - 실제 테이블·상태 상수(MEETING_STATUSES 등)·제약조건의
   정본. 이 라우터는 그 파일이 정의한 컬럼과 CHECK 제약을 벗어나는 값을 저장하지 않는다.
 
+단일 상담 표면 (통합 MERGE STEP 22)
+------------------------------------
+이 라우터가 상담(미팅)의 유일한 HTTP 표면이다. 통합 전 worktree(WAVE 2C)에는
+``/buyer/meeting-requests`` / ``/partner/meeting-requests`` 아래에 같은
+``interaction.meeting`` 행을 쓰는 두 번째 라우터(``meeting_buyer_extension.py``)가 있었지만
+등록하지 않았다 - 그 모듈 자신의 docstring이 "최종적으로는 ``/meetings`` 하나의 표면만
+남아야 한다"고 명시했고, 두 표면을 함께 두면 같은 상담 레코드가 어느 URL로 호출됐는지에
+따라 서로 다른 연락처 공개 규칙을 적용받기 때문이다. 그 표면이 갖고 있던 계약은 여기로
+접어 넣었다: ``MeetingCreateRequest.product_id``/``order_scale_code``,
+``PartnerDecisionRequest.enable_contact_sharing``(연락처 공개 세 번째 게이트),
+``PartnerDecisionRequest.reason_code``의 6개 값 Literal. 상태 머신·게이트·오케스트레이션의
+도메인 규칙은 ``app/services/meeting/buyer_matching.py``가 갖고 있고, 이 라우터와 그
+서비스 계층은 같은 암호화 함수·같은 ``contact_reveal_allowed()``를 공유한다.
+
 라우팅 경로에 대한 메모
 ------------------------
 이 모듈은 서로 다른 세 경로 그룹(``/meetings``, ``/partner/meetings``,
@@ -71,7 +85,6 @@ import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Annotated, Any
 
-from cryptography.exceptions import InvalidTag
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -79,20 +92,13 @@ from sqlalchemy import case, func, literal, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import (
-    VerifiedPrincipal,
-    decrypt_secret,
-    encrypt_secret,
-    get_verified_principal,
-)
-from app.core.config import get_settings
+from app.core.router_auth import get_buyer_profile_id, get_staff_id
 from app.db.session import get_db
 from app.models.consent import AuditLog, ConsentPolicy
-from app.models.exhibitor import ExhibitorParticipation, ExhibitorStaff
+from app.models.exhibitor import ExhibitorParticipation, ExhibitorStaff, Product
 from app.models.identity import UserAccount, UserIdentity
 from app.models.matching import MatchResult, MatchRun
 from app.models.meeting import (
-    MEETING_CONFIRMED_STATUS,
     AvailabilitySlot,
     FollowUp,
     Lead,
@@ -119,6 +125,13 @@ from app.schemas.meeting import (
     PartnerMeetingListResponse,
     SlotCandidate,
 )
+from app.services.meeting.buyer_matching import (
+    contact_reveal_allowed,
+    decrypt_meeting_text,
+    enable_exhibitor_contact_sharing,
+    encrypt_meeting_text,
+    product_belongs_to_participation,
+)
 from meet_ai.ontology import Catalog, load_catalog
 from meet_ai.ontology.catalog import stable_uuid
 
@@ -127,53 +140,13 @@ router = APIRouter()
 _KST = timezone(timedelta(hours=9))
 
 # --------------------------------------------------------------------------
-# 인증 placeholder (모듈 docstring TODO 1 참고)
+# 행위자 식별 - 공용 어댑터(app/core/router_auth.py)가 정본이다.
+# 아래 두 이름은 기존 Depends 참조와 테스트의 dependency_overrides 호환을 위한
+# 동일 객체 별칭이다(헤더가 아니라 검증된 principal에서 파생한다).
 # --------------------------------------------------------------------------
 
-
-async def _buyer_profile_header(
-    principal: Annotated[VerifiedPrincipal, Depends(get_verified_principal)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> uuid.UUID | None:
-    """검증된 사용자의 현재 행사 프로파일을 파생한다."""
-
-    if principal.principal.event_id is None:
-        return None
-    return await db.scalar(
-        select(UserProfile.profile_id)
-        .where(
-            UserProfile.user_id == principal.user_id,
-            UserProfile.tenant_id == principal.principal.tenant_id,
-            UserProfile.event_id == principal.principal.event_id,
-            UserProfile.deleted_at.is_(None),
-        )
-        .order_by(UserProfile.user_type.desc())
-        .limit(1)
-    )
-
-
-async def _staff_header(
-    principal: Annotated[VerifiedPrincipal, Depends(get_verified_principal)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> uuid.UUID | None:
-    """검증된 사용자의 현재 행사 활성 담당자를 파생한다."""
-
-    if principal.principal.event_id is None:
-        return None
-    return await db.scalar(
-        select(ExhibitorStaff.staff_id)
-        .join(
-            ExhibitorParticipation,
-            ExhibitorParticipation.participation_id == ExhibitorStaff.participation_id,
-        )
-        .where(
-            ExhibitorStaff.user_id == principal.user_id,
-            ExhibitorStaff.active.is_(True),
-            ExhibitorParticipation.tenant_id == principal.principal.tenant_id,
-            ExhibitorParticipation.event_id == principal.principal.event_id,
-        )
-        .limit(1)
-    )
+_buyer_profile_header = get_buyer_profile_id
+_staff_header = get_staff_id
 
 
 async def _load_active_staff(
@@ -310,25 +283,14 @@ def _is_uuid(value: str | None) -> bool:
 
 # --------------------------------------------------------------------------
 # AEAD 봉투 암호화 (모듈 docstring 3 참고)
+#
+# 정본은 app/services/meeting/buyer_matching.py에 있다. 상담 표면이 하나뿐이므로 라우터와
+# 서비스 계층은 반드시 같은 봉투 형식·같은 purpose 태그·같은 fail-closed 동작을 쓴다.
+# 아래 두 이름은 기존 호출부 호환을 위한 동일 객체 별칭이다.
 # --------------------------------------------------------------------------
 
-
-def _encrypt_text(value: str | None, *, purpose: str) -> bytes | None:
-    if value is None:
-        return None
-    return encrypt_secret(value, purpose=purpose, settings=get_settings())
-
-
-def _decrypt_text(value: bytes | None, *, purpose: str) -> str | None:
-    if value is None:
-        return None
-    try:
-        return decrypt_secret(value, purpose=purpose, settings=get_settings()).decode(
-            "utf-8"
-        )
-    except (InvalidTag, ValueError, UnicodeDecodeError):
-        # Fail closed: legacy/plaintext or corrupt data must never be echoed.
-        return None
+_encrypt_text = encrypt_meeting_text
+_decrypt_text = decrypt_meeting_text
 
 
 # --------------------------------------------------------------------------
@@ -767,6 +729,21 @@ async def create_meeting(
             request_id=x_request_id,
         )
 
+    # interaction.meeting에는 (participation_id, product_id) 복합 FK가 없으므로 "요청한
+    # 제품이 정말 이 업체의 승인된 제품인가"는 애플리케이션 계층이 검증한다. 미승인/삭제된
+    # 제품을 상담에 슬쩍 연결하는 경로를 막는다(AGENTS.md 승인 경계 불변식).
+    if payload.product_id is not None:
+        product = await db.get(Product, payload.product_id)
+        if not product_belongs_to_participation(product, participation=participation):
+            await db.rollback()
+            return _fail(
+                400,
+                "VALIDATION_FAILED",
+                "이 업체의 제품을 찾을 수 없습니다.",
+                field_errors=[{"field": "product_id", "reason": "product_not_found"}],
+                request_id=x_request_id,
+            )
+
     topic_resolved = _resolve_concept(
         payload.topic, namespace_fallbacks=_TOPIC_NAMESPACE_FALLBACKS
     )
@@ -849,6 +826,8 @@ async def create_meeting(
         booth_id=reserved_slot.booth_id,
         taxonomy_version_id=taxonomy_version_id,
         concept_id=concept_id,
+        product_id=payload.product_id,
+        order_scale_code=payload.order_scale_code,
         message_enc=_encrypt_text(payload.message, purpose="meeting-message"),
         status="requested",
         match_result_id=match_result_id,
@@ -1296,13 +1275,14 @@ async def get_partner_buyer_summary(
     ).scalar_one_or_none()
 
     contact: dict[str, str] | None = None
-    # interface-spec 12.3/15절: 상담 확정 + 공유 동의가 모두 있어야 연락처를 공개하고,
+    # 연락처 공개 게이트는 app/services/meeting/buyer_matching.py의
+    # contact_reveal_allowed()가 단일 진실 공급원이다: 상담 확정 + 바이어 동의 +
+    # 업체측 명시적 opt-in(exhibitor_enabled_at) 세 조건을 모두 만족해야 한다.
     # wireframes 8절 E-03: "연락처 열람 시 목적 확인과 감사로그 기록".
-    if (
-        meeting.status == MEETING_CONFIRMED_STATUS
-        and contact_share is not None
-        and contact_share.accepted_at is not None
+    if contact_reveal_allowed(
+        meeting_status=meeting.status, contact_share=contact_share
     ):
+        assert contact_share is not None  # contact_reveal_allowed가 이미 보장
         buyer_profile = await db.get(UserProfile, meeting.buyer_profile_id)
         identity = None
         if buyer_profile is not None and buyer_profile.user_id is not None:
@@ -1491,6 +1471,18 @@ async def decide_meeting(
             meeting.confirmed_slot_id = slot.availability_slot_id
             meeting.confirmed_start = slot.start_at
             meeting.confirmed_end = slot.end_at
+            if payload.enable_contact_sharing:
+                # 연락처 공개의 세 번째 게이트. 바이어가 애초에 동의하지 않았다면
+                # (contact_share 행 자체가 없다면) 업체가 켜기를 요청해도 만들어주지
+                # 않는다 - 바이어 동의는 업체가 대신 만들 수 없다.
+                existing_share = (
+                    await db.execute(
+                        select(MeetingContactShare).where(
+                            MeetingContactShare.meeting_id == meeting.meeting_id
+                        )
+                    )
+                ).scalar_one_or_none()
+                enable_exhibitor_contact_sharing(existing_share, staff=staff)
         else:
             meeting.status = "counter_proposed"
 

@@ -3,19 +3,20 @@
 /** A00 관리자 홈. §43절. 역할별 요약과 다음 작업으로의 진입점을 보여준다. */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { getSearchAnalytics } from "@/lib/api-client";
+import { getSearchInsights } from "@/features/analytics/api";
+import { formatMetric, resolveDateRange } from "@/features/analytics/logic";
+import type { SearchInsightsResponse } from "@/features/analytics/types";
 import { ROLE_LABELS, hasCapability } from "@/lib/auth-state";
 import { useSession } from "@/lib/use-session";
-import type { SearchAnalyticsSummary } from "@/lib/types";
 import ErrorBanner from "@/components/ErrorBanner";
 
 const DEMO_EVENT_ID = "00000000-0000-0000-0000-000000000000";
 
 export default function DashboardPage() {
   const [session] = useSession();
-  const [analytics, setAnalytics] = useState<SearchAnalyticsSummary | null>(null);
+  const [analytics, setAnalytics] = useState<SearchInsightsResponse | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,7 +32,11 @@ export default function DashboardPage() {
     }
     setLoading(true);
     setError(null);
-    getSearchAnalytics(DEMO_EVENT_ID)
+    const range = resolveDateRange({ preset: "LAST_7_DAYS", customStart: null, customEnd: null }, null);
+    getSearchInsights(
+      { eventId: DEMO_EVENT_ID, preset: "LAST_7_DAYS", customStart: null, customEnd: null, channel: "ALL" },
+      range,
+    )
       .then((data) => {
         if (!cancelled) setAnalytics(data);
       })
@@ -45,6 +50,10 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [session.role]);
+
+  // 채널별 지표를 그대로 보여준다 - WEB/KIOSK Metric을 합산하면 한쪽만 억제(k<5)여도
+  // 합계에 실제 소수집단 값이 섞여 나갈 수 있어(억제 우회) 채널별로만 표시한다.
+  const channelSummaries = useMemo(() => analytics?.channel_performance ?? [], [analytics]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -103,8 +112,17 @@ export default function DashboardPage() {
         {!loading && error ? <ErrorBanner error={error} /> : null}
         {!loading && !error && analytics && (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm">
-            <p>총 검색 수: {analytics.total_searches}</p>
-            <p>무결과율: {(analytics.zero_result_rate * 100).toFixed(1)}%</p>
+            {channelSummaries.length === 0 ? (
+              <p>최근 7일간 검색 데이터가 없습니다.</p>
+            ) : (
+              channelSummaries.map((channel) => (
+                <p key={channel.channel}>
+                  {channel.channel === "WEB" ? "웹" : "키오스크"} 검색 수:{" "}
+                  {formatMetric(channel.total_searches)} · 무결과율:{" "}
+                  {formatMetric(channel.zero_result_rate, { percent: true })}
+                </p>
+              ))
+            )}
           </div>
         )}
       </section>

@@ -36,7 +36,6 @@ import type {
   ExhibitorProfileRead,
   ExhibitorProfileUpdate,
   FieldError,
-  NoResultQueryResponse,
   ProductCreateRequest,
   ProductRead,
   PublicBoothDetail,
@@ -44,7 +43,6 @@ import type {
   PublicExhibitorListResponse,
   PublicProductSummary,
   RejectExhibitorRequest,
-  SearchAnalyticsSummary,
   SubmitResponse,
   TradeConditionRead,
   TradeConditionUpsert,
@@ -494,28 +492,6 @@ export function createAdminBooth(
   options?: RequestOptions,
 ): Promise<AdminBoothListItem> {
   return apiPost<AdminBoothListItem>("/admin/booths", body, options);
-}
-
-/** TODO(BACKEND-007): GET /admin/analytics/searches */
-export function getSearchAnalytics(
-  eventId: string,
-  options?: RequestOptions,
-): Promise<SearchAnalyticsSummary> {
-  return apiGet<SearchAnalyticsSummary>("/admin/analytics/searches", {
-    ...options,
-    query: { event_id: eventId },
-  });
-}
-
-/** TODO(BACKEND-007): GET /admin/analytics/no-results */
-export function getNoResultQueries(
-  eventId: string,
-  options?: RequestOptions,
-): Promise<NoResultQueryResponse> {
-  return apiGet<NoResultQueryResponse>("/admin/analytics/no-results", {
-    ...options,
-    query: { event_id: eventId },
-  });
 }
 
 /** TODO(문서화조차 안 됨): A15 감사로그. audit.audit_log(apps/api/app/models/consent.py)

@@ -46,7 +46,7 @@ must not recreate score formulas or infer missing facts.
 | `apps/api` | active | BACKEND | all active web channels |
 | `apps/user-web` | active | USER_WEB | registered visitors, guests, buyers |
 | `apps/admin` | active, auth-gated | ADMIN | event operators, exhibitor admins, reviewers |
-| `apps/worker` | planned | BACKEND | document, embedding, notification, aggregation jobs |
+| `apps/worker` | active | BACKEND | document parsing, search indexing, analytics aggregation, notification-outbox draining |
 | `apps/kiosk` | inactive compatibility source | KIOSK | no active deployment or release target |
 
 The existing kiosk source and API are retained temporarily as reversible compatibility assets.
@@ -71,7 +71,17 @@ Do not implement the following without an approved scope change:
 - Only approved and currently participating exhibitor information reaches search or recommendation.
 - Hard filters execute before ranking; UNKNOWN is not silently converted to pass, mismatch, or zero.
 - AI output is a proposal until deterministic validation and the required human confirmation.
-- Contact details remain hidden until the exhibitor accepts a meeting request.
+- Buyer contact details are disclosed to an exhibitor only when **all** of the following hold at
+  once: the meeting is `accepted` (not merely `requested`/`counter_proposed`), the buyer explicitly
+  opted into contact sharing at request time, and the exhibitor side has itself explicitly enabled
+  contact sharing for that meeting (`meeting_contact_share.exhibitor_enabled_at` /
+  `exhibitor_enabled_by_staff_id`). This is stricter than "the exhibitor accepts a meeting request"
+  alone — acceptance and the exhibitor's contact-sharing toggle are two separate actions, and only
+  the requesting exhibitor's own staff can ever see the fields the buyer chose to share. Full
+  field-by-field detail: `.harness/contracts/meeting.md` §3 (note: that document predates the
+  2026-08-11 unification merge and enumerates the request-time buyer-consent and staff-ownership
+  gates in detail; the exhibitor-enabled-sharing gate above was the specific defect this merge
+  fixed in main's pre-merge two-of-three check — see `.harness/decisions.md` DECISION-026).
 - Guest web search requires no login, phone number, email address, or persistent personal profile.
 - Current query and explicit/confirmed profile data outrank weak behavioral signals.
 - Existing weighted-v1 public ranks remain authoritative until a separate promotion decision.
@@ -86,6 +96,16 @@ Do not implement the following without an approved scope change:
   comparison, meeting request, and consent-gated contact sharing.
 - **Admin/partner web**: exhibitor/product/booth submission and approval, ontology management,
   document extraction review, and basic search/recommendation/zero-result operations.
+- **Document extraction review**: exhibitor document upload, grounded AI attribute extraction that
+  is never auto-published, exhibitor confirmation of proposed attributes, and operator approval
+  before any extracted content reaches the search/embedding index. Both confirmation steps are
+  required; neither substitutes for the other.
+- **Interaction analytics**: interaction-event collection feeding operator analytics/funnels/
+  operations dashboards, with aggregates covering fewer than 5 distinct users suppressed at the
+  database level rather than filtered only in application code.
+- **In-app notification inbox**: read state, per-type email opt-in gated on explicit consent, and
+  frequency-capped delivery for account-linked users, complementary to (not a replacement for) the
+  Alimtalk-first outbound access-link delivery described in DECISION-022/CR-012.
 - **AI engine**: shared natural-language and Excel-profile intent contract, keyword+vector candidate
   retrieval, deterministic ranking, grounded reason claims, offline evaluation, and provider outage
   fallback without relaxation of hard constraints.

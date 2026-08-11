@@ -228,6 +228,91 @@ codes:
   # codes — read app/api/v1/routers/recommendations.py directly for the current mapping table
   # before relying on a fixed list here.
 
+  # --- Buyer matching (apps/api/app/api/v1/routers/buyer_match.py, buyer_profile.py) ---
+  # Ported from WAVE2C during the 2026-08-11 unification merge; the worktree never registered
+  # error codes for these routers on its own error-codes.yaml (this whole section is new).
+  - code: TOO_MANY_EXHIBITOR_IDS
+    http_status: 422
+    meaning: "POST /buyer/compare에 허용된 최대 업체 수를 초과해 요청함"
+  - code: BUYER_PROFILE_VERSION_CONFLICT
+    http_status: 409
+    meaning: "낙관적 잠금 실패 — 바이어 프로파일이 이미 다른 요청으로 변경됨. 최신 값을 다시 조회 후 재시도"
+
+  # --- Documents (apps/api/app/api/v1/routers/document.py, services/document/validation.py) ---
+  - code: DOCUMENT_NOT_FOUND
+    http_status: 404
+  - code: DOCUMENT_HAS_NO_VERSION
+    http_status: 422
+    meaning: "게시된 버전이 없는 문서에 대해 버전 종속 작업을 요청함"
+  - code: DOCUMENT_DUPLICATE_CONTENT
+    http_status: 409
+    meaning: "(content_hash, parser_version) 조합이 이미 존재함 — 동일 파일 재업로드"
+  - code: DOCUMENT_DELETE_BLOCKED_PUBLISHED
+    http_status: 409
+    meaning: "이미 게시된 콘텐츠 버전을 가진 문서는 삭제할 수 없음"
+  - code: DOCUMENT_TYPE_NOT_ALLOWED
+    http_status: 400
+  - code: DOWNLOAD_TOKEN_INVALID_OR_EXPIRED
+    http_status: 404
+    meaning: "/download-token으로 발급된 서명 토큰이 무효·만료됨(HMAC 서명 URL 모델 — 별도 principal 검증 없음, 의도적)"
+  - code: FILE_TOO_LARGE
+    http_status: 413
+    meaning: "업로드 파일이 최대 크기를 초과함"
+  - code: EXTENSION_NOT_ALLOWED
+    http_status: 415
+  - code: EXTENSION_MISSING
+    http_status: 415
+  - code: MIME_EXTENSION_MISMATCH
+    http_status: 415
+    meaning: "감지된 MIME 타입과 파일 확장자가 불일치"
+  - code: CONTENT_NOT_ALLOWED
+    http_status: 415
+    meaning: "파일 내용 검사(예: 매크로 포함 여부)가 허용되지 않는 콘텐츠를 감지함"
+
+  # --- AI extraction review (apps/api/app/api/v1/routers/extraction.py) ---
+  - code: EXTRACTION_NOT_FOUND
+    http_status: 404
+
+  # --- Event messages (apps/api/app/api/v1/routers/event_message.py) ---
+  - code: EVENT_MESSAGE_NOT_FOUND
+    http_status: 404
+
+  # --- Operator analytics (apps/api/app/api/v1/routers/analytics.py) ---
+  - code: INVALID_ANALYTICS_ROLE
+    http_status: 400
+    meaning: "X-Analytics-Role이 호출자의 DB 기준 허용 role 집합을 벗어남 — 이 헤더는 좁히는 용도로만 쓰이며 넓힐 수 없음"
+  - code: INVALID_PERIOD
+    http_status: 422
+
+  # --- In-app notifications (apps/api/app/api/v1/routers/notification.py) ---
+  - code: NOTIFICATION_NOT_FOUND
+    http_status: 404
+  # --- Outbound notification delivery (apps/api/app/services/notification_delivery.py) ---
+  # These are internal dispatch-outcome codes recorded on notification_attempt rows, not HTTP
+  # error responses — listed here because they are stable identifiers a client-facing status
+  # query could eventually surface.
+  - code: PROVIDER_NOT_CONFIGURED
+    http_status: null
+    meaning: "선택된 채널(Alimtalk/SMS/Email)의 공급자 자격증명이 아직 구성되지 않음 — 실제 발송 비활성 상태의 정상 결과"
+  - code: PROVIDER_REJECTED
+    http_status: null
+    meaning: "공급자가 요청을 거부함(allowlisted 오류코드로 변환, 원문 응답은 저장하지 않음)"
+  - code: PROVIDER_UNAVAILABLE
+    http_status: null
+    meaning: "공급자 호출이 실패하거나 타임아웃됨 — 다음 채널로 폴백하거나 재시도 백오프"
+  - code: RECIPIENT_UNAVAILABLE
+    http_status: null
+    meaning: "대상 채널에 대한 수신자 연락처가 없음(예: 이메일 미보유 사용자에게 EMAIL 채널 시도)"
+  - code: EXTERNAL_SENDING_DISABLED
+    http_status: null
+    meaning: "공식 딜러·템플릿·콜백 계약이 아직 승인되지 않아 실제 외부 발송이 비활성화됨(DECISION-022)"
+  - code: OPERATOR_RELEASE_REQUIRED
+    http_status: null
+    meaning: "NotificationReleaseGate의 3개 플래그 중 하나 이상이 아직 운영자 승인 전 상태"
+  - code: CATALOG_NOT_READY
+    http_status: null
+    meaning: "추천 Snapshot이 아직 없어 RECOMMENDATION_READY 알림을 구성할 수 없음"
+
 not_yet_cataloged:
   - "recommendations.py's ErrorBody-based codes (dynamic mapping, not simple grep-able strings)"
-  - "admin router (BACKEND-007 대기)"
+  - "admin router 세부 승인/반려 코드 (BACKEND-007 대기 — 업체 승인/반려/booth 상태변경/검색통계 전용 코드는 아직 구현되지 않음)"

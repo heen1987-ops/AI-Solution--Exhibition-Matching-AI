@@ -33,7 +33,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import InlinePhoneVerify from "@/components/InlinePhoneVerify";
-import { apiGet, ApiClientError, listMeetings } from "@/lib/api-client";
+import { apiGet, ApiClientError } from "@/lib/api-client";
+import { listMeetings } from "@/features/meeting/api";
 import { resetAuthStateToGuest } from "@/lib/auth-state";
 import type { MeetingResponse, MeetingStatus, RecommendableObjectType } from "@/lib/types";
 
@@ -82,15 +83,14 @@ interface TimelineEntry {
 // 상담 상태는 db-erd/interface-spec이 이미 고정한 닫힌 집합이라 라벨 매핑을 하드코딩해도
 // "6단계 온톨로지 코드값 하드코딩 금지" 원칙에 해당하지 않는다 (열린 taxonomy 코드가 아님).
 const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
-  DRAFT: "작성 중",
-  REQUESTED: "응답 대기",
-  CONFIRMED: "확정",
-  COMPLETED: "완료",
-  COUNTER_PROPOSED: "시간 변경 제안",
-  REJECTED: "거절됨",
-  CANCELLED_BY_BUYER: "취소됨",
-  CANCELLED_BY_EXHIBITOR: "취소됨",
-  NO_SHOW: "노쇼",
+  draft: "작성 중",
+  requested: "응답 대기",
+  accepted: "확정",
+  completed: "완료",
+  counter_proposed: "시간 변경 제안",
+  rejected: "거절됨",
+  cancelled: "취소됨",
+  no_show: "노쇼",
 };
 
 const TIMELINE_KIND_LABEL: Record<TimelineKind, string> = {
@@ -296,11 +296,20 @@ export default function SchedulePage() {
 
   return (
     <div className="mx-auto flex max-w-screen-content flex-col gap-4 px-4 py-4">
-      <header>
-        <h1 className="text-xl font-bold">나의 일정</h1>
-        <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
-          방문, 상담, 프로그램을 한 타임라인에서 확인해요.
-        </p>
+      <header className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold">나의 일정</h1>
+          <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
+            방문, 상담, 프로그램을 한 타임라인에서 확인해요.
+          </p>
+        </div>
+        <Link
+          href="/meetings"
+          className="tap-target shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium"
+          style={{ borderColor: "var(--color-border)", color: "var(--color-brand)" }}
+        >
+          상담 목록
+        </Link>
       </header>
 
       {needsAuth ? (

@@ -14,25 +14,9 @@ from alembic import context
 # --- 프로젝트 모듈 임포트 ---
 # alembic.ini의 prepend_sys_path = . 설정 덕분에(apps/api/ 디렉터리에서 alembic 명령을 실행한다는
 # 전제 하에) app 패키지를 임포트할 수 있다.
+import app.models  # noqa: F401  # app/models/__init__.py가 전체 도메인 모듈의 단일 등록처다.
 from app.core.config import get_settings
 from app.db.base import SCHEMA_ONTOLOGY, Base
-from app.models import (  # noqa: F401
-    ai,
-    auth,
-    cold_start,
-    consent,
-    conversation,
-    core,
-    exhibitor,
-    filtering,
-    identity,
-    kiosk,
-    learning,
-    matching,
-    ontology_refs,
-    policy,
-    profile,
-)
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config

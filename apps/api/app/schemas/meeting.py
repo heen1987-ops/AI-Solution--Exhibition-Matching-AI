@@ -34,9 +34,24 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.meeting import MEETING_REJECT_REASON_CODES
+
 # interface-spec 12.3절 예시 + wireframes 8절 E-03 "휴대전화·이메일" 기준 잠정 허용값.
 # TODO(동의 정책/6단계 온톨로지 확정 후): 정식 코드 테이블 참조로 교체.
 ALLOWED_CONTACT_SHARE_FIELDS: tuple[str, ...] = ("NAME", "PHONE", "BUSINESS_EMAIL", "EMAIL")
+
+#: 업체가 상담 요청을 거절할 때 쓰는 고정 사유코드. app/models/meeting.py의
+#: MEETING_REJECT_REASON_CODES가 단일 진실 공급원이며 아래 Literal은 그 사본이다
+#: (Literal은 런타임 값을 받을 수 없어 문자열을 다시 적을 수밖에 없다 - 두 목록이
+#: 어긋나면 _reject_reason_code_allowed 검증기와 테스트가 먼저 깨진다).
+RejectReasonCode = Literal[
+    "NOT_RELEVANT",
+    "SCHEDULE_UNAVAILABLE",
+    "TRADE_CONDITION_MISMATCH",
+    "CAPACITY_UNAVAILABLE",
+    "INFORMATION_INSUFFICIENT",
+    "OTHER",
+]
 
 
 class ContactShareRequest(BaseModel):
@@ -80,6 +95,12 @@ class MeetingCreateRequest(BaseModel):
     message: str | None = Field(default=None, max_length=1000)
     contact_share: ContactShareRequest | None = None
     match_result_id: uuid.UUID | None = None
+    # WAVE 2C 바이어<->업체 매칭 확장. 바이어가 "이 제품 때문에" 상담을 요청했음을
+    # 남긴다. interaction.meeting에는 (participation_id, product_id) 복합 FK가 없으므로
+    # "이 제품이 정말 그 업체의 승인된 제품인가"는 라우터가 애플리케이션 계층에서
+    # 검증한다(services/meeting/buyer_matching.product_belongs_to_participation).
+    product_id: uuid.UUID | None = None
+    order_scale_code: str | None = Field(default=None, max_length=50)
 
     @field_validator("requested_slot_ids")
     @classmethod
@@ -149,7 +170,24 @@ class PartnerDecisionRequest(BaseModel):
     action: Literal["ACCEPT", "REJECT", "COUNTER_PROPOSE"]
     slot_id: uuid.UUID | None = None
     version: int = Field(ge=0)
-    reason_code: str | None = Field(default=None, max_length=50)
+    # 요청 계층에서만 6개 값으로 좁힌다. meeting_status_history.reason_code는 취소 사유·
+    # OUTCOME_RECORDED 등 다른 흐름도 함께 저장하는 공용 컬럼이라 읽기(이력 조회)는 계속
+    # 자유 문자열로 남겨 하위호환을 지킨다.
+    reason_code: RejectReasonCode | None = None
+    # 연락처 공개의 "세 번째 게이트": 업체가 이 상담에 한해 연락처 공유를 명시적으로
+    # 켤지 여부. False(기본값)면 바이어가 동의했고 상담이 확정되어도 연락처는 공개되지
+    # 않는다(services/meeting/buyer_matching.contact_reveal_allowed).
+    enable_contact_sharing: bool = False
+
+    @field_validator("reason_code")
+    @classmethod
+    def _reject_reason_code_allowed(cls, value: str | None) -> str | None:
+        # MEETING_REJECT_REASON_CODES(app/models/meeting.py)를 단일 진실 공급원으로
+        # 재검증한다 - Literal이 이미 같은 집합을 강제하지만, 모델 상수가 바뀌면 이
+        # 검증이 먼저 깨져 두 목록의 드리프트를 즉시 드러낸다.
+        if value is not None and value not in MEETING_REJECT_REASON_CODES:
+            raise ValueError(f"unsupported reason_code: {value}")
+        return value
 
     @model_validator(mode="after")
     def _slot_required_unless_reject(self) -> "PartnerDecisionRequest":
@@ -252,3 +290,159 @@ class AvailabilitySlotItem(BaseModel):
 
 class AvailabilityListResponse(BaseModel):
     items: list[AvailabilitySlotItem]
+
+
+# ==============================================================================
+# 바이어<->업체 매칭 상담 (WAVE 2C 이관 - 통합 MERGE STEP 22)
+# ==============================================================================
+#
+# 통합 전 worktree에는 ``/buyer/meeting-requests`` / ``/partner/meeting-requests`` 아래에
+# 같은 ``interaction.meeting`` 행을 쓰는 두 번째 상담 표면이 있었다. 통합 저장소는 그
+# 라우터를 등록하지 않고(하나의 상담 레코드가 경로에 따라 다른 연락처 공개 규칙을 적용받는
+# 모순을 없애기 위해) 위쪽 ``/meetings`` 계약에 product_id/order_scale_code/
+# enable_contact_sharing/RejectReasonCode를 접어 넣었다.
+#
+# 아래 모델들은 그 표면이 정의한 서비스 계층 입출력 계약이다. ``BuyerMeetingRequestCreate``
+# 는 최대 3개 선호 시간대 같은 더 엄격한 제약을 그대로 보존하고,
+# ``services/meeting/buyer_matching.py``의 오케스트레이션 함수들이 이 형태의 값을 받는다.
+
+
+class ContactView(BaseModel):
+    """세 조건(확정 + 바이어 동의 + 업체 활성화)을 모두 만족할 때만 채워지는 업무용 연락처.
+
+    "name, business email, business phone, title/affiliation" 중 title/affiliation은 현재
+    identity 도메인(app/models/identity.py UserIdentity)에 대응 컬럼이 없어
+    (name_enc/phone_enc/email_enc만 존재) 채우지 못한다 - None으로 남는다.
+    TODO(identity 도메인에 title/affiliation 컬럼이 추가되면 채운다). 이 한계는 필드를
+    조용히 생략하는 대신 항상 None으로 명시해 클라이언트가 누락을 인지하게 한다.
+    """
+
+    name: str | None
+    business_email: str | None
+    business_phone: str | None
+    title: str | None = None
+
+
+class BuyerMeetingRequestCreate(BaseModel):
+    """바이어 매칭 흐름의 상담 요청 입력.
+
+    ``MeetingCreateRequest``(``POST /api/v1/meetings``의 실제 본문)보다 엄격하다:
+    선호 시간대를 3개로 제한하고 topic/연락처 동의를 단순한 스칼라로 받는다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    exhibitor_id: uuid.UUID
+    product_id: uuid.UUID | None = None
+    topic_code: str = Field(min_length=1, max_length=100)
+    preferred_time_slots: list[uuid.UUID] = Field(min_length=1, max_length=3)
+    order_scale_code: str | None = Field(default=None, max_length=50)
+    message: str | None = Field(default=None, max_length=1000)
+    contact_share_consent: bool = False
+
+    @field_validator("preferred_time_slots")
+    @classmethod
+    def _unique_preferred_slots(cls, value: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("preferred_time_slots must not contain duplicates")
+        return value
+
+
+class BuyerMeetingRequestResponse(BaseModel):
+    meeting_id: uuid.UUID
+    status: str
+    exhibitor_id: uuid.UUID
+    participation_id: uuid.UUID
+    product_id: uuid.UUID | None
+    topic_code: str | None
+    order_scale_code: str | None
+    message_preview: str | None
+    candidate_slots: list[SlotCandidate]
+    confirmed_start: datetime | None
+    confirmed_end: datetime | None
+    contact_share_consent: bool
+    # 세 조건을 모두 만족할 때만 non-null. 그 전에는 항상 None이다 - 절대 부분 노출하지 않는다.
+    contact: ContactView | None
+    row_version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class BuyerMeetingRequestListResponse(BaseModel):
+    items: list[BuyerMeetingRequestResponse]
+    next_cursor: str | None = None
+
+
+class BuyerCancelMeetingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(ge=0)
+
+
+class BuyerSelectAlternateRequest(BaseModel):
+    """counter_proposed 상태에서 바이어가 업체가 제안한 대안 시간 중 하나를 고른다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slot_id: uuid.UUID
+    version: int = Field(ge=0)
+
+
+class ExhibitorAcceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    slot_id: uuid.UUID
+    version: int = Field(ge=0)
+    # 업체가 이 상담에 한해 연락처 공유를 명시적으로 켤지 여부(세 번째 게이트).
+    # False(기본값)면 바이어 동의가 있어도 accepted 상태만으로 연락처가 공개되지 않는다.
+    enable_contact_sharing: bool = False
+
+
+class ExhibitorRejectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason_code: RejectReasonCode
+    version: int = Field(ge=0)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason_code")
+    @classmethod
+    def _reason_code_allowed(cls, value: str) -> str:
+        # MEETING_REJECT_REASON_CODES(app/models/meeting.py)를 단일 진실 공급원으로 재검증한다
+        # - Literal이 이미 같은 집합을 강제하지만, 모델 상수가 바뀌면 이 테스트가 먼저 깨지도록.
+        if value not in MEETING_REJECT_REASON_CODES:
+            raise ValueError(f"unsupported reason_code: {value}")
+        return value
+
+
+class ExhibitorProposeAlternateRequest(BaseModel):
+    """1~3개의 대안 시간을 제시한다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slot_ids: list[uuid.UUID] = Field(min_length=1, max_length=3)
+    version: int = Field(ge=0)
+
+    @field_validator("slot_ids")
+    @classmethod
+    def _unique_alternate_slots(cls, value: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("slot_ids must not contain duplicates")
+        return value
+
+
+class PartnerBuyerMeetingListItem(BaseModel):
+    meeting_id: uuid.UUID
+    status: str
+    product_id: uuid.UUID | None
+    topic_code: str | None
+    order_scale_code: str | None
+    candidate_slots: list[SlotCandidate]
+    confirmed_start: datetime | None
+    confirmed_end: datetime | None
+    created_at: datetime
+
+
+class PartnerBuyerMeetingListResponse(BaseModel):
+    items: list[PartnerBuyerMeetingListItem]
+    next_cursor: str | None = None

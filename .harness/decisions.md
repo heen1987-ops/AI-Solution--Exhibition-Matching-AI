@@ -293,3 +293,154 @@ exhibitor, sponsor placement, discount, purchase inducement, or numeric score. A
 sending remains disabled until an official Kakao dealer, business channel, approved template codes,
 callback authentication/status mapping, SMS/email fallbacks, credentials, and legal/operations
 approval are supplied. The Kakao Talk Message API is not used for service notifications.
+
+## DECISION-023 (2026-08-03) — WAVE2C `/buyer/matches`가 DECISION-005의 매핑을 대체함
+
+> 이 결정은 WAVE2C/2D/2E 병렬개발 하네스(worktree
+> `.claude/worktrees/site-check-6882c1/.harness/decisions.md`)에서 원래 DECISION-007로
+> 기록되었다. main의 기존 DECISION-007(CR-004 검색 임베딩)과 번호가 충돌하고 두 결정 모두
+> 다른 문서에서 이미 번호로 인용되고 있어, 통합(WAVE2C/2D/2E → main) 병합 시 DECISION-023으로
+> 재번호했다. 내용은 원문 그대로이며 재번호 외에 변경 없음.
+
+WAVE 2C의 BACKEND-BUYER-MATCH + AI-BUYER-MATCH 트랙이 `POST /buyer/matches` +
+`POST /buyer/compare`로 노출되는 전용 결정론적 규칙기반 hard-filter/scoring B2B 매칭
+엔진(`ai/buyer_matching/`)을 만들었다. 이는 DECISION-005가 재설계 문서의 `/buyer/matches`를
+매핑했던 일반 개인화 `/recommendations` 엔진과는 별개다. 이제 두 엔드포인트가 의도적으로
+공존한다: `/recommendations`는 일반 개인화 랭킹 표면으로 남고, `/buyer/matches`는
+`/recommendations`가 보장하지 않는 hard-filter 보증·재현성·양방향(바이어↔업체) 점수를
+제공하는 B2B 전용 엔드포인트다. `tests/integration/test_buyer_meeting_e2e.py`의 스테일
+어서션("`/buyer/matches`가 존재하면 안 된다")은 통합 시점에 현실에 맞게 갱신했다
+(엔드포인트 삭제가 아니라 테스트 갱신) — run-log.md 2026-08-03 항목 참고.
+
+## DECISION-024 (2026-08-11) — 알림 도메인 경계: outbound(`integration.*`) vs inbox(`notification.*`)
+
+`integration.{notification_delivery, notification_attempt, outbox_event}`와
+`notification.{notifications, notification_preferences, notification_templates,
+notification_rules, notification_deliveries, notification_delivery_attempts}`는 서로 다른
+스키마·테이블명을 쓰는 별개 도메인이며 WAVE2C/2D/2E→main 통합 시 둘 다 유지한다(merge-both,
+어느 쪽도 중복이 아님). `integration.*`는 Alimtalk→SMS→EMAIL 순으로 폴백하는 아웃바운드
+provider fan-out(개인 링크 1:1 결합, AEAD 암호화 access URL, `message_class='INFORMATIONAL'`
+CHECK, `SKIP LOCKED` outbox claim)이고, `notification.*`는 읽음 상태·dedup key·빈도 제한·
+타입별 이메일 옵트인을 갖는 사용자 인앱 수신함이다.
+
+클래스명 충돌(`NotificationDelivery`가 `integration.py:394`와 (구)`notification.py:407`에
+둘 다 선언되어 SQLAlchemy `configure_mappers()`가 `InvalidRequestError: Multiple classes found
+for path "NotificationDelivery"`로 즉시 부팅 실패)은 인바운드 쪽 클래스명을
+`NotificationChannelDelivery` / `NotificationChannelDeliveryAttempt`로 리네임해 해소했다
+(`__tablename__`과 스키마·마이그레이션 DDL은 무변경).
+
+CR-012의 INFORMATIONAL-only·raw contact 값 미저장 규칙은 `notification.notification_templates`
+에도 동일하게 적용한다 — 인바운드 알림 템플릿도 업체명·후원 노출·할인·구매유도 문구·전화/이메일
+원문을 담지 않는다. 아웃바운드 EMAIL 경로는 인바운드 경로가 이미 검사하는 것과 동일한
+`NOTIFICATION_EMAIL` 동의(consent purpose)를 발송 직전에 재확인해야 한다 — 그렇지 않으면 동의를
+철회한 사용자가 outbox 경로로는 계속 메일을 받는 회귀가 생긴다(BACKEND-014 후속 작업으로 추적,
+`.harness/backlog.yaml` 참고).
+
+두 도메인의 `notification_type` 어휘는 같은 사건에 다른 이름을 쓴다(`RECOMMENDATION_READY`는
+공유되지만 `EVENT_EVE_REMINDER`/`EVENT_DAY_REMINDER` vs `MEETING_STATUS_CHANGED`/
+`MEETING_ACCEPTED`/`MEETING_TIME_PROPOSED` 등은 divergent) — 어휘 통합 모듈은 이번 통합 범위
+밖의 후속 작업으로 명시적으로 미룬다.
+
+## DECISION-025 (2026-08-11) — 검색 임베딩: `ai/embedding/` 폐기, `object_embeddings` + 0017이 유일 구현
+
+WAVE2C/2D/2E가 도입한 `ai/embedding/{provider,service,versioning,types}.py`와
+`ai/evaluation/embedding/`은 main의 실제 pgvector 구현으로 대체되어 통합 시 폐기(retire)한다.
+worktree 쪽 provider는 `UnconfiguredEmbeddingProvider`가 `NotImplementedError`를 던지고
+`DeterministicEmbeddingProvider`는 sha256 기반 16차원 가짜 벡터를 반환할 뿐 영속 저장소가
+없다 — 자체 `app/models/indexing.py` docstring조차 "ai.object_embedding을 구현한 코드는
+없다"는, main 기준으로는 이미 거짓인 전제를 서술하고 있었다(worktree의 `.harness/state.json`도
+`AISEARCH-002`를 여전히 미해결로 기록).
+
+main 쪽(`services/object_embeddings.py` + migration 0017_object_embedding +
+`app/models/ai.py::ObjectEmbedding` + `services/matching/semantic_search.py`)은 VECTOR(512),
+활성 SUMMARY 행에 한정된 partial HNSW(`vector_cosine_ops`), model-version FK와 검증 trigger,
+다섯 개의 소스 무효화 trigger, advisory lock 하의 stage-then-atomic-activate 백필, 실제 OpenAI
+adapter, 운영자 CLI를 갖춘, 기능 플래그(`SEARCH_EMBEDDING_ENABLED`)로 게이팅된 완성된 구현이다
+(DECISION-007/CR-004의 연장). `app/models/indexing.py`의 PUBLIC/VERIFIED_BUYER 노출 등급
+계층은 이 벡터 회수 계층과는 별개의 보완 레이어이므로 그대로 유지한다 — 폐기 대상은
+`ai/embedding/`와 `ai/evaluation/embedding/`뿐이다.
+
+포팅 시 `content_builder.py`의 PII 스크럽과 fail-loud `APPROVED` assertion을
+`object_embeddings.py`로 이식했고, `models/indexing.py`의 스테일 docstring을 정정했으며,
+`services/matching/candidate_generator.py:90`의
+`SELECT to_regclass('ai.object_embedding') IS NOT NULL` 방어적 가드는 제거했다(main은 이 테이블이
+항상 존재한다는 전제로 동작하며 이 가드가 없다).
+
+## DECISION-026 (2026-08-11) — Meeting surface collapse: one router, not two
+
+WAVE2C shipped `meeting_buyer_extension.py`, ten additional routes under
+`/buyer/meeting-requests` and `/partner/meeting-requests` operating on the SAME
+`interaction.meeting` rows main's pre-existing `routers/meetings.py` (1635 lines, real
+principal-derived auth, AESGCM envelope encryption, idempotency cache, audit-logged contact
+disclosure, conditional-UPDATE slot reservation) already owns. Registering both would have given
+one meeting record two different contact-disclosure rules depending on which URL was called:
+main's own gate at (pre-merge) `meetings.py:1301-1305` checked only 2 of the 3 required
+conditions (`meeting.status == accepted` and `contact_share.accepted_at is not None`, no
+exhibitor-side check at all — `MeetingContactShare` had no `exhibitor_enabled_at` column), while
+the worktree's `contact_reveal_allowed()` implemented the correct three-gate rule but wrote
+plaintext `message_enc` that main's fail-closed `_decrypt_text` would silently return as `None`.
+
+**Resolution**: collapse onto ONE surface, main's `routers/meetings.py`. `meeting_buyer_extension.py`
+is not registered in `api.py` — its own docstring (lines 17-36 in the worktree copy) states the
+target is one surface and gives this exact reconciliation plan. Ported the SERVICE layer instead
+(`app/services/meeting/buyer_matching.py::contact_reveal_allowed()` +
+`app/services/meeting/sqlalchemy_gateway.py` behind a `MeetingGateway` Protocol, which is what
+makes the logic unit-testable without Postgres — main's router previously had zero tests of its
+own), added the four missing columns (`MeetingRequest.product_id`/`order_scale_code`,
+`MeetingContactShare.exhibitor_enabled_at`/`exhibitor_enabled_by_staff_id`) via the activated
+0020_interaction_domain migration, and promoted `contact_reveal_allowed()`'s three-gate check
+into main's `meetings.py` while keeping main's AESGCM crypto and `AuditLog` write. The worktree's
+83 meeting tests were retargeted from `/buyer/meeting-requests`/`/partner/meeting-requests` onto
+`/meetings`/`/partner/meetings` rather than discarded, so the merged repo does not lose its only
+prior meeting-flow test coverage.
+
+**Risk if reversed**: registering both routers is a standing PII-disclosure defect — the same
+buyer contact information becomes reachable through a path that skips the exhibitor-consent gate.
+
+## DECISION-027 (2026-08-11) — Interaction-event ingestion folds into `/interactions/batch`, not a second public write path
+
+WAVE2E's `routers/interaction_event.py` (`POST /events/interaction[/batch]`) and main's
+pre-existing `POST /api/v1/interactions/batch` (`recommendations.py:839`) both write the same
+`app.models.matching.InteractionEvent` + `InteractionClientEventDedupe` rows — one table, two
+writers, not two features. main's endpoint is authenticated via `get_verified_subject` (so
+anonymous kiosk still works, but a caller-supplied identity is always cross-checked, never
+trusted) and validates `event_type` against `CANONICAL_EVENTS`, but has no PII masking, no
+kiosk-forbidden-field check, no rate limit, and no request-size cap. The worktree's router is
+fully unauthenticated by design and copies `tenant_id`/`event_id`/`profile_id`/`user_id` straight
+off the request body, but it does contribute four privacy/abuse controls main lacked.
+
+**Resolution**: fold `masking.py`, `validation.py::find_forbidden_kiosk_keys`, `rate_limit.py`,
+and the 256KB pre-parse body cap into main's `POST /interactions/batch` handler. Ported
+`app/models/interaction_event.py::EventIngestionFailure` with its own migration
+(0030_event_ingestion_failure). `routers/interaction_event.py` is NOT registered in `api.py`.
+`tests/test_interaction_event_api.py` was retargeted at `/api/v1/interactions/batch`. main's
+`resolve_subject_context` already implements the same 403-on-mismatch discipline the worktree
+router's authors were trying to add by other means, so nothing in the worktree's actual privacy
+intent was lost — only its second, unauthenticated write path was.
+
+**Risk if reversed**: registering the worktree's router leaves a public, unauthenticated write
+path into the exact analytics table that feeds every `/admin/analytics` endpoint. Forged events
+inflate underlying counts, which can un-suppress a genuinely small group under the k<5 rule, and
+a forged `user_id` on a KIOSK-source row breaches kiosk anonymity outright.
+
+## DECISION-028 (2026-08-11) — `apps/worker` import root renamed `app` → `worker`
+
+Both trees' `apps/worker` used the same top-level import name, `app`, that `apps/api` also uses.
+In the worktree alone this was survivable because the worker imported nothing from `apps/api` —
+its own tests worked around the name clash by loading modules via `importlib` from an explicit
+file path. In the unified repo it is fatal instead of merely awkward: every real worker job (
+notification-outbox draining, analytics aggregation, document parsing, search indexing) writes
+against `apps/api`'s own SQLAlchemy models, so both packages now sit on `sys.path`
+simultaneously and an `import app...` inside a worker module can silently resolve to whichever of
+the two `app` packages happened to be imported first in that process.
+
+**Resolution**: `apps/worker`'s import root is `worker`, not `app` (`apps/worker/worker/**`,
+`apps/worker/pyproject.toml`). This decision folds together with ASSUMPTION-005's correction of
+the worker's zero-dependency premise (see `.harness/assumptions.md`) — both originate from the
+same "apps/worker package name and dependency policy" resolved conflict in this merge, and were
+applied in the same pass since they touch the same files.
+
+**Risk if reversed**: reintroducing a colliding `app` import root produces silent wrong-module
+resolution that reproduces under one entry point (e.g. `python -m worker.jobs.x`) and not another
+(e.g. running from `apps/api`'s own working directory with both packages on `sys.path`) — exactly
+the kind of bug that passes in CI and fails in production depending on process launch order.

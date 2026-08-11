@@ -32,8 +32,6 @@ import type {
   ApiSuccessEnvelope,
   AttributesPatchRequest,
   AttributesPatchResponse,
-  AvailabilityListResponse,
-  AvailabilityQuery,
   BoothDetailQuery,
   BoothDetailResponse,
   BuyerNeedsRequest,
@@ -66,12 +64,8 @@ import type {
   InteractionBatchResponse,
   InteractionEventIn,
   InteractionEventResult,
-  MeetingCreateRequest,
-  MeetingListQuery,
-  MeetingListResponse,
   MeetingOutcomeRequest,
   MeetingOutcomeResponse,
-  MeetingRequestPatch,
   MeetingResponse,
   PartnerBuyerSummaryResponse,
   PartnerDecisionRequest,
@@ -733,63 +727,11 @@ export function recalculateRoute(
 }
 
 // ===========================================================================
-// 12절 상담 (U-14, U-15, E-02~E-04)
+// 12절 상담 - 참가업체 포털 (E-02~E-04)
 // backend/app/api/v1/routers/meetings.py 실제 경로.
+// 바이어 측 상담 호출(U-14, U-15)은 features/meeting/api.ts로 이전됐다 - 그 파일이
+// 이 모듈의 apiGet/apiPost/generateClientId를 재사용하는 것이 유일하고 정식인 경로다.
 // ===========================================================================
-
-export function getExhibitorAvailability(
-  exhibitorId: string,
-  query: AvailabilityQuery,
-  options?: RequestOptions,
-): Promise<AvailabilityListResponse> {
-  return apiGet<AvailabilityListResponse>(
-    `/exhibitors/${encodeURIComponent(exhibitorId)}/availability`,
-    { ...options, query },
-  );
-}
-
-/** U-14 상담 요청 (12.3절). 외부 상대에게 전달되는 요청이라 멱등키를 자동 생성해
- * 중복 제출을 막는다 - 와이어프레임 U-14절 "전송 중 버튼을 잠그고 멱등 키로 중복 요청을
- * 막는다"와 대응한다. */
-export function postMeetingRequest(
-  request: MeetingCreateRequest,
-  options: RequestOptions = {},
-): Promise<MeetingResponse> {
-  const idempotencyKey = options.idempotencyKey ?? generateClientId();
-  return apiPost<MeetingResponse>("/meetings", request, { ...options, idempotencyKey });
-}
-
-export function listMeetings(
-  query?: MeetingListQuery,
-  options?: RequestOptions,
-): Promise<MeetingListResponse> {
-  return apiGet<MeetingListResponse>("/meetings", { ...options, query });
-}
-
-export function getMeeting(meetingId: string, options?: RequestOptions): Promise<MeetingResponse> {
-  return apiGet<MeetingResponse>(`/meetings/${encodeURIComponent(meetingId)}`, options);
-}
-
-/**
- * U-15 상담 상태 화면에서 바이어가 수행하는 상태 전이. 와이어프레임 5.1절의
- * `PATCH /meeting-requests/{id}`에 대응하는 실제 엔드포인트는 인터페이스 명세 12절이
- * 정의한 두 개의 POST 엔드포인트(취소/응답)다(우선순위: 인터페이스 명세). 이 함수는
- * `patch.kind`로 실제 엔드포인트에 위임하면서 작업 지시가 지정한 `patchMeetingRequest`
- * 이름을 유지한다.
- */
-export function patchMeetingRequest(
-  meetingId: string,
-  patch: MeetingRequestPatch,
-  options?: RequestOptions,
-): Promise<MeetingResponse> {
-  const id = encodeURIComponent(meetingId);
-  if (patch.kind === "CANCEL") {
-    return apiPost<MeetingResponse>(`/meetings/${id}/cancel`, patch.data, options);
-  }
-  return apiPost<MeetingResponse>(`/meetings/${id}/respond`, patch.data, options);
-}
-
-// --- 참가업체 포털 (E-02~E-04) ---------------------------------------------
 
 export function listPartnerMeetings(
   query?: PartnerMeetingListQuery,
