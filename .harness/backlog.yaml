@@ -1770,7 +1770,7 @@ tasks:
     wave: 3
     track: QA
     priority: P2
-    status: READY
+    status: IN_PROGRESS
     depends_on: []
     owned_paths:
       - "apps/user-web/vitest.config.ts"
