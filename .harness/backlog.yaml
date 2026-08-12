@@ -310,7 +310,7 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P1
-    status: BLOCKED
+    status: IN_PROGRESS
     depends_on: [CONTRACT-003, CONTRACT-005]
     owned_paths:
       - "apps/api/app/api/v1/routers/favorites.py"
@@ -319,7 +319,7 @@ tasks:
       - "GET/POST/DELETE /me/favorites[/{favorite_id}]"
       - "대상 유형: 업체/제품/부스/프로그램"
       - "USERWEB-003이 참조하는 저장 버튼과 연결 가능한 스키마"
-    note: "모델·마이그레이션은 CONTRACT-005가 게시하며, 이 작업은 API와 서비스 연결만 소유한다."
+    note: "모델·마이그레이션은 CONTRACT-005가 게시하며, 이 작업은 API와 서비스 연결만 소유한다. 2026-08-13: CONTRACT-003/CONTRACT-005 모두 DONE으로 확인되어 BLOCKED→IN_PROGRESS로 해제(depends_on 충족). 실제 계약 경로는 USERWEB-005 감사에서 확인된 대로 /me/favorites (api-client.ts가 가리키던 /favorites 아님)."
 
   - id: BACKEND-006
     title: 키오스크 세션·QR API (신규 — 재설계에만 있고 기존 apps/api/에는 없음)
