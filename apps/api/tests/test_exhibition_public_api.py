@@ -57,7 +57,7 @@ from sqlalchemy.dialects import postgresql
 # ---------------------------------------------------------------------------
 
 
-def test_all_seven_required_routes_are_registered_as_get() -> None:
+def test_all_eight_required_routes_are_registered_as_get() -> None:
     paths = {(frozenset(route.methods), route.path) for route in router_module.router.routes}
     expected = {
         (frozenset({"GET"}), "/events/{event_id}"),
@@ -66,6 +66,7 @@ def test_all_seven_required_routes_are_registered_as_get() -> None:
         (frozenset({"GET"}), "/exhibitors/{exhibitor_id}/products"),
         (frozenset({"GET"}), "/events/{event_id}/booths"),
         (frozenset({"GET"}), "/booths/{booth_id}"),
+        (frozenset({"GET"}), "/products/{product_id}"),
         (frozenset({"GET"}), "/events/{event_id}/map"),
     }
     assert paths == expected
@@ -177,6 +178,38 @@ def test_product_query_requires_product_and_event_product_approval() -> None:
     assert "exhibition.product.master_approval_status" in compiled
     assert "exhibition.product.deleted_at IS NULL" in compiled
     assert "exhibition.event_product.approval_status" in compiled
+
+
+def test_product_detail_query_requires_full_approval_chain() -> None:
+    """GET /products/{product_id} must 404 a product owned by an unapproved exhibitor or an
+    unpublished participation (BACKEND-015 acceptance criteria) - proven the same way the
+    other detail lookups prove it: every approval predicate must be present in the compiled
+    WHERE clause, since that filtering happens in SQL, not in Python."""
+
+    import asyncio
+
+    class _FakeResult:
+        def first(self):
+            return None
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.captured_stmt = None
+
+        async def execute(self, stmt):
+            self.captured_stmt = stmt
+            return _FakeResult()
+
+    session = _FakeSession()
+    asyncio.run(repo.fetch_product_detail_row(session, product_id=uuid.uuid4()))
+    compiled = _compiled(session.captured_stmt)
+    assert "exhibition.product.master_approval_status" in compiled
+    assert "exhibition.product.deleted_at IS NULL" in compiled
+    assert "exhibition.event_product.approval_status" in compiled
+    assert "exhibition.exhibitor.master_approval_status" in compiled
+    assert "exhibition.exhibitor.deleted_at IS NULL" in compiled
+    assert "exhibition.exhibitor_participation.participation_status" in compiled
+    assert "exhibition.event.event_status" in compiled
 
 
 def test_image_query_requires_image_approval() -> None:
@@ -362,6 +395,107 @@ def test_product_summary_maps_only_public_fields_and_omits_inventory() -> None:
     assert not hasattr(summary, "inventory_status")
 
 
+def test_get_product_detail_returns_only_public_fields_for_an_approved_product(
+    monkeypatch,
+) -> None:
+    """Successful detail fetch for an approved product (BACKEND-015 acceptance criteria):
+    exercises the actual ``service.get_product_detail`` function end to end against a
+    monkeypatched repository (no DB), and asserts the resulting ``PublicProductDetail`` never
+    carries wholesale price/MOQ/buyer-only fields - the same allow-list every other public
+    endpoint in this module enforces."""
+
+    import asyncio
+
+    product_id = uuid.uuid4()
+    product = Product(
+        product_id=product_id,
+        exhibitor_id=uuid.uuid4(),
+        product_name="증류주 40도",
+        product_summary="전통 방식 증류주.",
+        alcohol_percentage=Decimal("40.00"),
+        master_approval_status="APPROVED",
+    )
+    event_product = EventProduct(
+        event_product_id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        event_id=uuid.uuid4(),
+        participation_id=uuid.uuid4(),
+        product_id=product_id,
+        retail_price_amount=52000,
+        event_price_amount=45000,
+        currency="KRW",
+        tasting_status="AVAILABLE",
+        purchase_status="AVAILABLE",
+        inventory_status="HIGH",  # must never leak into the public detail
+        approval_status="APPROVED",
+    )
+    image = ProductImage(
+        product_image_id=uuid.uuid4(),
+        product_id=product_id,
+        storage_key="s3://demo/spirit.jpg",
+        display_order=0,
+        approval_status="APPROVED",
+    )
+
+    async def _fake_fetch_product_detail_row(_db, *, product_id):
+        assert product_id == product.product_id
+        return (event_product, product)
+
+    async def _fake_fetch_images_by_product(_db, *, product_ids):
+        assert product_ids == [product.product_id]
+        return [image]
+
+    monkeypatch.setattr(repo, "fetch_product_detail_row", _fake_fetch_product_detail_row)
+    monkeypatch.setattr(repo, "fetch_images_by_product", _fake_fetch_images_by_product)
+
+    detail = asyncio.run(service.get_product_detail(object(), product_id=product_id))
+
+    assert detail is not None
+    assert detail.product_id == product_id
+    assert detail.product_name == "증류주 40도"
+    assert detail.retail_price_amount == 52000
+    assert detail.event_price_amount == 45000
+    assert detail.tasting_status == "AVAILABLE"
+    assert detail.purchase_status == "AVAILABLE"
+    assert len(detail.images) == 1
+    assert detail.images[0].storage_key == "s3://demo/spirit.jpg"
+    assert not hasattr(detail, "inventory_status")
+    disallowed = {
+        "wholesale_price_min_amount",
+        "wholesale_price_max_amount",
+        "min_order_quantity",
+        "monthly_capacity",
+        "oem_status",
+        "private_label_status",
+        "export_status",
+        "phone",
+        "email",
+        "contact",
+        "inventory_status",
+    }
+    assert disallowed.isdisjoint(type(detail).model_fields.keys())
+
+
+def test_get_product_detail_returns_none_when_repository_finds_no_approved_row(
+    monkeypatch,
+) -> None:
+    """Covers both the nonexistent-product-id case and the unapproved-exhibitor/unpublished-
+    participation case: the repository is the single source of truth for that filtering (proven
+    in SQL by test_product_detail_query_requires_full_approval_chain above), so at the service
+    layer both cases collapse to "repository found no row" -> ``None`` -> router 404."""
+
+    import asyncio
+
+    async def _fake_returns_none(_db, *, product_id):
+        return None
+
+    monkeypatch.setattr(repo, "fetch_product_detail_row", _fake_returns_none)
+
+    detail = asyncio.run(service.get_product_detail(object(), product_id=uuid.uuid4()))
+
+    assert detail is None
+
+
 def test_booth_summary_carries_zone_and_map_coordinates() -> None:
     participation_id = uuid.uuid4()
     booth = _make_booth(participation_id)
@@ -453,6 +587,7 @@ def _standalone_app() -> FastAPI:
         ("/api/v1/exhibitors/{id}/products", "get_exhibitor_products", "EXHIBITOR_NOT_FOUND"),
         ("/api/v1/events/{id}/booths", "list_booths", "EVENT_NOT_FOUND"),
         ("/api/v1/booths/{id}", "get_booth_detail", "BOOTH_NOT_FOUND"),
+        ("/api/v1/products/{id}", "get_product_detail", "PRODUCT_NOT_FOUND"),
         ("/api/v1/events/{id}/map", "get_map", "EVENT_NOT_FOUND"),
     ],
 )
@@ -500,6 +635,64 @@ def test_found_event_returns_envelope_with_request_id(monkeypatch) -> None:
     assert body["success"] is True
     assert body["data"]["event_id"] == str(event_id)
     assert body["meta"]["request_id"] == "req-test-1"
+
+
+def test_found_product_returns_envelope_with_only_public_fields(monkeypatch) -> None:
+    from app.schemas.exhibition_public import PublicProductDetail, PublicProductImage
+
+    product_id = uuid.uuid4()
+
+    async def _fake_get_product_detail(_db, *, product_id):
+        return PublicProductDetail(
+            product_id=product_id,
+            product_name="약주 15년",
+            product_summary="쌀과 누룩만으로 빚은 약주.",
+            category_code="RICE_WINE",
+            alcohol_percentage=15.0,
+            retail_price_amount=35000,
+            event_price_amount=30000,
+            currency="KRW",
+            tasting_status="AVAILABLE",
+            purchase_status="AVAILABLE",
+            primary_image=None,
+            images=[
+                PublicProductImage(
+                    product_image_id=uuid.uuid4(),
+                    storage_key="s3://demo/bottle.jpg",
+                    display_order=0,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(service, "get_product_detail", _fake_get_product_detail)
+    app = _standalone_app()
+    client = TestClient(app)
+
+    response = client.get(
+        f"/api/v1/products/{product_id}", headers={"X-Request-ID": "req-test-2"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["product_id"] == str(product_id)
+    assert body["data"]["product_name"] == "약주 15년"
+    assert body["data"]["retail_price_amount"] == 35000
+    assert body["meta"]["request_id"] == "req-test-2"
+    forbidden_keys = {
+        "wholesale_price_min_amount",
+        "wholesale_price_max_amount",
+        "min_order_quantity",
+        "monthly_capacity",
+        "oem_status",
+        "private_label_status",
+        "export_status",
+        "phone",
+        "email",
+        "contact",
+        "inventory_status",
+    }
+    assert forbidden_keys.isdisjoint(body["data"].keys())
 
 
 # ---------------------------------------------------------------------------

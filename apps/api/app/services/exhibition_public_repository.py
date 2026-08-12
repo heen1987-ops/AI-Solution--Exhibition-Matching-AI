@@ -188,3 +188,47 @@ async def fetch_images_by_product(
         .limit(_MAX_IMAGE_ROWS)
     )
     return (await db.execute(stmt)).scalars().all()
+
+
+async def fetch_product_detail_row(db: AsyncSession, *, product_id: uuid.UUID) -> Row | None:
+    """Single (EventProduct, Product) row for a product detail lookup, applying every
+    approval/active filter this module enforces elsewhere (product master, event-product,
+    owning participation, owning exhibitor, owning event - see module docstring). A product
+    that exists but belongs to an unapproved exhibitor/unpublished participation, or that has
+    no APPROVED EventProduct row in a currently OPEN event, returns ``None`` here so the
+    service/router 404 it exactly like the booth/exhibitor lookups do.
+
+    A product may have more than one EventProduct row (one per event it is exhibited at); this
+    returns the first match ordered by event start date descending (most recent/current
+    event first) rather than pagination-relevant ordering - there is no pagination concept for
+    a single-resource detail fetch.
+    """
+
+    stmt = (
+        select(EventProduct, Product)
+        .join(
+            Product,
+            and_(
+                Product.product_id == EventProduct.product_id,
+                Product.master_approval_status == "APPROVED",
+                Product.deleted_at.is_(None),
+            ),
+        )
+        .join(
+            ExhibitorParticipation,
+            ExhibitorParticipation.participation_id == EventProduct.participation_id,
+        )
+        .join(Exhibitor, Exhibitor.exhibitor_id == ExhibitorParticipation.exhibitor_id)
+        .join(Event, Event.event_id == ExhibitorParticipation.event_id)
+        .where(
+            Product.product_id == product_id,
+            EventProduct.approval_status == "APPROVED",
+            Exhibitor.master_approval_status == "APPROVED",
+            Exhibitor.deleted_at.is_(None),
+            ExhibitorParticipation.participation_status == "APPROVED",
+            Event.event_status == "OPEN",
+        )
+        .order_by(Event.start_date.desc())
+        .limit(1)
+    )
+    return (await db.execute(stmt)).first()

@@ -664,7 +664,7 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P2
-    status: IN_PROGRESS
+    status: DONE
     depends_on: [CONTRACT-003]
     owned_paths:
       - "apps/api/app/api/v1/routers/exhibition_public.py"
@@ -674,6 +674,42 @@ tasks:
       - "존재하지 않거나 승인되지 않은 업체 소속 제품은 404"
       - "apps/user-web/lib/api-client.ts의 getProduct()와 lib/types.ts의 ProductDetailResponse가 참조할 수 있는 응답 형태(현재는 재설계 문서 프로즈 기준의 잠정 계약뿐 — 실제 스키마 확정 후 USERWEB 트랙이 대조·수정)"
     note: "USERWEB-005 API 재감사(2026-08-13, .harness/reports/userweb-api-audit-2026-08-13.md)에서 발견 — api-client.ts의 getProduct()가 가리키는 GET /products/{product_id}가 ground-truth 116경로 어디에도 없음을 확인. /exhibitors/{exhibitor_id}/products(목록)·/partner/products/{id}/trade-conditions(입점사 전용)와는 다른, 아직 없는 리소스."
+    evidence: >
+      GET /products/{product_id} 구현 완료(신규 모델·마이그레이션 불필요 — 기존
+      exhibition.product/event_product/exhibitor_participation/exhibitor/event 위에 순수
+      조회). 라우터(apps/api/app/api/v1/routers/exhibition_public.py) get_product() +
+      _product_not_found()(PRODUCT_NOT_FOUND, 404)를 기존 get_booth() 패턴 그대로 추가하고
+      exhibitors.py 호환 shim을 통해 이미 app.api.v1.api에 등록된 라우터에 자동 포함됨(별도
+      api.py 수정 없음, 확인: `test_router_is_registered_in_the_shared_api_router`). 서비스
+      apps/api/app/services/exhibition_public.py에 get_product_detail() 추가 — 리포지토리가
+      None을 반환하면(존재하지 않거나 승인 체인 불일치) None을 반환해 라우터가 404로 매핑.
+      리포지토리 apps/api/app/services/exhibition_public_repository.py에
+      fetch_product_detail_row() 추가 — Product(APPROVED, deleted_at IS NULL) ->
+      EventProduct(APPROVED) -> ExhibitorParticipation(APPROVED) -> Exhibitor(APPROVED,
+      deleted_at IS NULL) -> Event(OPEN) 5단 조인으로 기존 리포지토리가 다른 모든 공개
+      엔드포인트에 적용하는 것과 동일한 승인/활성 필터 체인을 강제(미승인 업체·미게시
+      참가·비활성 행사 소속 제품은 반드시 404). 응답모델은 기존 PublicProductDetail 재사용
+      (신규 스키마 없음, 08 §2.3 공개정보 필드만 — 도매가/MOQ/재고 등은 여전히 미노출).
+      테스트 apps/api/tests/test_exhibition_public_api.py에 5건 추가: (1)
+      test_all_eight_required_routes_are_registered_as_get(기존 7건→8건 갱신) (2)
+      test_product_detail_query_requires_full_approval_chain — 컴파일된 SQL에 5단 승인
+      필터 전부 존재 확인 (3)
+      test_get_product_detail_returns_only_public_fields_for_an_approved_product —
+      승인된 제품의 정상 조회 + PublicProductDetail이 도매가/MOQ/연락처/재고 필드를 노출하지
+      않음을 검증 (4) test_get_product_detail_returns_none_when_repository_finds_no_approved_row
+      — 존재하지 않는 product_id와 미승인 업체/미게시 참가 소속 제품이 둘 다 서비스 계층에서
+      None(→라우터 404)으로 수렴함을 검증 (5)
+      test_found_product_returns_envelope_with_only_public_fields — 라우터 GET
+      /api/v1/products/{id}가 200 envelope로 공개 필드만 반환함을 TestClient로 검증. 기존
+      test_missing_resource_returns_404_with_catalogued_error_code 파라미터에 products 케이스
+      (PRODUCT_NOT_FOUND) 추가.
+      검증: `python -m pytest apps/api/tests -q`(apps/api에서 실행) before=1250 passed/3
+      skipped/1 xfailed(git stash로 되돌려 실측), after=1255 passed/3 skipped/1 xfailed(신규
+      5건 전부 통과, 회귀 없음). `python -m ruff check`를 수정한 3개 소스 파일(라우터/서비스/
+      리포지토리)에 대해 실행 — All checks passed. 테스트 파일 자체의 ruff I001(import 정렬)
+      경고 2건은 이 작업 이전부터 원본 파일(git show HEAD)에 이미 존재하던 것으로 확인,
+      이 작업이 만든 문제가 아니므로 미수정(owned_paths 밖이기도 함).
+      api.py/models/__init__.py 미수정 확인(git diff에 두 파일 없음).
 
   - id: BACKEND-016
     title: QR 체크인 API (POST /check-ins)

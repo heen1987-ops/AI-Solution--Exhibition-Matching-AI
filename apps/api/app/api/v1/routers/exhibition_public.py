@@ -58,6 +58,12 @@ def _booth_not_found() -> HTTPException:
     return api_error(404, "BOOTH_NOT_FOUND", "운영 중인 공개 부스를 찾을 수 없습니다.")
 
 
+def _product_not_found() -> HTTPException:
+    return api_error(
+        404, "PRODUCT_NOT_FOUND", "존재하지 않거나 승인되지 않은 업체 소속 제품입니다."
+    )
+
+
 def _decode_cursor_or_400(cursor: str | None) -> None:
     """Cursor validity is only checked here so a bad cursor 400s before any query runs;
     the actual decode/compare happens again inside the service (single source of truth for
@@ -158,6 +164,16 @@ async def get_booth(
     detail = await service.get_booth_detail(db, booth_id=booth_id)
     if detail is None:
         raise _booth_not_found()
+    return build_envelope(detail, request_id)
+
+
+@router.get("/products/{product_id}", response_model=Envelope[PublicProductDetail])
+async def get_product(
+    product_id: uuid.UUID, db: DbDep, request_id: RequestIdDep
+) -> dict[str, object]:
+    detail = await service.get_product_detail(db, product_id=product_id)
+    if detail is None:
+        raise _product_not_found()
     return build_envelope(detail, request_id)
 
 

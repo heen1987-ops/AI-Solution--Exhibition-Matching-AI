@@ -425,6 +425,25 @@ async def get_booth_detail(
     return _booth_detail(booth, zone, exhibitor, products)
 
 
+async def get_product_detail(
+    db: AsyncSession, *, product_id: uuid.UUID
+) -> PublicProductDetail | None:
+    row = await repo.fetch_product_detail_row(db, product_id=product_id)
+    if row is None:
+        return None
+    event_product, product = row
+    images = list(await repo.fetch_images_by_product(db, product_ids=[product.product_id]))
+    category_ids = (
+        [product.category_concept_id] if product.category_concept_id is not None else []
+    )
+    category_codes = await resolve_concept_codes(db, category_ids)
+    summary = _product_summary(product, event_product, category_codes, images)
+    return PublicProductDetail(
+        **summary.model_dump(),
+        images=[_image_schema(image) for image in images],
+    )
+
+
 async def get_map(db: AsyncSession, *, event_id: uuid.UUID) -> PublicMapResponse | None:
     event = await repo.fetch_open_event(db, event_id=event_id)
     if event is None:
