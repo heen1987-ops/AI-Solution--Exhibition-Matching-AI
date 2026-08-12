@@ -664,7 +664,7 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P2
-    status: READY
+    status: IN_PROGRESS
     depends_on: [CONTRACT-003]
     owned_paths:
       - "apps/api/app/api/v1/routers/exhibition_public.py"
