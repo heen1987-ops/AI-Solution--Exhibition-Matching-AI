@@ -290,13 +290,13 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P1
-    status: READY
+    status: IN_PROGRESS
     depends_on: [CONTRACT-003, BACKEND-010]
     owned_paths: ["apps/api/app/api/v1/routers/admin.py"]
     acceptance:
       - "업체 승인/반려, 부스 상태 변경, 검색통계, 무결과 검색어 조회 엔드포인트"
       - "RBAC 적용 (EVENT_ADMIN, DATA_REVIEWER)"
-    note: "BACKEND-010의 검증된 principal/RBAC 완료로 시작 가능. partner.py와 겹치는 기능은 통합 시 중복 제거한다."
+    note: "BACKEND-010의 검증된 principal/RBAC 완료로 시작 가능. partner.py와 겹치는 기능은 통합 시 중복 제거한다. 2026-08-13 재검토: 검색통계/무결과 검색어는 WAVE2E의 GET /admin/analytics/{searches,no-results,data-quality}가 이미 충족 — 실제 남은 신규 범위는 업체 승인/반려 + 부스 상태 변경 두 엔드포인트뿐."
 
   - id: BACKEND-010
     title: 세션/JWT principal·RBAC·관리자 MFA 백엔드 기반
