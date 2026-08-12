@@ -136,7 +136,7 @@ tasks:
     wave: 2
     track: CONTRACTS
     priority: P1
-    status: READY
+    status: IN_PROGRESS
     depends_on: [CONTRACT-003]
     owned_paths:
       - ".harness/handoffs/contracts/change-request-005-favorites.md"
