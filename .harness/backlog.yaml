@@ -1548,6 +1548,20 @@ tasks:
       - "vitest itself (`pnpm test`) still passes fully (133+ tests) after the fix — this is a types-only issue, esbuild.jsx already works fine at runtime, do not change runtime jsx transform behavior while fixing the type"
     note: "Found and independently confirmed twice (2026-08-12, indoor-route-navigation workflow + human re-verification) inherited from the 2026-08-11 WAVE2CDE merge (commit bda6af6) — predates and is unrelated to any single feature. Root cause is almost certainly a vite/vitest version mismatch where the installed vite's ESBuildOptions type no longer includes `jsx` as a bare top-level key (may need `esbuild: {jsx: 'automatic', jsxImportSource: 'react'}` restructured under a different vite option, or a vite/vitest version bump) — read the actual installed vite version's type definitions before guessing at a fix."
 
+  - id: QUALITY-003
+    title: "Wrap hardcoded CheckConstraint names in op.f() across Alembic migrations to match SQLAlchemy's NAMING_CONVENTION-derived names"
+    wave: 3
+    track: QA
+    priority: P3
+    status: READY
+    depends_on: []
+    owned_paths:
+      - "apps/api/alembic/versions/**"
+    acceptance:
+      - "Every hand-authored CheckConstraint(..., name=\"...\") in apps/api/alembic/versions/ is wrapped in op.f() (or otherwise produces the exact same name SQLAlchemy's Base.metadata.naming_convention would derive for the equivalent ORM-level constraint)"
+      - "A regression test proves migration-applied constraint names match ORM-metadata-derived constraint names for every table, not just the ones happened to be checked so far"
+    note: "Found 2026-08-13 while implementing CONTRACT-005: apps/api/alembic/versions/20260803_0030_event_ingestion_failure.py's two CheckConstraint name= strings are NOT wrapped in op.f(), so NAMING_CONVENTION double-prefixes them relative to what the ORM model computes (reproducible today: compiled SQL shows ck_event_ingestion_failure_ck_event_ingestion_failure_s_7615 instead of the intended name). CONTRACT-005's own new migration (0032_favorite) used op.f() correctly, matching the correct precedent already set in 0011_slate_policy.py - so this is inconsistent usage across the migration history, not a universal bug. Low urgency (cosmetic constraint-name mismatch, not a functional defect) but worth a systematic sweep + a regression test so it can't silently recur, per QUALITY-001's spirit but scoped specifically to this naming issue rather than general ruff findings."
+
   - id: RECONCILE-001
     title: "Reconcile still-unprocessed external WAVE1-REDO/WAVE2A/WAVE2B prompts against current repo state"
     wave: 3
