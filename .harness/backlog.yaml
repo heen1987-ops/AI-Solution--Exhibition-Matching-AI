@@ -1390,7 +1390,7 @@ tasks:
     wave: 3
     track: BACKEND
     priority: P1
-    status: READY
+    status: IN_PROGRESS
     depends_on: []
     owned_paths:
       - "apps/api/app/services/notification/**"
