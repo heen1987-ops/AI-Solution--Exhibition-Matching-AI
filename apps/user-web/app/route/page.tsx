@@ -31,6 +31,9 @@ import type {
   RouteTargetInput,
 } from "@/lib/types";
 
+import CheckpointScanButton from "@/features/indoor-route/CheckpointScanButton";
+import RouteFloorPlan from "@/features/indoor-route/RouteFloorPlan";
+
 const QUEUE_KIND = "ROUTE_CREATE";
 const LAST_ZONE_KEY = "backju.last_zone.v1";
 const DRAFT_TARGETS_KEY = "backju.route_draft_targets.v2";
@@ -399,6 +402,13 @@ function RoutePageContent() {
     }
   }
 
+  function handleCheckpointScanned(updatedRoute: RouteResponse | null) {
+    if (updatedRoute) {
+      setRoute(updatedRoute);
+      setStatusMessage("현재 위치를 확인해 남은 동선을 다시 계산했습니다.");
+    }
+  }
+
   const snapshotTime = formatSnapshotTime(snapshotGeneratedAt);
 
   return (
@@ -674,24 +684,31 @@ function RoutePageContent() {
       {route ? (
         <section
           aria-live="polite"
-          className="backju-panel border p-5"
+          className="backju-panel flex flex-col gap-4 border p-5"
           style={{ borderColor: "var(--color-mint)", backgroundColor: "var(--color-surface)" }}
         >
-          <p className="font-bold">
-            약 {route.total_minutes ?? "?"}분 · 이동 {route.walking_minutes ?? "?"}분
-          </p>
-          <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
-            경로 상태: {ROUTE_STATUS_LABEL[route.status] ?? route.status}
-          </p>
-          <button
-            type="button"
-            onClick={handleRecalculate}
-            disabled={isRecalculating}
-            className="tap-target mt-3 border px-4 text-sm font-semibold disabled:opacity-60"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            {isRecalculating ? "다시 계산 중..." : "현재 상태로 다시 계산"}
-          </button>
+          <div>
+            <p className="font-bold">
+              약 {route.total_minutes ?? "?"}분 · 이동 {route.walking_minutes ?? "?"}분
+            </p>
+            <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
+              경로 상태: {ROUTE_STATUS_LABEL[route.status] ?? route.status}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleRecalculate}
+                disabled={isRecalculating}
+                className="tap-target border px-4 text-sm font-semibold disabled:opacity-60"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                {isRecalculating ? "다시 계산 중..." : "현재 상태로 다시 계산"}
+              </button>
+              <CheckpointScanButton onScanned={handleCheckpointScanned} />
+            </div>
+          </div>
+
+          <RouteFloorPlan items={route.items} />
         </section>
       ) : null}
 

@@ -38,6 +38,8 @@ import type {
   BuyerNeedsResponse,
   CheckInRequest,
   CheckInResponse,
+  CheckpointScanRequest,
+  CheckpointScanResponse,
   CompletenessResponse,
   ConsentsGetResponse,
   ConsentsPutRequest,
@@ -724,6 +726,21 @@ export function recalculateRoute(
   options?: RequestOptions,
 ): Promise<RouteResponse> {
   return apiPost<RouteResponse>(`/routes/${encodeURIComponent(routeId)}/recalculate`, undefined, options);
+}
+
+/** 부스 QR 체크포인트 스캔 (apps/api/app/api/v1/routers/route.py `POST
+ * /routes/checkpoint-scans`). 응답에 이미 재계산된 현재 ACTIVE 경로가 포함되어 있으므로,
+ * 호출부는 이 응답의 `route`를 그대로 화면 상태에 반영하면 되고 별도로 `recalculateRoute`를
+ * 다시 부를 필요가 없다. 외부 스캔 이벤트라 멱등키를 자동 생성한다. */
+export function checkpointScan(
+  request: CheckpointScanRequest,
+  options: RequestOptions = {},
+): Promise<CheckpointScanResponse> {
+  const idempotencyKey = options.idempotencyKey ?? generateClientId();
+  return apiPost<CheckpointScanResponse>("/routes/checkpoint-scans", request, {
+    ...options,
+    idempotencyKey,
+  });
 }
 
 // ===========================================================================

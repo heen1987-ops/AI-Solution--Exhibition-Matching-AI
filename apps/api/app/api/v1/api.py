@@ -40,6 +40,7 @@ from app.api.v1.routers.event_message import build_event_message_router
 from app.api.v1.routers.exhibitor_preference import build_exhibitor_preference_router
 from app.api.v1.routers.extraction import build_extraction_router
 from app.api.v1.routers.notification import build_notification_router
+from app.api.v1.routers.route import build_route_router
 
 api_router = APIRouter()
 api_router.include_router(auth.router, tags=["authentication"])
@@ -76,3 +77,4 @@ api_router.include_router(build_notification_router(), tags=["notifications"])
 api_router.include_router(
     build_event_message_router(), prefix="/admin", tags=["event-messages"]
 )
+api_router.include_router(build_route_router(), tags=["indoor-route"])

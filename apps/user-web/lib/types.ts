@@ -728,12 +728,6 @@ export interface InteractionBatchResponse {
 
 export type BoothOperatingStatus = OpenEnum<"OPEN" | "PAUSED" | "CLOSED">;
 
-export interface BoothLocation {
-  zone: string;
-  x: number;
-  y: number;
-}
-
 export interface BoothServices {
   tasting: boolean;
   purchase: boolean;
@@ -760,11 +754,22 @@ export interface BoothRecommendationContext {
   reasons: ReasonView[];
 }
 
+/**
+ * apps/api/app/schemas/exhibition_public.py PublicBoothDetail(PublicBoothSummary)의 실제
+ * 응답 형태에 맞춘다 - 구역·좌표가 중첩된 `location: {zone, x, y}` 객체가 아니라
+ * `zone_name`/`map_x`/`map_y` 평면 필드다 (apps/api/app/models/exhibitor.py Booth.map_x/
+ * map_y, Numeric(10,3) - 0~100 비율이 아닌 임의 축척이므로 그리는 쪽에서 바운딩박스를
+ * 계산해 맞춰야 한다). 이전에 있던 중첩 `BoothLocation` 타입은 실제로 존재한 적 없는
+ * 계약이었다 - route-positioning 트랙이 발견 즉시 바로잡았다(그 외 exhibitor/services/
+ * recommendation_context 필드의 실사용 여부는 이 트랙 범위 밖이라 손대지 않았다).
+ */
 export interface BoothDetailResponse {
   booth_id: string;
   booth_number: string;
   exhibitor: BoothExhibitorSummary;
-  location: BoothLocation;
+  zone_name: string | null;
+  map_x: number | null;
+  map_y: number | null;
   operating_status: BoothOperatingStatus;
   status_observed_at: IsoDateTime;
   estimated_wait_minutes: number | null;
@@ -886,6 +891,22 @@ export interface RouteResponse {
   walking_minutes: number | null;
   status: OpenEnum<"ACTIVE" | "COMPLETED" | "CANCELLED">;
   items: RouteItemView[];
+}
+
+/** 부스 QR 체크포인트 스캔 (apps/api/app/schemas/route.py CheckpointScanRequest/Response,
+ * apps/api/app/api/v1/routers/route.py `POST /routes/checkpoint-scans` 1:1 대응).
+ * `exhibition.booth_qr`를 재사용한 실내 위치 신호이며, 카메라 기반 정밀 실내측위가 아니다. */
+export interface CheckpointScanRequest {
+  qr_token: string;
+}
+
+export interface CheckpointScanResponse {
+  indoor_checkpoint_scan_id: string;
+  booth_id: string;
+  scanned_at: IsoDateTime;
+  /** 스캔 시점에 이 방문 세션 소유의 ACTIVE 경로가 있으면 새 위치로 이미 재계산되어 온다.
+   * 없으면 null - 스캔 자체는 항상 기록된다. */
+  route: RouteResponse | null;
 }
 
 // ---------------------------------------------------------------------------

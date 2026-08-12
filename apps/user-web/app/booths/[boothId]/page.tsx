@@ -176,7 +176,8 @@ export default function BoothDetailPage() {
       <div>
         <h1 className="text-xl font-bold">{booth.exhibitor.name}</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
-          {booth.booth_number} · {booth.location.zone}구역
+          {booth.booth_number}
+          {booth.zone_name ? ` · ${booth.zone_name}` : ""}
         </p>
       </div>
 
