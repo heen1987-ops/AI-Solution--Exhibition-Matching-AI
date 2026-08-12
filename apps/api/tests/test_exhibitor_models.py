@@ -62,8 +62,9 @@ def test_metadata_contains_published_supply_and_filter_tables() -> None:
     }
 
     assert expected <= set(Base.metadata.tables)
-    # 103 (pre-merge main) + 26 (WAVE 2C/2D/2E domains) + 6 (notification.*) = 135.
-    assert len(Base.metadata.sorted_tables) == 135
+    # 103 (pre-merge main) + 26 (WAVE 2C/2D/2E domains) + 6 (notification.*) = 135,
+    # + 1 (CONTRACT-005 interaction.favorite, 0032_favorite) = 136.
+    assert len(Base.metadata.sorted_tables) == 136
     assert "context_details" in Base.metadata.tables["matching.match_result"].c
     assert (
         "context_policy_version_id" in Base.metadata.tables["matching.match_result"].c
@@ -168,7 +169,7 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(APP_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0031_integration_source_sync"]
+    assert script.get_heads() == ["0032_favorite"]
 
 
 def test_object_embedding_migration_fail_closes_stale_catalog_summaries() -> None:
