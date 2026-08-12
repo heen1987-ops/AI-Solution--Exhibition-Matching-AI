@@ -754,7 +754,7 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P2
-    status: IN_PROGRESS
+    status: DONE
     depends_on: [CONTRACT-003]
     owned_paths:
       - "apps/api/app/api/v1/routers/feedback.py"
@@ -763,6 +763,41 @@ tasks:
       - "POST /feedback — U-17 방문 피드백 제출"
       - "apps/user-web/app/visits/[visitId]/feedback/page.tsx 화면과 apps/user-web/lib/api-client.ts의 postFeedback()이 참조할 수 있는 요청/응답 형태"
     note: "USERWEB-005 API 재감사(2026-08-13, .harness/reports/userweb-api-audit-2026-08-13.md)에서 발견 — postFeedback()이 가리키는 POST /feedback이 ground-truth 116경로에 없고, 어떤 in-flight 브랜치에도 이 백엔드 라우터가 없음을 확인."
+    evidence: >
+      Scope note (BACKEND-016과 동일한 판단 패턴, 문서화됨): owned_paths에 model이 없고 선행
+      CONTRACTS 작업도 없어 model+migration을 이 작업에서 함께 발행 (Blocker Score 낮음,
+      가역적). 구현: apps/api/app/models/feedback.py (Feedback, interaction.feedback,
+      db-erd §16.3), apps/api/alembic/versions/20260813_0034_feedback.py (revision
+      0034_feedback, down_revision 0033_check_in), apps/api/app/schemas/feedback.py
+      (FeedbackRequest/FeedbackResponse, apps/user-web/lib/types.ts와 1:1),
+      apps/api/app/services/feedback/service.py+__init__.py (submit_feedback -
+      resolve_active_visit_session_id는 app.services.checkin.service에서,
+      resolve_recommendable_id는 app.services.favorite.service에서 그대로 재사용 — 세
+      번째 구현을 새로 만들지 않음), apps/api/app/api/v1/routers/feedback.py
+      (build_feedback_router(), POST /feedback만 노출 — PATCH/PUT/DELETE 없음, 원본
+      불변). comment는 app/core/auth.py::encrypt_secret/decrypt_secret AEAD 봉투를
+      purpose="feedback-comment"로 재사용해 BYTEA(comment_enc)에 암호문만 저장 (평문
+      비저장, 라운드트립 테스트로 증명). TASTE/PRICE(선호)·CONGESTION/
+      SOLD_OUT_OR_CLOSED(상황)·EXPLANATION_ERROR(검수)를 PREFERENCE_REASON_CODES/
+      SITUATIONAL_REASON_CODES/REVIEW_QUEUE_REASON_CODES로 구조적으로 분리해 저장하고
+      (preference_adjustment 소비 파이프라인은 이 저장소에 아직 없음을 grep으로 확인 —
+      스코프 밖, 스텁도 만들지 않음), 이 파티션이 서로소이며 전체 집합을 정확히
+      커버함을 테스트로 증명. app/models/__init__.py에 feedback 모듈 등록(alembic-parity
+      테스트 요구사항). api.py는 미변경(다른 라우터들처럼 build_feedback_router()만
+      노출, 통합은 통합 담당자 책임 — favorites.py/checkin.py와 동일 컨벤션, 이 두
+      라우터도 아직 api.py에 등록되지 않은 상태였음을 확인). 테스트: 신규
+      tests/test_feedback_model.py(21개)+tests/test_feedback_api.py(23개)=44개 —
+      positive+negative reason 제출, comment 암호화 라운드트립(평문 비저장 증명),
+      rating enum 검증(스키마 422), object_type/object_id 미해결 거부(422), 세션 간
+      교차 귀속 없음, 불변성(PATCH/PUT/DELETE 미노출 — 라우터 목록 직접 검사 +
+      TestClient 405/404 확인), Idempotency-Key 재전송. 기존
+      tests/test_exhibitor_models.py의 하드코딩된 테이블 수(137→138)와 alembic head
+      값(0033_check_in→0034_feedback)도 갱신(사전 존재 테스트, BACKEND-016 때와 동일한
+      유지보수 필요). 검증: pytest 이전 1206 passed/3 skipped/1 xfailed → 이후 1250
+      passed/3 skipped/1 xfailed (신규 44개 전부 통과, 회귀 없음). alembic heads =
+      0034_feedback 단일 head. alembic upgrade head --sql 정상 컴파일(145개
+      CREATE TABLE). ruff check 신규/수정 파일 전부 clean(test_exhibitor_models.py의
+      기존 import-order 경고 1건은 이 작업 이전부터 존재 — git stash로 확인, 미수정).
 
   - id: USERWEB-006
     title: GUEST_WEB 로그인 없는 자연어 업체·부스 탐색
