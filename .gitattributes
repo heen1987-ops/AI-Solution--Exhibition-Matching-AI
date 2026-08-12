@@ -1,0 +1,10 @@
+# db/migrations/**/*.sql are hash-guarded "frozen" DDL contracts: several Alembic
+# migrations (e.g. apps/api/alembic/versions/20260801_0001_0002_ontology.py,
+# 20260801_0004_0005_exhibition.py) compute sha256(file bytes) at upgrade time and
+# refuse to run if it doesn't match a hardcoded digest, to catch accidental edits to
+# a published contract. That guard breaks on any Windows checkout with the common
+# core.autocrlf=true default, because autocrlf silently rewrites LF -> CRLF on
+# checkout, changing every byte and therefore the hash, with no content actually
+# changed. Pin these files to LF unconditionally so the digest is stable on every
+# platform regardless of the checking-out machine's autocrlf setting.
+db/migrations/**/*.sql text eol=lf
