@@ -680,15 +680,74 @@ tasks:
     wave: 2
     track: BACKEND
     priority: P1
-    status: IN_PROGRESS
+    status: DONE
     depends_on: [CONTRACT-003]
     owned_paths:
       - "apps/api/app/api/v1/routers/checkin.py"
       - "apps/api/app/schemas/checkin.py"
+      - "apps/api/app/models/checkin.py"
+      - "apps/api/app/services/checkin/**"
+      - "apps/api/alembic/versions/20260813_0033_check_in.py"
     acceptance:
       - "POST /check-ins — U-16 QR 체크인, 오프라인 재전송을 고려해 Idempotency-Key 지원"
       - "apps/user-web/app/check-in/[qrToken]/page.tsx 화면과 apps/user-web/lib/api-client.ts의 postCheckIn()이 참조할 수 있는 요청/응답 형태"
-    note: "USERWEB-005 API 재감사(2026-08-13, .harness/reports/userweb-api-audit-2026-08-13.md)에서 발견 — postCheckIn()이 가리키는 POST /check-ins가 ground-truth 116경로에 없고, 저장소 전체 git 이력에도 QR 체크인 백엔드 라우터 흔적이 없음을 확인(화면 페이지는 이미 존재하지만 API가 없다)."
+    note: "USERWEB-005 API 재감사(2026-08-13, .harness/reports/userweb-api-audit-2026-08-13.md)에서 발견 — postCheckIn()이 가리키는 POST /check-ins가 ground-truth 116경로에 없고, 저장소 전체 git 이력에도 QR 체크인 백엔드 라우터 흔적이 없음을 확인(화면 페이지는 이미 존재하지만 API가 없다). 판단(Blocker Score 낮음, 가역적, 여기 기록): CONTRACT-005/BACKEND-009와 달리 이 항목의 owned_paths에는 모델 파일이 없고, 체크인용 별도 CONTRACTS 선행 작업도 없다 — 아무도 소유하지 않고 영속성 없이는 기능이 성립하지 않으므로 이 작업에서 모델+마이그레이션까지 함께 게시했다(owned_paths 확장, 위 3개 경로 추가)."
+    evidence: >
+      POST /check-ins 구현 완료. 신규 파일: apps/api/app/models/checkin.py (CheckIn ORM 모델,
+      interaction.check_in), apps/api/alembic/versions/20260813_0033_check_in.py (리비전
+      0033_check_in, down_revision=0032_favorite, 단일 head 유지), apps/api/app/schemas/
+      checkin.py (CheckInRequest/CheckInResponse — apps/user-web/lib/types.ts와 필드 단위로
+      정확히 일치), apps/api/app/services/checkin/{__init__,service}.py (submit_check_in 등
+      오케스트레이션), apps/api/app/api/v1/routers/checkin.py (build_checkin_router() 노출,
+      api.py 미변경 — 마운트는 통합자 책임), apps/api/tests/test_checkin_model.py,
+      apps/api/tests/test_checkin_api.py.
+
+      소유권: interaction.check_in에는 user_id/guest_session_id 컬럼이 없다 — db-erd §16.2대로
+      visit_session에서 파생(profile.visit_session 자체가 exactly-one-owner CHECK를 이미 가짐).
+      visit_session_id/booth_id는 이 리포 기존 관례대로 (tenant_id, event_id, <id>) 3컬럼 복합
+      FK.
+
+      QR 검증: app/core/auth.py::digest_secret을 새 purpose="booth-qr"로 재사용해
+      exhibition.booth_qr.token_hmac을 조회(원문 토큰은 저장하지 않음, personal-access-link와
+      동일 패턴) — status=ACTIVE, valid_from/valid_until, 부스의 tenant/event 일치를 매 호출마다
+      전부 재검사(미리보기 엔드포인트 없음 — 프론트 화면에 별도 검증 API 호출이 없어 불필요로
+      판단). Booth.operating_status=CLOSED만 체크인 거부(PAUSED는 허용) — 작업 지시대로.
+
+      5분 중복방지: app/services/object_embeddings.py의 pg_advisory_xact_lock(hashtextextended
+      (...)) 패턴을 그대로 재사용해 (visit_session_id, booth_id) 잠금 후
+      event_id+booth_id+visit_session_id 범위에서 checked_in_at ±5분 조회. 중복이면 기존
+      check_in_id/checked_in_at/activities를 duplicate=true로 그대로 반환(오류 아님, 병합도
+      안 함).
+
+      Idempotency-Key: integration.idempotency_record를 webhooks.py와 동일 패턴으로 재사용
+      (principal_fingerprint=compute_principal_fingerprint(user_id 또는 guest_session_id),
+      method=POST, route=/check-ins) — 병렬 메커니즘 신설 없음. response_status를
+      201(신규)/200(중복) 그대로 저장해 재생 시 새 컬럼 없이 duplicate 플래그를 복원.
+
+      인증: favorites.py와 동일하게 app/api/v1/routers/profile.py::get_current_subject
+      (CurrentSubject) 재사용 — recommendations.py의 무거운 서명된 site-context 흐름은 쓰지
+      않음(REGISTERED_WEB/GUEST_WEB 브라우저 직접 호출이므로). visit_session_id는
+      X-Visit-Session-Id 헤더 없이 서버가 CurrentSubject로부터 자체 해석
+      (resolve_active_visit_session_id — ACTIVE 우선, PLANNED 허용, COMPLETED/CANCELLED 제외).
+
+      오류 응답은 favorites.py의 맨 문자열 detail이 아니라 profile.py::api_error 봉투
+      사용(INVALID_QR/BOOTH_CLOSED/VISIT_SESSION_NOT_FOUND) — 프론트
+      apps/user-web/lib/api-client.ts의 extractErrorBody가 구조화된 detail.code만 읽으므로
+      err.code === "INVALID_QR" 분기가 실제로 동작하려면 필수.
+
+      app/api/v1/api.py, 기존 파일(app/models/__init__.py 제외) 미변경. app/models/__init__.py는
+      "checkin" 모듈만 추가(CONTRACT-005가 favorite에 한 것과 동일 — alembic-parity 테스트
+      (tests/test_alembic_orm_parity.py)가 app.models 임포트로 전체 도메인을 등록해야 통과하므로
+      선택이 아니라 필수).
+
+      검증: pytest 이전 1171 passed, 3 skipped, 1 xfailed → 이후 1206 passed, 3 skipped, 1
+      xfailed (신규 35개: test_checkin_model.py 12개 + test_checkin_api.py 23개, 전부 통과).
+      tests/test_exhibitor_models.py의 하드코딩된 테이블 수(136→137)와 alembic head
+      (0032_favorite→0033_check_in) 단언도 함께 갱신(사전 존재하던 회귀 감지 테스트, 새 테이블/
+      마이그레이션마다 갱신이 필요한 구조 — CONTRACT-005 때도 동일하게 갱신됨).
+      alembic heads: 0033_check_in 단일 head. alembic upgrade head --sql: 클린 컴파일 확인.
+      ruff check(변경 파일 전체): all checks passed(test_exhibitor_models.py의 기존 import-정렬
+      경고 1건은 이 작업 이전부터 있던 것으로 git stash로 확인, 내 변경과 무관해 손대지 않음).
 
   - id: BACKEND-017
     title: 방문 피드백 API (POST /feedback)
