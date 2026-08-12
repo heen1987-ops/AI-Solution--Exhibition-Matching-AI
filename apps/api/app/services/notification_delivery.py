@@ -4,6 +4,21 @@ Matching creates versioned snapshots. This module may announce an explicitly app
 event, but it never calculates or reranks recommendations. Provider implementations are injected
 by a worker after a Kakao official dealer, SMS/email providers, template codes, callback security,
 and credentials have been approved.
+
+NOTIFICATION_EMAIL consent gate on the EMAIL step (NOTIFY-002 / DECISION-024)
+-------------------------------------------------------------------------------
+``dispatch_notification`` re-checks the same ``NOTIFICATION_EMAIL`` consent purpose the inbox
+pipeline already checks (``app.services.notification.service.email_processing_basis_stmt``)
+immediately before attempting the EMAIL step of the Alimtalk -> SMS -> EMAIL fallback chain -
+not just at subscription/preference time. A user with no currently-effective, accepted
+``NOTIFICATION_EMAIL`` consent (never granted, or granted and later withdrawn - consent history
+is append-only per ``app.models.consent``, so the latest row wins) gets that EMAIL attempt
+recorded as ``SKIPPED`` with ``failure_code="CONSENT_MISSING"`` instead of sent. Alimtalk and SMS
+are untouched by this gate - this repository does not condition those channels on any consent
+purpose today, and this module does not invent one.
+
+See ``app.services.notification.type_mapping`` for the separate, documented translation table
+between this module's ``notification_type`` vocabulary and the inbox pipeline's.
 """
 
 from __future__ import annotations
@@ -26,6 +41,7 @@ from app.models.integration import (
     NotificationDelivery,
     OutboxEvent,
 )
+from app.services.notification.service import email_processing_basis_stmt
 
 NotificationChannel = Literal["KAKAO_ALIMTALK", "SMS", "EMAIL"]
 NotificationHoldReason = Literal[
@@ -346,6 +362,10 @@ async def dispatch_notification(
 
     Provider calls are impossible unless the caller supplies a fully open release gate. This keeps
     production fail-closed even if adapters or credentials are configured ahead of launch.
+
+    Immediately before the EMAIL step, this re-checks the recipient's ``NOTIFICATION_EMAIL``
+    consent (see module docstring) and records a ``SKIPPED``/``CONSENT_MISSING`` attempt instead
+    of sending when no currently-effective, accepted consent exists. Alimtalk/SMS are unaffected.
     """
 
     release_gate = release_gate or NotificationReleaseGate()
@@ -368,6 +388,29 @@ async def dispatch_notification(
 
     for sequence, channel in enumerate(CHANNEL_ORDER, start=sequence_offset + 1):
         provider = providers.get(channel)
+        if channel == "EMAIL":
+            has_email_consent = await db.scalar(
+                email_processing_basis_stmt(
+                    tenant_id=delivery.tenant_id,
+                    user_id=delivery.user_id,
+                    now=current_time,
+                )
+            )
+            if not has_email_consent:
+                attempt = NotificationAttempt(
+                    notification_delivery_id=delivery.notification_delivery_id,
+                    sequence=sequence,
+                    channel=channel,
+                    provider_code=(
+                        provider.provider_code if provider else "NOT_CONFIGURED"
+                    ),
+                    status="SKIPPED",
+                    failure_code="CONSENT_MISSING",
+                    requested_at=current_time,
+                )
+                db.add(attempt)
+                attempts.append(attempt)
+                continue
         message = render_recommendation_ready_message(
             delivery,
             identity=identity,

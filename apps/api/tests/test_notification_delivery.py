@@ -151,6 +151,28 @@ class _RecordingDb:
                     setattr(row, field, uuid4())
 
 
+class _ConsentGatedRecordingDb(_RecordingDb):
+    """Like ``_RecordingDb`` but returns queued ``scalar()`` results in call order.
+
+    ``dispatch_notification`` issues at most two ``db.scalar`` calls when only the EMAIL
+    channel has a configured provider: the sequence-offset lookup (first), then the
+    NOTIFICATION_EMAIL consent check immediately before the EMAIL attempt (second). Consent
+    behavior in this repo has no live-Postgres test path (see test_notification_api.py's own
+    docstring on the project's testing convention), so this mirrors the existing
+    ``_RecordingDb`` mock-based pattern already used throughout this file.
+    """
+
+    def __init__(self, scalar_queue: list[object]) -> None:
+        super().__init__()
+        self._scalar_queue = list(scalar_queue)
+
+    async def scalar(self, statement):
+        self.executions.append(statement)
+        if self._scalar_queue:
+            return self._scalar_queue.pop(0)
+        return None
+
+
 class _Provider:
     def __init__(
         self,
@@ -403,6 +425,102 @@ async def test_dispatch_without_external_switch_calls_no_provider() -> None:
     assert alimtalk.messages == []
     assert sms.messages == []
     assert email.messages == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_sends_email_when_notification_email_consent_is_effective() -> None:
+    """A user with a currently-effective, accepted NOTIFICATION_EMAIL consent gets the EMAIL
+    attempt created normally (NOTIFY-002 acceptance: consent-granted path)."""
+
+    settings = _settings()
+    event = _event()
+    user_id = uuid4()
+    delivery = _delivery(settings, event, user_id)
+    db = _ConsentGatedRecordingDb(scalar_queue=[None, True])
+    email = _Provider("EMAIL", accepted=True)
+
+    outcome = await dispatch_notification(
+        db,  # type: ignore[arg-type]
+        delivery,
+        identity=_identity(settings, user_id),
+        event=event,
+        providers={"EMAIL": email},
+        release_gate=_live_gate(),
+        settings=settings,
+        now=datetime(2026, 8, 3, tzinfo=UTC),
+    )
+
+    assert outcome.sent is True
+    assert outcome.channel == "EMAIL"
+    email_attempt = next(a for a in outcome.attempts if a.channel == "EMAIL")
+    assert email_attempt.status == "SENT"
+    assert email_attempt.failure_code is None
+    assert len(email.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_skips_email_when_notification_email_consent_was_withdrawn() -> None:
+    """A user who explicitly withdrew NOTIFICATION_EMAIL consent (append-only history per
+    app/models/consent.py - the latest UserConsent row has accepted=False) never gets an EMAIL
+    attempt sent, even though the outbound delivery/attempt rows for earlier channels in the
+    Alimtalk -> SMS -> EMAIL chain are unaffected by this gate (NOTIFY-002 acceptance:
+    consent-withdrawn path). ``email_processing_basis_stmt`` returning a falsy/absent row is
+    exactly what a withdrawal or a never-granted consent both look like to the caller."""
+
+    settings = _settings()
+    event = _event()
+    user_id = uuid4()
+    delivery = _delivery(settings, event, user_id)
+    db = _ConsentGatedRecordingDb(scalar_queue=[None, False])
+    email = _Provider("EMAIL", accepted=True)
+
+    outcome = await dispatch_notification(
+        db,  # type: ignore[arg-type]
+        delivery,
+        identity=_identity(settings, user_id),
+        event=event,
+        providers={"EMAIL": email},
+        release_gate=_live_gate(),
+        settings=settings,
+        now=datetime(2026, 8, 3, tzinfo=UTC),
+    )
+
+    assert outcome.sent is False
+    email_attempt = next(a for a in outcome.attempts if a.channel == "EMAIL")
+    assert email_attempt.status == "SKIPPED"
+    assert email_attempt.failure_code == "CONSENT_MISSING"
+    assert email.messages == []
+    assert delivery.status == "FAILED"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_does_not_consent_gate_alimtalk_or_sms() -> None:
+    """The NOTIFICATION_EMAIL consent gate applies only to the EMAIL step - Alimtalk/SMS are
+    untouched, matching this repo's existing (lack of) consent gating on those channels."""
+
+    settings = _settings()
+    event = _event()
+    user_id = uuid4()
+    delivery = _delivery(settings, event, user_id)
+    # Only one scalar() call expected: the sequence-offset lookup. No EMAIL provider is
+    # configured, so the channel loop never reaches the consent-check branch.
+    db = _ConsentGatedRecordingDb(scalar_queue=[None])
+    alimtalk = _Provider("KAKAO_ALIMTALK", accepted=True)
+
+    outcome = await dispatch_notification(
+        db,  # type: ignore[arg-type]
+        delivery,
+        identity=_identity(settings, user_id),
+        event=event,
+        providers={"KAKAO_ALIMTALK": alimtalk},
+        release_gate=_live_gate(),
+        settings=settings,
+        now=datetime(2026, 8, 3, tzinfo=UTC),
+    )
+
+    assert outcome.sent is True
+    assert outcome.channel == "KAKAO_ALIMTALK"
+    assert len(db.executions) == 1
 
 
 @pytest.mark.asyncio

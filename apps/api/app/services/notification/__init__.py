@@ -19,12 +19,14 @@ channel. Neither replaces the other and neither shares a table with the other.
 
 Reconciling the two notification_type vocabularies (CONTRACTS: do not let these drift)
 --------------------------------------------------------------------------------------
-The two halves name the same real-world occurrences differently. Until a single shared
-vocabulary module exists (deliberately a FOLLOW-UP, not part of this port - renaming either
-side today would break a live DB CHECK constraint on both
-``integration.notification_delivery.notification_type`` and
-``notification.notifications.notification_type``), this table IS the mapping. Any new value
-added to either side must be added here at the same time.
+The two halves name the same real-world occurrences differently. Renaming either side would
+break a live DB CHECK constraint on both ``integration.notification_delivery.notification_type``
+and ``notification.notifications.notification_type`` for no functional benefit, so instead
+``app.services.notification.type_mapping`` is the single source of truth for the correspondence
+(NOTIFY-002 / DECISION-024). The table below is a human-readable summary of that module; the
+module itself - plus ``tests/test_notification_type_mapping.py`` - is what's actually
+enforced. Any new value added to either side's ``NOTIFICATION_TYPES`` must be added to
+``type_mapping.py`` at the same time, or that test starts failing.
 
     business occurrence          | INBOX notification_type   | OUTBOUND notification_type
                                  | (models/notification.py)  | (models/integration.py)
@@ -55,9 +57,12 @@ Two further contract rules that follow from CR-012 and apply to BOTH halves:
   - ``notification.notification_templates`` is INFORMATIONAL-only and must never carry raw
     contact values, exactly as ``integration.notification_delivery``'s
     ``message_class = 'INFORMATIONAL'`` CHECK enforces on the outbound side.
-  - The outbound EMAIL channel must consult the same ``NOTIFICATION_EMAIL`` consent purpose
-    this package already checks (``service.email_processing_basis_stmt``), or a user who
-    withdrew consent keeps receiving mail on the outbound path.
+  - The outbound EMAIL channel consults the same ``NOTIFICATION_EMAIL`` consent purpose this
+    package already checks (``service.email_processing_basis_stmt``, imported directly by
+    ``notification_delivery.dispatch_notification`` rather than re-querying by hand) immediately
+    before the EMAIL step of the Alimtalk -> SMS -> EMAIL chain, so a user who withdrew consent
+    stops receiving mail on the outbound path too (NOTIFY-002 / DECISION-024). Alimtalk/SMS are
+    unaffected - this repo does not gate those channels on any consent purpose today.
 """
 
 from __future__ import annotations
