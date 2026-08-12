@@ -599,10 +599,57 @@ tasks:
     wave: 2
     track: USER_WEB
     priority: P1
-    status: READY
+    status: DONE
     depends_on: [CONTRACT-003]
     owned_paths: ["apps/user-web/lib/api-client.ts", "apps/user-web/lib/types.ts"]
     note: "CONTRACT-003 완료 결과를 기준으로 현재 API client 경로를 재감사할 수 있다."
+    evidence: ".harness/reports/userweb-api-audit-2026-08-13.md — 코드 대 코드 재감사(2026-08-02 재설계 문서 비교였던 DECISION-005와 별개). 36개 export 함수 점검: A(일치) 25, B(공백) 8, C(경로 오기) 0. C가 0건이라 api-client.ts/types.ts 자체 수정 없음. B 8건 중 5건(getProduct, postCheckIn, postFeedback + 즐겨찾기 3함수)은 기존 BACKEND-009(즐겨찾기, BLOCKED)가 이미 소유하거나 신규 BACKEND-016/017이 커버, 나머지 1건(getProduct)은 신규 BACKEND-015, routes 2건(createRoute/recalculateRoute)은 feature/indoor-route-navigation 브랜치에서 이미 구현 완료(경로까지 일치) 확인. BACKEND-009 실제 계약 경로가 /favorites가 아니라 /me/favorites임을 보고서에 명시. 신규 backlog 3건 생성(BACKEND-015/016/017)."
+
+  - id: BACKEND-015
+    title: 공개 제품 단건 상세 API (GET /products/{product_id})
+    wave: 2
+    track: BACKEND
+    priority: P2
+    status: READY
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/exhibition_public.py"
+      - "apps/api/app/schemas/exhibition_public.py"
+    acceptance:
+      - "GET /products/{product_id} — 인증 없이 접근 가능한 공개 제품 단건 상세(08 2.3절 공개정보 필드만, 도매가/MOQ 등 인증 바이어·상담수락 이후 필드는 제외)"
+      - "존재하지 않거나 승인되지 않은 업체 소속 제품은 404"
+      - "apps/user-web/lib/api-client.ts의 getProduct()와 lib/types.ts의 ProductDetailResponse가 참조할 수 있는 응답 형태(현재는 재설계 문서 프로즈 기준의 잠정 계약뿐 — 실제 스키마 확정 후 USERWEB 트랙이 대조·수정)"
+    note: "USERWEB-005 API 재감사(2026-08-13, .harness/reports/userweb-api-audit-2026-08-13.md)에서 발견 — api-client.ts의 getProduct()가 가리키는 GET /products/{product_id}가 ground-truth 116경로 어디에도 없음을 확인. /exhibitors/{exhibitor_id}/products(목록)·/partner/products/{id}/trade-conditions(입점사 전용)와는 다른, 아직 없는 리소스."
+
+  - id: BACKEND-016
+    title: QR 체크인 API (POST /check-ins)
+    wave: 2
+    track: BACKEND
+    priority: P1
+    status: READY
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/checkin.py"
+      - "apps/api/app/schemas/checkin.py"
+    acceptance:
+      - "POST /check-ins — U-16 QR 체크인, 오프라인 재전송을 고려해 Idempotency-Key 지원"
+      - "apps/user-web/app/check-in/[qrToken]/page.tsx 화면과 apps/user-web/lib/api-client.ts의 postCheckIn()이 참조할 수 있는 요청/응답 형태"
+    note: "USERWEB-005 API 재감사(2026-08-13, .harness/reports/userweb-api-audit-2026-08-13.md)에서 발견 — postCheckIn()이 가리키는 POST /check-ins가 ground-truth 116경로에 없고, 저장소 전체 git 이력에도 QR 체크인 백엔드 라우터 흔적이 없음을 확인(화면 페이지는 이미 존재하지만 API가 없다)."
+
+  - id: BACKEND-017
+    title: 방문 피드백 API (POST /feedback)
+    wave: 2
+    track: BACKEND
+    priority: P2
+    status: READY
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/feedback.py"
+      - "apps/api/app/schemas/feedback.py"
+    acceptance:
+      - "POST /feedback — U-17 방문 피드백 제출"
+      - "apps/user-web/app/visits/[visitId]/feedback/page.tsx 화면과 apps/user-web/lib/api-client.ts의 postFeedback()이 참조할 수 있는 요청/응답 형태"
+    note: "USERWEB-005 API 재감사(2026-08-13, .harness/reports/userweb-api-audit-2026-08-13.md)에서 발견 — postFeedback()이 가리키는 POST /feedback이 ground-truth 116경로에 없고, 어떤 in-flight 브랜치에도 이 백엔드 라우터가 없음을 확인."
 
   - id: USERWEB-006
     title: GUEST_WEB 로그인 없는 자연어 업체·부스 탐색
