@@ -1,8 +1,8 @@
 # Domain Model (formalized from existing implementation)
 
 > Task: CONTRACT-002. Source of truth remains [docs/db-erd-table-spec.md](../../docs/db-erd-table-spec.md)
-> and `apps/api/app/models/**` (28 mapped domain modules plus `common.py`, 32 Alembic migrations,
-> single head `0032_favorite`, 136 tables, SQL-compile verified). This file is a
+> and `apps/api/app/models/**` (30 mapped domain modules plus `common.py`, 35 Alembic migrations,
+> single head `0035_check_constraint_naming_fix`, 138 tables, SQL-compile verified). This file is a
 > navigable summary, not a duplicate — do not let it drift; regenerate when model files change
 > materially.
 >
@@ -15,6 +15,17 @@
 > `interaction.favorite`, a persistent saved-items table. Model + migration + contract docs only;
 > BACKEND-009 owns the CRUD API. See
 > `.harness/handoffs/contracts/change-request-005-favorites.md`.
+>
+> **2026-08-13 (CR-014/CR-015, retroactive)**: adds `checkin.py` / migration `0033_check_in`
+> (`interaction.check_in`) and `feedback.py` / migration `0034_feedback` (`interaction.feedback`).
+> Both were built by BACKEND-016/BACKEND-017 without a prior Change Request — a confirmed
+> governance violation found by a 2026-08-13 design-conformance code review (the schemas
+> themselves were independently verified correct against db-erd §16.2/§16.3, only the
+> CONTRACTS-approval paper trail was missing). CR-014/CR-015 retroactively document and approve
+> what was already shipped; see those files for the full technical summary and the governance
+> incident record. Also adds migration `0035_check_constraint_naming_fix` (QUALITY-003, an
+> additive corrective migration renaming 12 mismatched `CheckConstraint` names in historical
+> migrations via `op.execute("ALTER TABLE ... RENAME CONSTRAINT ...")` — no new tables).
 
 ## Module → schema → responsibility
 
@@ -41,6 +52,8 @@
 | `indexing.py` *(WAVE2D)* | `indexing` | PUBLIC/VERIFIED_BUYER search-tier `SearchDocument` — a grain-level exposure-tier layer complementary to (not a duplicate of) `ai.object_embedding`'s vector-recall layer; see DECISION-025 |
 | `interaction_event.py` *(WAVE2E)* | `interaction` | `EventIngestionFailure` (migration 0030) backing main's authenticated `POST /interactions/batch`; the worktree's own anonymous `/events/interaction` router was not ported (folded in, see DECISION-027) |
 | `favorite.py` *(CONTRACT-005)* | `interaction` | `Favorite` (migration 0032) — persistent saved-items ("watchlist") table, db-erd §16.1. Owner is exactly one of `user_id`/`guest_session_id` (`CHECK num_nonnulls(...) = 1`); target is the standard three-column composite FK into `exhibition.recommendable`; duplicate prevention uses two partial UNIQUE indexes (one per owner type, scoped `WHERE deleted_at IS NULL`) so a soft-deleted favorite never blocks a later re-favorite of the same pair. **Distinct from** `matching.py::InteractionEvent`'s `FAVORITE_ADD`/`FAVORITE_REMOVE` `event_type` values, which are an unrelated append-only behavior-event log (migration 0008) — do not conflate the two. Model + migration only; the CRUD API (`GET/POST/DELETE /me/favorites`) is BACKEND-009's separate downstream task. See `.harness/handoffs/contracts/change-request-005-favorites.md`. |
+| `checkin.py` *(BACKEND-016, CR-014 retroactive)* | `interaction` | `CheckIn` (migration 0033) — QR/manual/staff check-in log, db-erd §16.2. No owner columns at all; subject is derived by joining `visit_session_id` -> `profile.visit_session` (which already carries its own exactly-one-owner CHECK). Three-column composite FKs into `exhibition.event`/`profile.visit_session`/`exhibition.booth`. `qr_id`/`qr_key_version` populated only on the QR path. The 5-minute dedupe window is a runtime `pg_advisory_xact_lock` + range-query pattern (`app/services/checkin/service.py`), not a schema constraint. `client_event_id` partial-unique index is a belt-and-suspenders safety net; `integration.idempotency_record` is the primary Idempotency-Key mechanism. See `.harness/handoffs/contracts/change-request-014-checkin.md`. |
+| `feedback.py` *(BACKEND-017, CR-015 retroactive)* | `interaction` | `Feedback` (migration 0034) — post-visit feedback, db-erd §16.3, append-only (no `updated_at`/`deleted_at` columns at all). Same no-owner-column/derive-via-visit_session shape as `checkin.py`. `rating` is a DB-level closed-set CHECK; `positive_reasons`/`negative_reasons` (JSONB arrays) are validated at the Pydantic layer (`FeedbackReasonCode = Literal[*FEEDBACK_REASON_CODES]`, derived from this module's own `PREFERENCE_REASON_CODES`/`SITUATIONAL_REASON_CODES`/`REVIEW_QUEUE_REASON_CODES` partition — TASTE/PRICE preference signals must never blend with CONGESTION/SOLD_OUT_OR_CLOSED situational ones). `comment` is stored as AES-GCM ciphertext (`app/core/auth.py::encrypt_secret`, `purpose="feedback-comment"`), never plaintext. See `.harness/handoffs/contracts/change-request-015-feedback.md`. |
 | `analytics.py` *(WAVE2E)* | `analytics` | Rollup tables with a DB-level `CHECK '(suppressed=false) OR (event_count IS NULL AND distinct_actor_count IS NULL)'` making a suppressed (k<5) row physically incapable of carrying counts |
 | `notification.py` *(WAVE2E)* | `notification` | In-app inbox: Notification, NotificationPreference, NotificationTemplate, NotificationRule, `NotificationChannelDelivery`/`NotificationChannelDeliveryAttempt` (renamed from the worktree's own `NotificationDelivery`/`NotificationDeliveryAttempt` to resolve a `configure_mappers()` class-name collision with `integration.py` — table names unchanged, see DECISION-024) |
 | `event_message.py` *(WAVE2E)* | `event_message` | Operator-authored event-wide broadcasts; approve/schedule/publish are irreversible and require `require_roles('EVENT_ADMIN', fresh_mfa=True)` |
@@ -86,3 +99,9 @@
   변경하지 않았다. `python -m pytest apps/api/tests -q` 1141 passed(=1126+15)/3 skipped/1
   xfailed, `alembic heads` 단일 `0032_favorite`, `alembic upgrade head --sql` 오프라인 컴파일
   통과로 검증했다.
+- 2026-08-13 CR-014/CR-015 (소급): `0033_check_in`, `0034_feedback`, `0035_check_constraint_
+  naming_fix`로 단일 head 갱신(35개 마이그레이션, 138 ORM 테이블). `interaction.check_in`,
+  `interaction.feedback` 두 테이블 추가(둘 다 BACKEND-016/BACKEND-017이 사전 Change Request
+  없이 게시 — 이 두 CR이 소급 승인) + 기존 12개 CheckConstraint 이름 정정(QUALITY-003, 테이블
+  추가 없음). `python -m pytest apps/api/tests -q` 1272 passed/3 skipped/1 xfailed, `alembic
+  heads` 단일 `0035_check_constraint_naming_fix`로 검증했다.

@@ -785,6 +785,13 @@ tasks:
       ruff check(변경 파일 전체): all checks passed(test_exhibitor_models.py의 기존 import-정렬
       경고 1건은 이 작업 이전부터 있던 것으로 git stash로 확인, 내 변경과 무관해 손대지 않음).
 
+      거버넌스 정정 (2026-08-13): 2026-08-13 설계정합성 코드 리뷰가 위 owned_paths 확장을
+      Change Request 없는 CONTRACTS 소유 경로(apps/api/app/models/**, apps/api/alembic/**)
+      무단 수정으로 CONFIRMED 지적. 사용자 요청("BACKEND-016/017 소급 Change Request
+      작성해줘")에 따라 .harness/handoffs/contracts/change-request-014-checkin.md로 소급
+      승인·문서화, .harness/contracts/domain-model.md도 실제 상태로 갱신됨. 스키마 자체는
+      변경 없음 — 기록만 정정.
+
   - id: BACKEND-017
     title: 방문 피드백 API (POST /feedback)
     wave: 2
@@ -795,6 +802,9 @@ tasks:
     owned_paths:
       - "apps/api/app/api/v1/routers/feedback.py"
       - "apps/api/app/schemas/feedback.py"
+      - "apps/api/app/models/feedback.py"
+      - "apps/api/app/services/feedback/**"
+      - "apps/api/alembic/versions/20260813_0034_feedback.py"
     acceptance:
       - "POST /feedback — U-17 방문 피드백 제출"
       - "apps/user-web/app/visits/[visitId]/feedback/page.tsx 화면과 apps/user-web/lib/api-client.ts의 postFeedback()이 참조할 수 있는 요청/응답 형태"
@@ -834,6 +844,16 @@ tasks:
       0034_feedback 단일 head. alembic upgrade head --sql 정상 컴파일(145개
       CREATE TABLE). ruff check 신규/수정 파일 전부 clean(test_exhibitor_models.py의
       기존 import-order 경고 1건은 이 작업 이전부터 존재 — git stash로 확인, 미수정).
+
+      거버넌스 정정 (2026-08-13): 2026-08-13 설계정합성 코드 리뷰가 이 작업을 BACKEND-016보다
+      더 심각한 CONFIRMED 위반으로 지적 — CONTRACTS 소유 경로를 Change Request 없이 수정했을
+      뿐 아니라, 자신의 owned_paths 필드조차 갱신하지 않아 백로그 기록 자체가 실제 변경
+      내용과 불일치했다. 사용자 요청("BACKEND-016/017 소급 Change Request 작성해줘")에 따라
+      .harness/handoffs/contracts/change-request-015-feedback.md로 소급 승인·문서화하고,
+      위 owned_paths에 apps/api/app/models/feedback.py / apps/api/app/services/feedback/** /
+      apps/api/alembic/versions/20260813_0034_feedback.py를 추가해 실제 변경 내용과 일치시켰다
+      (사후 정정, 이 작업의 실제 구현은 변경 없음). .harness/contracts/domain-model.md도 실제
+      상태로 갱신됨.
 
   - id: USERWEB-006
     title: GUEST_WEB 로그인 없는 자연어 업체·부스 탐색
@@ -1878,9 +1898,14 @@ tasks:
       on feature/contract-005-favorites.
       Two related governance findings from the same review (BACKEND-016/017 self-expanded their
       own owned_paths into CONTRACTS-locked apps/api/app/models/**/apps/api/alembic/** without a
-      Change Request) were reported to the user but are NOT fixed by this task — they are a
-      process/record-keeping gap, not a runtime defect, and retroactively filing a Change Request
-      after the fact needs a human governance call, not a unilateral second self-authorization.
+      Change Request) were reported to the user but were NOT fixed by this task — a
+      process/record-keeping gap, not a runtime defect, needing a human governance call rather
+      than a unilateral second self-authorization.
+
+      UPDATE (2026-08-13): user explicitly requested the retroactive Change Requests
+      ("BACKEND-016/017 소급 Change Request 작성해줘") — see change-request-014-checkin.md and
+      change-request-015-feedback.md, and the governance-correction notes on the BACKEND-016/017
+      entries above. Resolved.
 
   - id: QUALITY-004
     title: "Fix favorite-list pagination skip bug + derive FeedbackReasonCode from the model, not a hand-duplicated Literal"
