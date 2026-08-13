@@ -72,7 +72,7 @@ class ContactShareRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _require_details_when_accepted(self) -> "ContactShareRequest":
+    def _require_details_when_accepted(self) -> ContactShareRequest:
         if self.accepted and not self.document_version:
             raise ValueError(
                 "contact_share.document_version is required when accepted is true"
@@ -190,7 +190,7 @@ class PartnerDecisionRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _slot_required_unless_reject(self) -> "PartnerDecisionRequest":
+    def _slot_required_unless_reject(self) -> PartnerDecisionRequest:
         if self.action in ("ACCEPT", "COUNTER_PROPOSE") and self.slot_id is None:
             raise ValueError("slot_id is required for ACCEPT and COUNTER_PROPOSE")
         return self

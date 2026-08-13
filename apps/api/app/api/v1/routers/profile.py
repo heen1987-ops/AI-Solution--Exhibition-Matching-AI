@@ -75,11 +75,13 @@ import base64
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from meet_ai.ontology import Catalog, load_catalog
+from meet_ai.ontology.catalog import stable_uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,8 +125,6 @@ from app.schemas.profile import (
     VisitPlanRequest,
     VisitPlanResponse,
 )
-from meet_ai.ontology import Catalog, load_catalog
-from meet_ai.ontology.catalog import stable_uuid
 
 router = APIRouter()
 
@@ -206,7 +206,7 @@ def build_envelope(data: Any, request_id: str) -> dict[str, Any]:
     return {
         "success": True,
         "data": data,
-        "meta": Meta(request_id=request_id, server_time=datetime.now(timezone.utc)),
+        "meta": Meta(request_id=request_id, server_time=datetime.now(UTC)),
     }
 
 
@@ -359,8 +359,8 @@ def _etag(row_version: int) -> str:
 
 def _to_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 # ---------------------------------------------------------------------------

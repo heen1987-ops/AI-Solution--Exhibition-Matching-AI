@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from app.services.matching.ontology_support import get_catalog
 from meet_ai.engine import (
     CatalogSearchSignals,
     MatchingCandidateCommand,
@@ -19,6 +18,8 @@ from meet_ai.engine import (
     execute_matching,
 )
 from meet_ai.scoring import EligibilityDecision, ScoreCap
+
+from app.services.matching.ontology_support import get_catalog
 
 Number = float | int | str
 

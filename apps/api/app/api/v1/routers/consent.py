@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import base64
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, status
@@ -129,7 +129,7 @@ async def _resolve_consent_policy(
     없으면 공통(event_id IS NULL) 정책을 쓴다.
     """
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(ConsentPolicy)
         .where(
@@ -301,7 +301,7 @@ async def create_privacy_request(
             "개인정보 권리 요청은 인증된 계정에서만 접수할 수 있습니다.",
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     privacy_request = PrivacyRequest(
         tenant_id=subject.tenant_id,
         user_id=subject.user_id,

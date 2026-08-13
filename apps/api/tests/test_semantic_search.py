@@ -6,6 +6,10 @@ from typing import Self
 
 import httpx
 import pytest
+from pydantic import ValidationError
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import Settings
 from app.db.base import Base
 from app.models.ai import SEARCH_EMBEDDING_DIMENSIONS
@@ -19,9 +23,6 @@ from app.services.matching.semantic_search import (
     PgvectorSemanticScorer,
     _semantic_hits_stmt,
 )
-from pydantic import ValidationError
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.exc import SQLAlchemyError
 
 
 def test_kiosk_search_score_uses_the_frozen_coefficients() -> None:

@@ -5,10 +5,11 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from app.core.config import Settings
-from app.services.auth_rate_limit import AuthLinkRateLimiter, AuthRateLimitUnavailable
 from redis.exceptions import RedisError
 from starlette.requests import Request
+
+from app.core.config import Settings
+from app.services.auth_rate_limit import AuthLinkRateLimiter, AuthRateLimitUnavailable
 
 
 class _Pipeline:

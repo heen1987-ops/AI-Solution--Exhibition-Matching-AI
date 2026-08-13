@@ -144,14 +144,14 @@ class _FakeSession:
 
 
 def _profile(**overrides: object) -> BuyerProfile:
-    defaults: dict[str, object] = dict(
-        buyer_profile_id=uuid.uuid4(),
-        tenant_id=uuid.uuid4(),
-        user_id=uuid.uuid4(),
-        buyer_type="OTHER",
-        verification_status="UNVERIFIED",
-        version=1,
-    )
+    defaults: dict[str, object] = {
+        "buyer_profile_id": uuid.uuid4(),
+        "tenant_id": uuid.uuid4(),
+        "user_id": uuid.uuid4(),
+        "buyer_type": "OTHER",
+        "verification_status": "UNVERIFIED",
+        "version": 1,
+    }
     defaults.update(overrides)
     profile = BuyerProfile(**defaults)
     profile.codes = []
@@ -351,19 +351,19 @@ def _headers() -> dict[str, str]:
 
 def _fake_profile(*, tenant_id: uuid.UUID, user_id: uuid.UUID, **overrides: object) -> SimpleNamespace:
     now = datetime.now(UTC)
-    defaults: dict[str, object] = dict(
-        buyer_profile_id=uuid.uuid4(),
-        tenant_id=tenant_id,
-        user_id=user_id,
-        buyer_type="OTHER",
-        order_scale_code=None,
-        decision_timeline=None,
-        verification_status="UNVERIFIED",
-        version=1,
-        created_at=now,
-        updated_at=now,
-        codes=[],
-    )
+    defaults: dict[str, object] = {
+        "buyer_profile_id": uuid.uuid4(),
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "buyer_type": "OTHER",
+        "order_scale_code": None,
+        "decision_timeline": None,
+        "verification_status": "UNVERIFIED",
+        "version": 1,
+        "created_at": now,
+        "updated_at": now,
+        "codes": [],
+    }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
 

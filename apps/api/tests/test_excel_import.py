@@ -4,6 +4,8 @@ import uuid
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+
 from app.api.v1.routers import imports as imports_router
 from app.db.session import get_db
 from app.main import app
@@ -13,7 +15,6 @@ from app.services.excel_import import (
     ExcelImportValidationError,
     parse_excel_import,
 )
-from fastapi.testclient import TestClient
 
 FIXTURES = Path(__file__).parent / "fixtures"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

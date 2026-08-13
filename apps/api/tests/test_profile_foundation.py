@@ -6,10 +6,11 @@ from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy import CheckConstraint
+
 from app.db.base import Base
 from app.models import consent, core, identity, profile  # noqa: F401
 from app.models.common import new_uuid7
-from sqlalchemy import CheckConstraint
 
 ROOT = Path(__file__).resolve().parents[1]  # apps/api
 

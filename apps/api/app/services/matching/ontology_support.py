@@ -24,11 +24,11 @@ from collections.abc import Iterable, Sequence
 from decimal import Decimal
 from functools import lru_cache
 
+from meet_ai.ontology import Catalog, load_catalog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ontology_refs import concept as ontology_concept_table
-from meet_ai.ontology import Catalog, load_catalog
 
 
 @lru_cache(maxsize=1)

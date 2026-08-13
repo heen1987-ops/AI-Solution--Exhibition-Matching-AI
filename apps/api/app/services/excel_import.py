@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from meet_ai.ontology.catalog import Catalog, load_catalog, stable_uuid
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from pydantic import ValidationError
@@ -24,7 +25,6 @@ from app.schemas.imports import (
     TaxonomyAttributeRef,
     VisitorImportRow,
 )
-from meet_ai.ontology.catalog import Catalog, load_catalog, stable_uuid
 
 EXCEL_IMPORT_SCHEMA_VERSION = "meet-ai-excel-import-v1.0"
 MAX_XLSX_BYTES = 5 * 1024 * 1024

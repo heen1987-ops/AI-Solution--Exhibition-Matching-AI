@@ -6,6 +6,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from meet_ai.engine import CatalogSearchSignals, MatchingMode
+from meet_ai.evaluation import (
+    MINIMUM_RUNTIME_COMPARABLE_SAMPLE,
+    ConstraintShadowGateCommand,
+    ConstraintShadowGateValidationError,
+    ConstraintShadowReasonCount,
+    ConstraintShadowState,
+    ConstraintShadowStateCount,
+    evaluate_constraint_shadow_gate,
+)
+from meet_ai.scoring import EligibilityDecision
+
 from app.services.matching.constraint_shadow import (
     HARD_FILTER_SHADOW_ENFORCEMENT,
     build_runtime_constraint_shadow_gate_command,
@@ -30,18 +42,6 @@ from app.services.matching.types import (
     SubjectContext,
     TaxonomyItem,
 )
-
-from meet_ai.engine import CatalogSearchSignals, MatchingMode
-from meet_ai.evaluation import (
-    MINIMUM_RUNTIME_COMPARABLE_SAMPLE,
-    ConstraintShadowGateCommand,
-    ConstraintShadowGateValidationError,
-    ConstraintShadowReasonCount,
-    ConstraintShadowState,
-    ConstraintShadowStateCount,
-    evaluate_constraint_shadow_gate,
-)
-from meet_ai.scoring import EligibilityDecision
 
 
 def _fixture(name: str) -> Path:

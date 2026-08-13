@@ -90,7 +90,7 @@ class PriceRange(BaseModel):
     currency: str = Field(default="KRW", min_length=3, max_length=3)
 
     @model_validator(mode="after")
-    def _check_order(self) -> "PriceRange":
+    def _check_order(self) -> PriceRange:
         if (
             self.min_amount is not None
             and self.max_amount is not None
@@ -105,7 +105,7 @@ class AlcoholPercentageRange(BaseModel):
     max: float | None = Field(default=None, ge=0, le=100)
 
     @model_validator(mode="after")
-    def _check_order(self) -> "AlcoholPercentageRange":
+    def _check_order(self) -> AlcoholPercentageRange:
         if self.min is not None and self.max is not None and self.min > self.max:
             raise ValueError("min must be <= max")
         return self
@@ -216,7 +216,7 @@ class TargetPrice(BaseModel):
     currency: str = Field(default="KRW", min_length=3, max_length=3)
 
     @model_validator(mode="after")
-    def _check_order(self) -> "TargetPrice":
+    def _check_order(self) -> TargetPrice:
         if (
             self.min_amount is not None
             and self.max_amount is not None
@@ -264,7 +264,7 @@ class MeetingSlot(BaseModel):
     end: datetime
 
     @model_validator(mode="after")
-    def _check_order(self) -> "MeetingSlot":
+    def _check_order(self) -> MeetingSlot:
         if self.start >= self.end:
             raise ValueError("start must be before end")
         return self
@@ -305,7 +305,7 @@ class ProfileGeneralPatchRequest(BaseModel):
     alcohol_percentage: AlcoholPercentageRange | None = None
 
     @model_validator(mode="after")
-    def _at_least_one_field(self) -> "ProfileGeneralPatchRequest":
+    def _at_least_one_field(self) -> ProfileGeneralPatchRequest:
         if not any(
             getattr(self, name) is not None for name in self.__class__.model_fields
         ):
@@ -334,7 +334,7 @@ class AttributePatchItem(BaseModel):
     priority: int | None = Field(default=None, ge=1, le=100)
 
     @model_validator(mode="after")
-    def _value_required_for_upsert(self) -> "AttributePatchItem":
+    def _value_required_for_upsert(self) -> AttributePatchItem:
         # profile.profile_attribute.value_json은 NOT NULL이다(07 22.2절). UPSERT인데 값이
         # 없으면 DB IntegrityError(500)로 새는 대신 여기서 먼저 422로 걸러낸다.
         if self.action == "UPSERT" and self.value is None:

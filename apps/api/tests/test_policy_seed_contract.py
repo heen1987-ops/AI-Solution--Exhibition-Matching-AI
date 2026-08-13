@@ -6,17 +6,17 @@ import importlib.util
 from decimal import Decimal
 from pathlib import Path
 
-from app.services.matching.context_policy import (
-    CONTEXT_COMPONENT_WEIGHTS,
-    CONTEXT_POLICY_CONFIG,
-)
-from app.services.matching.slate_policy import SLATE_POLICY_CONFIG
-
 from meet_ai.scoring.engine import (
     BUYER_SCORE_V1,
     CONSUMER_SCORE_V1,
     EXHIBITOR_SCORE_V1,
 )
+
+from app.services.matching.context_policy import (
+    CONTEXT_COMPONENT_WEIGHTS,
+    CONTEXT_POLICY_CONFIG,
+)
+from app.services.matching.slate_policy import SLATE_POLICY_CONFIG
 
 
 def _load_policy_migration():

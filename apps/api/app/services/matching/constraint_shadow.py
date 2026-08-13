@@ -13,14 +13,6 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from app.services.matching.ontology_support import get_catalog
-from app.services.matching.types import (
-    CandidateHardFilterShadow,
-    FilterOutcome,
-    MatchCandidate,
-    ResolvedProfile,
-    ShadowParityState,
-)
 from meet_ai.engine import (
     CandidateConstraintEvaluation,
     CandidateEligibilityState,
@@ -40,6 +32,15 @@ from meet_ai.evaluation.constraint_shadow import (
     ConstraintShadowState,
     ConstraintShadowStateCount,
     evaluate_constraint_shadow_gate,
+)
+
+from app.services.matching.ontology_support import get_catalog
+from app.services.matching.types import (
+    CandidateHardFilterShadow,
+    FilterOutcome,
+    MatchCandidate,
+    ResolvedProfile,
+    ShadowParityState,
 )
 
 CANDIDATE_OBSERVATION_ADAPTER_VERSION = "candidate-observation-adapter-v1.0"

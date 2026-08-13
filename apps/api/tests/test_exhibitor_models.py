@@ -5,6 +5,7 @@ from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+
 from app.db.base import Base
 from app.models import exhibitor  # noqa: F401
 

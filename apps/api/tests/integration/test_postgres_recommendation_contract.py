@@ -10,9 +10,10 @@ from __future__ import annotations
 import os
 
 import pytest
-from app.core.config import SEARCH_EMBEDDING_MODEL_CONFIG_HASH_V1
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from app.core.config import SEARCH_EMBEDDING_MODEL_CONFIG_HASH_V1
 
 DATABASE_URL = os.getenv("POSTGRES_TEST_DATABASE_URL")
 

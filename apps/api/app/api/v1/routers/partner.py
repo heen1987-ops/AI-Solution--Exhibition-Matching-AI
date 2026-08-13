@@ -31,7 +31,7 @@ DB 소속 관계를 함께 확인한다.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -631,6 +631,6 @@ async def submit_exhibitor_profile(
         approval_status=profile.approval_status,
         consumer_completeness=consumer_completeness,
         buyer_completeness=buyer_completeness,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
         blocking_issues=blocking_issues,
     )

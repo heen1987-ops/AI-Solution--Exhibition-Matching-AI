@@ -14,6 +14,10 @@ from types import SimpleNamespace
 from typing import Any, Self
 
 import pytest
+from fastapi.testclient import TestClient
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.api.v1.routers import search as search_router
 from app.db.session import get_db
 from app.main import app
@@ -29,9 +33,6 @@ from app.services.search_sessions import (
     SearchSessionStore,
     get_search_session_store,
 )
-from fastapi.testclient import TestClient
-from redis.exceptions import RedisError
-from sqlalchemy.exc import SQLAlchemyError
 
 EVENT_ID = uuid.uuid4()
 

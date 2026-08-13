@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+
 from app.services.matching.slate_policy import (
     MAX_FAIRNESS_ADJUSTMENT,
     SLATE_POLICY_VERSION,

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+
 from app.models.filtering import FilterEvaluation
 from app.services.matching.errors import RecommendationError
 from app.services.matching.hard_filter import (

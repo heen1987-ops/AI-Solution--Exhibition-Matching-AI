@@ -4,6 +4,8 @@ import base64
 from datetime import date
 from uuid import uuid4
 
+from fastapi.testclient import TestClient
+
 from app.core.auth import digest_secret
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
@@ -11,7 +13,6 @@ from app.main import app
 from app.models.core import Event
 from app.models.identity import GuestSession
 from app.models.profile import UserProfile, VisitSession
-from fastapi.testclient import TestClient
 
 
 class _RecordingDb:

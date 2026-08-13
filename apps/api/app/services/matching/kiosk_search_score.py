@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from app.services.matching.engine_adapter import execute_catalog_search_score
 from meet_ai.engine import CatalogSearchSignals as KioskSearchSignals
+
+from app.services.matching.engine_adapter import execute_catalog_search_score
 
 
 def score_kiosk_search(signals: KioskSearchSignals) -> float:

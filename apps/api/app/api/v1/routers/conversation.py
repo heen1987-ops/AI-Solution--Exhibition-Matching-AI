@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from typing import Annotated, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from meet_ai.ontology import load_catalog
+from meet_ai.ontology.catalog import stable_uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,8 +46,6 @@ from app.services.conversation_policy import (
     interpret_message,
     mask_sensitive_text,
 )
-from meet_ai.ontology import load_catalog
-from meet_ai.ontology.catalog import stable_uuid
 
 router = APIRouter()
 DbSession = Annotated[AsyncSession, Depends(get_db)]

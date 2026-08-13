@@ -10,6 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from meet_ai.engine import MatchingMode
+from meet_ai.scoring import (
+    BUYER_SCORE_V1,
+    CONSUMER_SCORE_V1,
+    DirectionalScoreResult,
+    EligibilityDecision,
+    ScoreValidationError,
+    ScoringPolicy,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,15 +30,6 @@ from app.services.matching.ontology_support import (
     max_match_strength,
 )
 from app.services.matching.types import MatchCandidate, ResolvedProfile
-from meet_ai.engine import MatchingMode
-from meet_ai.scoring import (
-    BUYER_SCORE_V1,
-    CONSUMER_SCORE_V1,
-    DirectionalScoreResult,
-    EligibilityDecision,
-    ScoreValidationError,
-    ScoringPolicy,
-)
 
 
 def _candidate_behavior_codes(candidate: MatchCandidate) -> set[str]:

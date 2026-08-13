@@ -88,6 +88,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from meet_ai.ontology import Catalog, load_catalog
+from meet_ai.ontology.catalog import stable_uuid
 from sqlalchemy import case, func, literal, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -132,8 +134,6 @@ from app.services.meeting.buyer_matching import (
     encrypt_meeting_text,
     product_belongs_to_participation,
 )
-from meet_ai.ontology import Catalog, load_catalog
-from meet_ai.ontology.catalog import stable_uuid
 
 router = APIRouter()
 
@@ -810,11 +810,10 @@ async def create_meeting(
         )
 
     match_result_id: uuid.UUID | None = None
-    if payload.match_result_id is not None:
-        if await _match_result_belongs_to_profile(
-            db, payload.match_result_id, profile.profile_id
-        ):
-            match_result_id = payload.match_result_id
+    if payload.match_result_id is not None and await _match_result_belongs_to_profile(
+        db, payload.match_result_id, profile.profile_id
+    ):
+        match_result_id = payload.match_result_id
 
     meeting = MeetingRequest(
         meeting_id=meeting_id,

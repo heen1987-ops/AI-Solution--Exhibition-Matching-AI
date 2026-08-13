@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from app.models.common import new_uuid7
 from app.services.extraction.ingestion import ingest_extraction_result
 from app.services.extraction.visibility import (

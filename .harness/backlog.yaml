@@ -1757,7 +1757,7 @@ tasks:
     wave: 3
     track: QA
     priority: P3
-    status: IN_PROGRESS
+    status: DONE
     depends_on: []
     owned_paths:
       - "apps/api/app/**"
@@ -1765,6 +1765,7 @@ tasks:
     acceptance:
       - "ruff check apps/api/app apps/api/tests (full ruleset, not just the CI fatal subset) has materially fewer findings than the 193 baseline"
       - "Every fix is verified with `python -m pytest apps/api/tests -q` still fully green — no behavior changes smuggled in as 'cleanup'"
+    note: "Real baseline measured 2026-08-13 was 194 (not 193 - codebase grew since the note was recorded): I001 unsorted-imports 39, UP037 quoted-annotation 21, UP017 datetime-timezone-utc 10, RUF100 unused-noqa 1 (all fixed via `ruff check --fix`, 71 total), plus manual conservative fixes: SIM102 collapsible-if in app/api/v1/routers/meetings.py (combined nested `if payload.match_result_id is not None: if await _match_result_belongs_to_profile(...)` into one `and`-joined condition, no behavior change) and 2x C408 unnecessary-dict-call in tests/test_buyer_profile_api.py (dict(...) kwargs rewritten as {} literals with identical keys/values, no behavior change). Final count: 120 (194 -> 120, -74). Remaining 120 deferred, not fixed: B008 function-call-in-default-argument x118 (100% FastAPI `Depends(...)` in signature defaults - the idiomatic, correct FastAPI DI pattern; ruff's default rule doesn't special-case it, and converting every route to Annotated[X, Depends(...)] is a large invasive signature-rewrite across ~40 router files, out of scope for a conservative P3 pass), BLE001 blind-except x1 (app/api/v1/routers/meetings.py:311, `except Exception: return None` in a cursor-token parser - could be intentionally broad to swallow any malformed-input error; narrowing requires guessing intent, explicitly the kind of finding this task said to skip), DTZ011 call-date-today x1 (app/api/v1/routers/analytics.py:107, `date.today()` in an analytics date-range default - switching to `datetime.now(tz=UTC).date()` would change behavior for non-UTC server timezones and requires knowing whether local-server-date or UTC-date was intended; skipped as ambiguous). Verified after every batch: `python -m pytest apps/api/tests -q` stayed at 1255 passed, 3 skipped, 1 xfailed throughout (same before/after). `ruff check --select E9,F63,F7,F82 app tests` confirmed clean both before and after (unaffected by this pass - none of the fixed rule codes overlap the CI-fatal subset)."
 
   - id: QUALITY-002
     title: "Fix apps/user-web vitest.config.ts TS2769 (esbuild.jsx option not in vite 8's ESBuildOptions type) breaking `pnpm typecheck`"

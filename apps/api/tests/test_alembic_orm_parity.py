@@ -32,12 +32,12 @@ import re
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from app.db.base import Base
 
 import app.models  # noqa: F401  # registers every domain module on Base.metadata
+from alembic import command
+from app.db.base import Base
 
 APP_ROOT = Path(__file__).resolve().parents[1]  # apps/api
 

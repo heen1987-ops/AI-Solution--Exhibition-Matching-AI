@@ -35,6 +35,10 @@ from datetime import date, time
 from decimal import Decimal
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
+
 from app.api.v1.routers import exhibition_public as router_module
 from app.db.session import get_db
 from app.models.core import Event, EventDay, EventZone
@@ -48,9 +52,6 @@ from app.models.exhibitor import (
 )
 from app.services import exhibition_public as service
 from app.services import exhibition_public_repository as repo
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from sqlalchemy.dialects import postgresql
 
 # ---------------------------------------------------------------------------
 # Route registration
@@ -716,8 +717,9 @@ async def test_live_postgres_pagination_and_visibility_rules() -> None:
     - unknown ids 404 (via the service layer, since this test does not go through HTTP)
     """
 
-    from scripts.seed_demo import build_demo_dataset
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from scripts.seed_demo import build_demo_dataset
 
     assert DATABASE_URL is not None
     engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)

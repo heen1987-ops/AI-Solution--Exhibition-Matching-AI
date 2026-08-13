@@ -17,6 +17,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
+
 from app.api.v1.routers import kiosk as kiosk_router
 from app.db.session import get_db
 from app.main import app
@@ -38,7 +40,6 @@ from app.services.kiosk import (
     issue_handoff_token,
     verify_handoff_token,
 )
-from fastapi.testclient import TestClient
 
 _EXHIBITOR_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 _BOOTH_ID = uuid.UUID("22222222-2222-4222-8222-222222222222")

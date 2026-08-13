@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.services.matching.engine_adapter import execute_reciprocal_score
-from app.services.matching.types import MatchCandidate, ResolvedProfile
 from meet_ai.scoring import (
     EXHIBITOR_SCORE_V1,
     DirectionalScoreResult,
@@ -13,6 +11,9 @@ from meet_ai.scoring import (
     ScoreCap,
     ScoreValidationError,
 )
+
+from app.services.matching.engine_adapter import execute_reciprocal_score
+from app.services.matching.types import MatchCandidate, ResolvedProfile
 
 _RECIPROCAL_OBJECT_TYPES = ("EXHIBITOR", "BOOTH", "PRODUCT")
 

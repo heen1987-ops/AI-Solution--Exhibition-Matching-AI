@@ -87,9 +87,9 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    CHAR,
     BigInteger,
     Boolean,
-    CHAR,
     CheckConstraint,
     Date,
     DateTime,
@@ -108,7 +108,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, SCHEMA_INTERACTION
+from app.db.base import SCHEMA_INTERACTION, Base
 
 # --------------------------------------------------------------------------
 # 상태값 상수. CHECK 제약과 애플리케이션 코드가 같은 값을 참조하도록 단일 진실 공급원으로 둔다.
@@ -263,7 +263,7 @@ class AvailabilitySlot(Base):
         onupdate=func.now(),
     )
 
-    slot_requests: Mapped[list["MeetingSlotRequest"]] = relationship(
+    slot_requests: Mapped[list[MeetingSlotRequest]] = relationship(
         "MeetingSlotRequest", back_populates="slot"
     )
 
@@ -442,22 +442,22 @@ class MeetingRequest(Base):
         onupdate=func.now(),
     )
 
-    confirmed_slot: Mapped["AvailabilitySlot | None"] = relationship(
+    confirmed_slot: Mapped[AvailabilitySlot | None] = relationship(
         "AvailabilitySlot", foreign_keys=[confirmed_slot_id]
     )
-    slot_requests: Mapped[list["MeetingSlotRequest"]] = relationship(
+    slot_requests: Mapped[list[MeetingSlotRequest]] = relationship(
         "MeetingSlotRequest", back_populates="meeting"
     )
-    contact_share: Mapped["MeetingContactShare | None"] = relationship(
+    contact_share: Mapped[MeetingContactShare | None] = relationship(
         "MeetingContactShare", back_populates="meeting", uselist=False
     )
-    status_history: Mapped[list["MeetingStatusHistory"]] = relationship(
+    status_history: Mapped[list[MeetingStatusHistory]] = relationship(
         "MeetingStatusHistory", back_populates="meeting"
     )
-    outcome: Mapped["Lead | None"] = relationship(
+    outcome: Mapped[Lead | None] = relationship(
         "Lead", back_populates="meeting", uselist=False
     )
-    follow_ups: Mapped[list["FollowUp"]] = relationship(
+    follow_ups: Mapped[list[FollowUp]] = relationship(
         "FollowUp", back_populates="meeting"
     )
 
@@ -511,10 +511,10 @@ class MeetingSlotRequest(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    meeting: Mapped["MeetingRequest"] = relationship(
+    meeting: Mapped[MeetingRequest] = relationship(
         "MeetingRequest", back_populates="slot_requests"
     )
-    slot: Mapped["AvailabilitySlot"] = relationship(
+    slot: Mapped[AvailabilitySlot] = relationship(
         "AvailabilitySlot", back_populates="slot_requests"
     )
 
@@ -588,7 +588,7 @@ class MeetingContactShare(Base):
         nullable=True,
     )
 
-    meeting: Mapped["MeetingRequest"] = relationship(
+    meeting: Mapped[MeetingRequest] = relationship(
         "MeetingRequest", back_populates="contact_share"
     )
 
@@ -639,7 +639,7 @@ class MeetingStatusHistory(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    meeting: Mapped["MeetingRequest"] = relationship(
+    meeting: Mapped[MeetingRequest] = relationship(
         "MeetingRequest", back_populates="status_history"
     )
 
@@ -722,7 +722,7 @@ class Lead(Base):
         onupdate=func.now(),
     )
 
-    meeting: Mapped["MeetingRequest"] = relationship(
+    meeting: Mapped[MeetingRequest] = relationship(
         "MeetingRequest", back_populates="outcome"
     )
 
@@ -802,6 +802,6 @@ class FollowUp(Base):
         onupdate=func.now(),
     )
 
-    meeting: Mapped["MeetingRequest"] = relationship(
+    meeting: Mapped[MeetingRequest] = relationship(
         "MeetingRequest", back_populates="follow_ups"
     )

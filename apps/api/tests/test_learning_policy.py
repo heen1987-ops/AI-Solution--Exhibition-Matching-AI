@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+
 from app.services.learning_policy import (
     AttributeTarget,
     BehaviorEventFacts,

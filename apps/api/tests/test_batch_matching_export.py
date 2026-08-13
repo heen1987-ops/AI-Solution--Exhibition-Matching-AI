@@ -5,6 +5,10 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from fastapi.testclient import TestClient
+from openpyxl import load_workbook
+from pydantic import ValidationError
+
 from app.api.v1.routers import imports as imports_router
 from app.db.session import get_db
 from app.main import app
@@ -27,9 +31,6 @@ from app.services.matching.types import (
     PipelineTrace,
     RecommendationOutcome,
 )
-from fastapi.testclient import TestClient
-from openpyxl import load_workbook
-from pydantic import ValidationError
 
 TENANT_ID = uuid.uuid4()
 EVENT_ID = uuid.uuid4()

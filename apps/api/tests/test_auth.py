@@ -7,6 +7,11 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from cryptography.exceptions import InvalidTag
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from starlette.requests import Request
+
 from app.api.v1.routers.auth import _magic_link_principal, _totp_enrollment_material
 from app.core.auth import (
     AuthException,
@@ -24,10 +29,6 @@ from app.db.session import get_db
 from app.main import app
 from app.schemas.auth import AuthMfaVerifyRequest
 from app.schemas.auth import AuthRoleGrant as AuthRoleGrantView
-from cryptography.exceptions import InvalidTag
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-from starlette.requests import Request
 
 
 class _RecordingDb:

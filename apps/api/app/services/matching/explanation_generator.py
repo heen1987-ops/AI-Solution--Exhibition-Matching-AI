@@ -25,16 +25,17 @@ import hashlib
 import json
 from collections.abc import Mapping
 
-from app.services.matching.types import (
-    MatchCandidate,
-    MatchReasonDraft,
-    ResolvedProfile,
-)
 from meet_ai.engine import (
     MatchingMode,
     ReasonClaim,
     derive_directional_reason_claims,
     derive_reciprocal_reason_claims,
+)
+
+from app.services.matching.types import (
+    MatchCandidate,
+    MatchReasonDraft,
+    ResolvedProfile,
 )
 
 EXPLANATION_POLICY_VERSION = "explain-template-v1.2-engine-claims"

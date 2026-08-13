@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
+
 from app.api.v1.routers import meetings as meetings_router
 from app.core.auth import encrypt_secret
 from app.core.config import get_settings
@@ -29,7 +31,6 @@ from app.models.identity import UserIdentity
 from app.models.meeting import MeetingContactShare, MeetingRequest
 from app.models.profile import BuyerNeed, UserProfile
 from app.services.meeting.buyer_matching import contact_reveal_allowed
-from fastapi.testclient import TestClient
 
 _PREFIX = get_settings().API_V1_PREFIX
 

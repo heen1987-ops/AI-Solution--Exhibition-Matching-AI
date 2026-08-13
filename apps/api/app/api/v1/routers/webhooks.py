@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import ValidationError
@@ -155,7 +155,7 @@ async def receive_backju_webhook(
         job_type="WEBHOOK_INGEST",
         status="RUNNING",
         total_rows=1,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
     )
     db.add(job)
     await db.flush()
@@ -172,7 +172,7 @@ async def receive_backju_webhook(
     except IngestionError as exc:
         job.status = "FAILED"
         job.failed_rows = 1
-        job.completed_at = datetime.now(timezone.utc)
+        job.completed_at = datetime.now(UTC)
         db.add(
             SyncRowError(
                 sync_job_id=job.sync_job_id,
@@ -186,11 +186,11 @@ async def receive_backju_webhook(
         await db.commit()
         # 실패는 2xx가 아닌 상태로 응답해 원천의 재시도를 유도한다 (설계문서 8.2절).
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("webhook processing failed unexpectedly: webhook_id=%s", x_webhook_id)
         job.status = "FAILED"
         job.failed_rows = 1
-        job.completed_at = datetime.now(timezone.utc)
+        job.completed_at = datetime.now(UTC)
         db.add(
             SyncRowError(
                 sync_job_id=job.sync_job_id,
@@ -206,7 +206,7 @@ async def receive_backju_webhook(
 
     job.status = "COMPLETED"
     job.success_rows = 1
-    job.completed_at = datetime.now(timezone.utc)
+    job.completed_at = datetime.now(UTC)
 
     db.add(
         IdempotencyRecord(

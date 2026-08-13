@@ -3,11 +3,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from meet_ai.scoring import EligibilityDecision, ScoreValidationError
+
 from app.services.matching.base_scoring import score_candidate
 from app.services.matching.reciprocal_matching import apply_reciprocal_matching
 from app.services.matching.types import MatchCandidate, ResolvedProfile
-
-from meet_ai.scoring import EligibilityDecision, ScoreValidationError
 
 
 def _profile(user_type: str, *, completeness: float = 90.0) -> ResolvedProfile:
