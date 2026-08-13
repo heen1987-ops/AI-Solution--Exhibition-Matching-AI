@@ -205,6 +205,19 @@ def test_reason_code_categories_match_interface_spec_processing_table() -> None:
     assert REVIEW_QUEUE_REASON_CODES == ("EXPLANATION_ERROR",)
 
 
+def test_schema_reason_code_literal_is_derived_from_this_module_not_hand_duplicated() -> None:
+    """app/schemas/feedback.py::FeedbackReasonCode must be built from FEEDBACK_REASON_CODES
+    (Literal[*FEEDBACK_REASON_CODES]), not a separately hand-typed Literal - otherwise the two
+    sets can silently drift (e.g. a reason code added here without the API boundary accepting
+    it, or vice versa)."""
+
+    import typing
+
+    from app.schemas.feedback import FeedbackReasonCode
+
+    assert set(typing.get_args(FeedbackReasonCode)) == set(FEEDBACK_REASON_CODES)
+
+
 # ---------------------------------------------------------------------------
 # Comment encryption round trip (app/core/auth.py::encrypt_secret/decrypt_secret envelope).
 # ---------------------------------------------------------------------------

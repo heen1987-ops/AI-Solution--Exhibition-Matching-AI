@@ -1881,3 +1881,53 @@ tasks:
       Change Request) were reported to the user but are NOT fixed by this task — they are a
       process/record-keeping gap, not a runtime defect, and retroactively filing a Change Request
       after the fact needs a human governance call, not a unilateral second self-authorization.
+
+  - id: QUALITY-004
+    title: "Fix favorite-list pagination skip bug + derive FeedbackReasonCode from the model, not a hand-duplicated Literal"
+    wave: 2
+    track: QUALITY
+    priority: P1
+    status: DONE
+    depends_on:
+      - INTEGRATE-001
+    owned_paths:
+      - "apps/api/app/services/favorite/service.py"
+      - "apps/api/app/api/v1/routers/favorites.py"
+      - "apps/api/app/schemas/feedback.py"
+      - "apps/api/tests/test_favorites_api.py"
+      - "apps/api/tests/test_feedback_model.py"
+    acceptance:
+      - "list_favorites_stmt's before-cursor filter is tie-broken by favorite_id (matching its own ORDER BY), so no row can be silently skipped when two favorites share an identical created_at"
+      - "next_cursor is the composite '<created_at>|<favorite_id>' form; the router still accepts a bare-timestamp cursor for backward compatibility, just without the tie-break guarantee for that one page"
+      - "app/schemas/feedback.py::FeedbackReasonCode is Literal[*FEEDBACK_REASON_CODES], derived from app/models/feedback.py, not a separately hand-typed Literal"
+    evidence: >
+      Two of the remaining CONFIRMED findings from the 2026-08-13 design-conformance review were
+      unambiguous correctness/robustness bugs with no open design question, so fixed directly
+      (unlike the two governance findings and the check-in dedupe-window finding, which involve
+      a real design tradeoff or a process decision and were left for the user):
+      (1) apps/api/app/services/favorite/service.py::list_favorites_stmt ordered by
+      (created_at desc, favorite_id desc) but its before-cursor WHERE clause only filtered on
+      created_at - concurrent inserts sharing a server_default now() timestamp could tie, and the
+      row ordered second at that boundary would never surface on any later page. Fixed via a
+      composite tuple_(created_at, favorite_id) < tuple_(before, before_favorite_id) filter;
+      apps/api/app/api/v1/routers/favorites.py's cursor format changed to
+      '<created_at>|<favorite_id>' (old bare-timestamp cursors still parse, just without the
+      tie-break for that page). New tests: test_list_favorites_stmt_before_cursor_with_favorite_
+      id_is_tie_broken, test_router_next_cursor_carries_favorite_id_and_round_trips.
+      (2) apps/api/app/schemas/feedback.py::FeedbackReasonCode was a hand-typed Literal
+      duplicating apps/api/app/models/feedback.py::FEEDBACK_REASON_CODES, with no
+      cross-check - now derived as Literal[*FEEDBACK_REASON_CODES]. New test:
+      test_schema_reason_code_literal_is_derived_from_this_module_not_hand_duplicated.
+      Verified: apps/api/tests -q → 1272 passed, 3 skipped, 1 xfailed (was 1269 before these 3
+      new tests); ruff on touched files and the CI-fatal subset both clean; alembic heads
+      unchanged. Committed on feature/contract-005-favorites.
+      NOT fixed by this task (left as reported findings, real design/process decisions needed):
+      the check-in dedupe-window-bypassable-via-client-occurred_at finding (the module's own
+      docstring documents the client-anchored window as deliberate design, so changing its
+      semantics needs a product/security call, not a unilateral change); the three reuse findings
+      (resolve_recommendable_id duplication, comment-encryption wrapper duplication,
+      product-detail approval-chain duplication - each needs a shared-helper refactor touching
+      multiple already-shipped call sites, non-trivial enough to warrant its own reviewed change);
+      the notification_delivery.py EMAIL-consent-check-ordering/mislabeling finding; and the two
+      BACKEND-016/017 governance violations (still need a human Change Request decision, see
+      INTEGRATE-001's evidence note above).

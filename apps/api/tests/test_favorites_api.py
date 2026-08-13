@@ -232,6 +232,29 @@ def test_list_favorites_stmt_applies_before_cursor() -> None:
     assert "favorite.created_at <" in sql
 
 
+def test_list_favorites_stmt_before_cursor_with_favorite_id_is_tie_broken() -> None:
+    """Regression for the pagination skip bug: two rows can share an identical created_at
+    under concurrent inserts (server_default now()), and ORDER BY already tie-breaks on
+    favorite_id - the WHERE filter must use the same composite key, not created_at alone, or
+    the row ordered second at a tied boundary silently never surfaces on any later page."""
+
+    before = datetime(2026, 8, 13, tzinfo=UTC)
+    before_favorite_id = uuid.uuid4()
+    sql = _compiled(
+        list_favorites_stmt(
+            tenant_id=TENANT,
+            event_id=EVENT,
+            user_id=uuid.uuid4(),
+            guest_session_id=None,
+            limit=20,
+            before=before,
+            before_favorite_id=before_favorite_id,
+        )
+    )
+    assert "favorite.created_at, interaction.favorite.favorite_id) <" in sql
+    assert before_favorite_id.hex in sql.replace("-", "")
+
+
 def test_owner_clause_rejects_neither_user_nor_guest() -> None:
     with pytest.raises(ValueError):
         _compiled(
@@ -703,6 +726,36 @@ def test_router_list_empty_for_a_different_owner() -> None:
 
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+def test_router_next_cursor_carries_favorite_id_and_round_trips() -> None:
+    """next_cursor must be the '<created_at>|<favorite_id>' composite form, not a bare
+    timestamp - otherwise a same-timestamp tie at the page boundary is silently dropped on the
+    next request (see test_list_favorites_stmt_before_cursor_with_favorite_id_is_tie_broken)."""
+
+    session = FakeAsyncSession()
+    owner = uuid.uuid4()
+    fav = _favorite(user_id=owner)
+    booth_id = uuid.uuid4()
+    session.execute_queue = [[(fav, "BOOTH", booth_id, None, None, None)]]
+    app = _build_app(session, _auth_subject(user_id=owner))
+
+    with TestClient(app) as client:
+        response = client.get("/me/favorites?limit=1")
+
+    body = response.json()
+    assert body["next_cursor"] == f"{fav.created_at.isoformat()}|{fav.favorite_id}"
+
+    # Round trip: the router must parse its own cursor format without a 400. Pass via params=
+    # (not string-interpolated into the URL) so the client itself handles percent-encoding the
+    # '+'/':' the ISO8601 timestamp contains.
+    session2 = FakeAsyncSession()
+    session2.execute_queue = [[]]
+    app2 = _build_app(session2, _auth_subject(user_id=owner))
+    with TestClient(app2) as client2:
+        response2 = client2.get("/me/favorites", params={"cursor": body["next_cursor"]})
+
+    assert response2.status_code == 200
 
 
 def test_router_delete_soft_deletes_own_favorite() -> None:

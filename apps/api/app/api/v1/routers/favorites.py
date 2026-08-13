@@ -146,13 +146,20 @@ def build_favorites_router() -> APIRouter:
         db: DbSession,
         limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
         cursor: str | None = Query(
-            default=None, description="opaque - last created_at ISO8601"
+            default=None,
+            description="opaque - last created_at ISO8601, '|', last favorite_id",
         ),
     ) -> FavoriteListResponse:
         before: datetime | None = None
+        before_favorite_id: UUID | None = None
         if cursor:
+            # '|'-tie-broken form (current) or a bare timestamp (older clients / cached links) -
+            # the bare form still works, just without the tie-break guarantee for that one page.
+            raw_timestamp, _, raw_favorite_id = cursor.partition("|")
             try:
-                before = datetime.fromisoformat(cursor)
+                before = datetime.fromisoformat(raw_timestamp)
+                if raw_favorite_id:
+                    before_favorite_id = UUID(raw_favorite_id)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail="INVALID_CURSOR") from exc
 
@@ -164,9 +171,12 @@ def build_favorites_router() -> APIRouter:
             guest_session_id=subject.guest_session_id,
             limit=limit,
             before=before,
+            before_favorite_id=before_favorite_id,
         )
         next_cursor = (
-            items[-1].favorite.created_at.isoformat() if len(items) == limit else None
+            f"{items[-1].favorite.created_at.isoformat()}|{items[-1].favorite.favorite_id}"
+            if len(items) == limit
+            else None
         )
         return FavoriteListResponse(
             items=[_to_read(item) for item in items], next_cursor=next_cursor

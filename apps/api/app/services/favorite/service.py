@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import ColumnElement, Select, select
+from sqlalchemy import ColumnElement, Select, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -200,13 +200,22 @@ def list_favorites_stmt(
     guest_session_id: uuid.UUID | None,
     limit: int,
     before: datetime | None,
+    before_favorite_id: uuid.UUID | None = None,
 ) -> Select[tuple[Favorite, str, uuid.UUID | None, uuid.UUID | None, uuid.UUID | None, uuid.UUID | None]]:
     """One query, no N+1: joins Recommendable for object_type/direct target columns, and
     outer-joins EventProduct/ExhibitorParticipation to translate the two indirect target
     types (PRODUCT, EXHIBITOR) back to their public id - the reverse of
     :func:`resolve_recommendable_id`, same per-type mapping ``app/services/matching/
     candidate_generator.py`` already uses when it builds ``public_object_id`` for recommendation
-    candidates."""
+    candidates.
+
+    The ``before``/``before_favorite_id`` pair is a composite keyset cursor, tie-broken by
+    favorite_id to match the ORDER BY exactly. ``created_at`` alone is not enough: two rows can
+    share the same server_default now() timestamp under concurrent inserts, and a plain
+    ``created_at < before`` filter would then silently skip whichever of the tied rows sorts
+    second, on every future page, forever. ``before_favorite_id`` is optional only for backward
+    compatibility with callers that don't have it yet (e.g. a legacy cursor); passing ``before``
+    without it re-admits that same skip risk for ties at that exact boundary."""
 
     stmt = (
         select(
@@ -239,7 +248,11 @@ def list_favorites_stmt(
         .order_by(Favorite.created_at.desc(), Favorite.favorite_id.desc())
         .limit(limit)
     )
-    if before is not None:
+    if before is not None and before_favorite_id is not None:
+        stmt = stmt.where(
+            tuple_(Favorite.created_at, Favorite.favorite_id) < tuple_(before, before_favorite_id)
+        )
+    elif before is not None:
         stmt = stmt.where(Favorite.created_at < before)
     return stmt
 
@@ -253,6 +266,7 @@ async def list_favorites(
     guest_session_id: uuid.UUID | None,
     limit: int,
     before: datetime | None = None,
+    before_favorite_id: uuid.UUID | None = None,
 ) -> list[FavoriteWithTarget]:
     rows = await db.execute(
         list_favorites_stmt(
@@ -262,6 +276,7 @@ async def list_favorites(
             guest_session_id=guest_session_id,
             limit=limit,
             before=before,
+            before_favorite_id=before_favorite_id,
         )
     )
     results: list[FavoriteWithTarget] = []

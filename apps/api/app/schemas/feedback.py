@@ -32,6 +32,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.models.feedback import FEEDBACK_REASON_CODES
+
 #: Mirrors app.services.favorite.service.FavoriteObjectType - the same caller-facing
 #: object_type vocabulary every (object_type, object_id) -> recommendable_id resolution in this
 #: repo already accepts (BOOTH/PROGRAM direct, PRODUCT/EXHIBITOR indirect - see that module).
@@ -39,9 +41,11 @@ FeedbackObjectType = Literal["EXHIBITOR", "PRODUCT", "BOOTH", "PROGRAM"]
 
 FeedbackRating = Literal["VERY_RELEVANT", "RELEVANT", "NOT_RELEVANT"]
 
-FeedbackReasonCode = Literal[
-    "TASTE", "PRICE", "CONGESTION", "SOLD_OUT_OR_CLOSED", "EXPLANATION_ERROR"
-]
+#: Derived from app.models.feedback.FEEDBACK_REASON_CODES (itself PREFERENCE_REASON_CODES +
+#: SITUATIONAL_REASON_CODES + REVIEW_QUEUE_REASON_CODES) rather than hand-duplicated, so the API
+#: boundary's accepted set can never drift from the model's CHECK constraint and the
+#: preference/situational partition it documents.
+FeedbackReasonCode = Literal[*FEEDBACK_REASON_CODES]
 
 
 class FeedbackRequest(BaseModel):
