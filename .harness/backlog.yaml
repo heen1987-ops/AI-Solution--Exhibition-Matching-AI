@@ -1739,7 +1739,7 @@ tasks:
     wave: 3
     track: BACKEND
     priority: P2
-    status: READY
+    status: DONE
     depends_on: []
     owned_paths:
       - "apps/api/app/api/v1/routers/exhibition_public.py"
@@ -1750,6 +1750,7 @@ tasks:
       - "Confirm (already verified once during the WAVE2C/2D/2E merge audit) that exhibitors.py's shim `from app.api.v1.routers.exhibition_public import router` is the live, single-registration public-catalog surface"
       - "Remove any now-genuinely-dead duplicate code paths found, with test coverage proving nothing public-facing regresses"
     note: "Multiple earlier passes flagged this as needing reconciliation and then deferred it; the 2026-08-11 merge audit's synthesizer already corrected a wrong assumption here once (see .harness/decisions.md's 'exhibition_public.py' conflict entry) — read that before touching anything, to avoid re-litigating a settled finding."
+    evidence: "2026-08-13 re-verified directly (no Workflow needed, negative-finding confirmation only, no files changed): (1) apps/api/app/api/v1/routers/exhibitors.py is still exactly the 11-line shim `from app.api.v1.routers.exhibition_public import router`. (2) apps/api/app/api/v1/api.py registers only `exhibitors.router` once, tags=[\"public-catalog\"] - no separate/duplicate registration of exhibition_public.router anywhere. (3) grep across apps/api/app for exhibition_public/get_booth_detail/get_product_detail/get_exhibitor_detail found only legitimate reuse: kiosk.py imports get_booth_detail directly from exhibition_public (not a copy); admin.py, buyer_profile/service.py, services/admin/exhibitor_approval.py reference exhibition_public.py only in docstrings (citing it as the pattern they follow or explicitly noting they do NOT touch it), not as duplicated implementation. (4) search.py/kiosk.py share catalog_search.search_approved_catalog for search, a distinct concern from exhibition_public's detail-lookup endpoints, not a duplicate of it. Conclusion: no genuinely-dead duplicate code exists to remove - the architecture is already clean (confirmed once more, third time this session after the 2026-08-11 merge audit and BACKEND-015's own investigation of the same files). Full pytest suite already green (1255+ passed) with zero changes made."
 
   - id: QUALITY-001
     title: "Clean up apps/api ruff findings beyond the fatal E9/F63/F7/F82 CI gate (193 remaining style findings as of the 2026-08-03 WAVE2C/2D/2E batch)"
