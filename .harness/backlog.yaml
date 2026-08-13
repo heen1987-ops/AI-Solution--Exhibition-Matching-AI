@@ -1757,7 +1757,7 @@ tasks:
     wave: 3
     track: QA
     priority: P3
-    status: READY
+    status: IN_PROGRESS
     depends_on: []
     owned_paths:
       - "apps/api/app/**"
@@ -1792,7 +1792,7 @@ tasks:
     wave: 3
     track: QA
     priority: P3
-    status: READY
+    status: IN_PROGRESS
     depends_on: []
     owned_paths:
       - "apps/api/alembic/versions/**"
