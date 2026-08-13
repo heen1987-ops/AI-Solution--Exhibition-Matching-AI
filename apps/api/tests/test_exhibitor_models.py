@@ -172,7 +172,7 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(APP_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0034_feedback"]
+    assert script.get_heads() == ["0035_check_constraint_naming_fix"]
 
 
 def test_object_embedding_migration_fail_closes_stale_catalog_summaries() -> None:
