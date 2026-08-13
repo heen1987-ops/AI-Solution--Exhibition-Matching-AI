@@ -42,10 +42,12 @@ from app.models.checkin import CheckIn
 from app.models.exhibitor import Booth, BoothQr
 from app.models.integration import IdempotencyRecord
 from app.services.checkin.service import (
+    MAX_OCCURRED_AT_SKEW,
     QR_TOKEN_PURPOSE,
     BoothClosedError,
     InvalidQrError,
     VisitSessionNotFoundError,
+    _clamp_occurred_at,
     submit_check_in,
 )
 
@@ -263,6 +265,107 @@ async def test_submit_check_in_duplicate_within_window_returns_existing_row_not_
     assert check_in.activities == ["TASTING"]  # the existing row's own activities, unchanged
     assert session.added == []  # no new CheckIn inserted
     assert session.commits == 0  # no idempotency key -> nothing to persist
+
+
+# ---------------------------------------------------------------------------
+# occurred_at clamping - regression for the unbounded dedupe-window-escape finding
+# (2026-08-13 design-conformance review).
+# ---------------------------------------------------------------------------
+
+
+def test_clamp_occurred_at_passes_through_a_value_inside_the_bound() -> None:
+    inside = NOW + timedelta(minutes=10)
+    assert _clamp_occurred_at(inside, now=NOW) == inside
+
+
+def test_clamp_occurred_at_clamps_a_far_future_value_to_the_upper_bound() -> None:
+    far_future = NOW + timedelta(days=365)
+    assert _clamp_occurred_at(far_future, now=NOW) == NOW + MAX_OCCURRED_AT_SKEW
+
+
+def test_clamp_occurred_at_clamps_a_far_past_value_to_the_lower_bound() -> None:
+    far_past = NOW - timedelta(days=365)
+    assert _clamp_occurred_at(far_past, now=NOW) == NOW - MAX_OCCURRED_AT_SKEW
+
+
+@pytest.mark.asyncio
+async def test_submit_check_in_stores_the_clamped_occurred_at_not_the_raw_client_value() -> None:
+    """A client claiming an occurred_at far outside MAX_OCCURRED_AT_SKEW must not have that raw
+    value persisted or used as the dedupe anchor - see module docstring."""
+
+    session = FakeAsyncSession()
+    booth = _booth()
+    booth_qr = _booth_qr(booth_id=booth.booth_id)
+    visit_session_id = uuid.uuid4()
+    session.scalar_queue = [visit_session_id, booth_qr, None]  # visit, qr, no recent dup
+    session.get_queue = [booth]
+    far_future_claim = NOW + timedelta(days=365)
+
+    check_in, duplicate = await submit_check_in(
+        session,
+        tenant_id=TENANT,
+        event_id=EVENT,
+        user_id=uuid.uuid4(),
+        guest_session_id=None,
+        qr_token="raw-qr-token",
+        activities=["TASTING"],
+        match_result_id=None,
+        client_event_id=uuid.uuid4(),
+        occurred_at=far_future_claim,
+        idempotency_key=None,
+        settings=SETTINGS,
+        now=NOW,
+    )
+
+    assert duplicate is False
+    assert check_in.checked_in_at == NOW + MAX_OCCURRED_AT_SKEW
+    assert check_in.checked_in_at != far_future_claim
+
+
+@pytest.mark.asyncio
+async def test_submit_check_in_bypass_via_incrementing_occurred_at_is_now_caught() -> None:
+    """Regression for the exact CONFIRMED failure scenario: a client resending the same QR scan
+    with occurred_at incremented by more than 2*DEDUPE_WINDOW each time must no longer be able to
+    walk the dedupe search out from under an existing row that both attempts, in reality, happen
+    within seconds of each other (the same real `now`) - only the client's *claimed* occurred_at
+    differs. Both claims land in the same clamped neighborhood of `now`, so the second request's
+    dedupe search finds the first request's clamped, stored row."""
+
+    session = FakeAsyncSession()
+    booth = _booth()
+    booth_qr = _booth_qr(booth_id=booth.booth_id)
+    visit_session_id = uuid.uuid4()
+    # The first request's clamped-and-stored checked_in_at (both requests share the same real
+    # `now`, matching a rapid-fire resend).
+    first_stored_at = NOW + MAX_OCCURRED_AT_SKEW
+    existing = _check_in(
+        visit_session_id=visit_session_id,
+        booth_id=booth.booth_id,
+        checked_in_at=first_stored_at,
+    )
+    session.scalar_queue = [visit_session_id, booth_qr, existing]
+    session.get_queue = [booth]
+
+    # Second request claims an occurred_at far beyond the exploit's old 2*DEDUPE_WINDOW escape
+    # threshold - before this fix this would have missed the existing row entirely.
+    check_in, duplicate = await submit_check_in(
+        session,
+        tenant_id=TENANT,
+        event_id=EVENT,
+        user_id=uuid.uuid4(),
+        guest_session_id=None,
+        qr_token="raw-qr-token",
+        activities=["TASTING"],
+        match_result_id=None,
+        client_event_id=None,
+        occurred_at=NOW + timedelta(days=30),
+        idempotency_key=None,
+        settings=SETTINGS,
+        now=NOW,
+    )
+
+    assert duplicate is True
+    assert check_in is existing
 
 
 @pytest.mark.asyncio

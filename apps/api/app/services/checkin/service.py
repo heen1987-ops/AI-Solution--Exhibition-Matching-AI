@@ -67,6 +67,34 @@ caller gets that row back with ``duplicate=True`` and no new row is inserted - "
 반환하지 않고 기존 체크인 ID와 시각을 제공한다" (§13.1). The response always reflects the
 *existing* row's own id/time/activities, never a merge with the new request's activities.
 
+``occurred_at`` is clamped to a bounded window around the server's own clock, not trusted
+verbatim
+--------------------------------------------------------------------------------------------
+Found by the 2026-08-13 design-conformance code review (CONFIRMED): because the dedupe search
+above is entirely anchored to the client-supplied ``occurred_at`` with no bound against the
+server's own clock, a client resending the same QR scan with ``occurred_at`` incremented by more
+than ``2 * DEDUPE_WINDOW`` each time could walk the search range out from under every prior row
+forever, defeating the duplicate-prevention guarantee the advisory lock exists for.
+:func:`_clamp_occurred_at` bounds ``occurred_at`` to ``[now - MAX_OCCURRED_AT_SKEW, now +
+MAX_OCCURRED_AT_SKEW]`` before it is used for *either* the dedupe search *or* the stored
+``checked_in_at`` (the same clamped value must be used for both, or a genuinely offline-delayed
+resend - searched with a clamped anchor against a row stored with the unclamped one - would
+never find its own earlier row and duplicate silently). ``MAX_OCCURRED_AT_SKEW`` (30 minutes) is
+deliberately generous relative to ``DEDUPE_WINDOW`` (5 minutes) to preserve the legitimate
+offline-queue case this module's docstring already documents (a real check-in event reported
+well after it happened because the device was offline) - this is a bound, not a rejection, and a
+30-minute-late legitimate resend still dedupes correctly against its own earlier attempt because
+both map to the same clamp result when the true ``occurred_at`` is identical. The tradeoff this
+accepts: because the bound is wider than ``2 * DEDUPE_WINDOW``, an adversarial client precisely
+gaming the two clamp edges (claiming values at ``now - MAX_OCCURRED_AT_SKEW`` on one request and
+``now + MAX_OCCURRED_AT_SKEW`` on the next) can still land a handful of duplicates within one
+rolling clamp window rather than zero - this closes the *unbounded* bypass (the actual reported
+failure scenario) without collapsing the offline-tolerance window down to ``DEDUPE_WINDOW``
+itself, which would defeat the legitimate offline-resend case entirely. A tighter closure would
+need the dedupe search itself to also consider ``received_at`` (real arrival time), not just
+``occurred_at`` - left as a possible follow-up, not implemented here since it changes the dedupe
+key shape rather than just bounding an input.
+
 Idempotency-Key: reuses integration.idempotency_record, no parallel mechanism
 --------------------------------------------------------------------------------------------
 "Idempotency-Key는 integration.idempotency_record에 별도 저장한다" (§16.2). This mirrors
@@ -111,6 +139,11 @@ from app.models.profile import VisitSession
 #: db-erd §16.2's "5분" dedupe window, applied symmetrically around the request's occurred_at
 #: (see module docstring for why occurred_at, not "now", anchors the window).
 DEDUPE_WINDOW = timedelta(minutes=5)
+
+#: Bounds how far a client-declared occurred_at may be clamped from the server's own clock -
+#: see module docstring "occurred_at is clamped" section for the security rationale and the
+#: offline-tolerance tradeoff this specific value accepts.
+MAX_OCCURRED_AT_SKEW = timedelta(minutes=30)
 
 #: integration.idempotency_record scoping for this route (mirrors webhooks.py's own _ROUTE).
 IDEMPOTENCY_METHOD = "POST"
@@ -218,6 +251,20 @@ async def verify_booth_qr(
         raise InvalidQrError("event_mismatch")
 
     return VerifiedBoothQr(booth_qr=booth_qr, booth=booth)
+
+
+def _clamp_occurred_at(occurred_at: datetime, *, now: datetime) -> datetime:
+    """Bounds a client-declared occurred_at to ``[now - MAX_OCCURRED_AT_SKEW, now +
+    MAX_OCCURRED_AT_SKEW]`` - see module docstring for why this must be used consistently for
+    both the dedupe search and the stored ``checked_in_at``."""
+
+    earliest = now - MAX_OCCURRED_AT_SKEW
+    latest = now + MAX_OCCURRED_AT_SKEW
+    if occurred_at < earliest:
+        return earliest
+    if occurred_at > latest:
+        return latest
+    return occurred_at
 
 
 def _check_in_lock_stmt(visit_session_id: uuid.UUID, booth_id: uuid.UUID):
@@ -352,6 +399,11 @@ async def submit_check_in(
     if verified.booth.operating_status == "CLOSED":
         raise BoothClosedError()
 
+    # Bound occurred_at against the server's own clock before it anchors anything - see module
+    # docstring "occurred_at is clamped" section. The same clamped value is used for the dedupe
+    # search below AND for the stored checked_in_at further down - never mix clamped/unclamped.
+    effective_occurred_at = _clamp_occurred_at(occurred_at, now=now)
+
     # Serialize concurrent check-ins for this exact (visit_session, booth) pair before the
     # dedupe-window query - see module docstring.
     await db.execute(_check_in_lock_stmt(visit_session_id, verified.booth.booth_id))
@@ -362,7 +414,7 @@ async def submit_check_in(
         event_id=event_id,
         visit_session_id=visit_session_id,
         booth_id=verified.booth.booth_id,
-        occurred_at=occurred_at,
+        occurred_at=effective_occurred_at,
     )
     if recent is not None:
         if idempotency_key:
@@ -410,7 +462,7 @@ async def submit_check_in(
         qr_id=verified.booth_qr.booth_qr_id,
         qr_key_version=verified.booth_qr.key_version,
         client_event_id=client_event_id,
-        checked_in_at=occurred_at,
+        checked_in_at=effective_occurred_at,
         received_at=now,
     )
     db.add(check_in)
@@ -452,7 +504,7 @@ async def submit_check_in(
             event_id=event_id,
             visit_session_id=visit_session_id,
             booth_id=verified.booth.booth_id,
-            occurred_at=occurred_at,
+            occurred_at=effective_occurred_at,
         )
         if recent is not None:
             return recent, True

@@ -1949,7 +1949,8 @@ tasks:
       NOT fixed by this task (left as reported findings, real design/process decisions needed):
       the check-in dedupe-window-bypassable-via-client-occurred_at finding (the module's own
       docstring documents the client-anchored window as deliberate design, so changing its
-      semantics needs a product/security call, not a unilateral change); the three reuse findings
+      semantics needs a product/security call, not a unilateral change - FIXED 2026-08-13 per
+      explicit user request, see QUALITY-006); the three reuse findings
       (resolve_recommendable_id duplication, comment-encryption wrapper duplication,
       product-detail approval-chain duplication - each needs a shared-helper refactor touching
       multiple already-shipped call sites, non-trivial enough to warrant its own reviewed change);
@@ -1992,4 +1993,58 @@ tasks:
       pass unchanged since they configure an EMAIL provider, so the consent-check branch is
       still reached exactly as before in those cases. apps/api/tests -q: 1273 passed, 3 skipped,
       1 xfailed (was 1272 before this test); ruff and alembic heads clean. Committed on
+      feature/contract-005-favorites.
+
+  - id: QUALITY-006
+    title: "Clamp check-in occurred_at against server time to bound the dedupe-window-escape exploit"
+    wave: 2
+    track: QUALITY
+    priority: P2
+    status: DONE
+    depends_on:
+      - QUALITY-005
+    owned_paths:
+      - "apps/api/app/services/checkin/service.py"
+      - "apps/api/tests/test_checkin_api.py"
+    acceptance:
+      - "occurred_at is clamped to [now - MAX_OCCURRED_AT_SKEW, now + MAX_OCCURRED_AT_SKEW] before it anchors either the dedupe search or the stored checked_in_at"
+      - "the same clamped value is used consistently for both storage and search (never mixed), so a genuinely offline-delayed resend still dedupes against its own earlier attempt"
+      - "MAX_OCCURRED_AT_SKEW's exact value is a logged Blocker Score assumption (ASSUMPTION-006), not silently invented"
+    evidence: >
+      User explicitly requested this fix ("check-in 중복방지 창도 클램프 방식으로 고쳐줘"),
+      the one remaining CONFIRMED correctness finding from the 2026-08-13 review left
+      unfixed at INTEGRATE-001/QUALITY-004 time because it needed a design decision (the
+      module's own docstring documents the client-anchored window as deliberate, to support
+      legitimate offline-queue resends - clamping had to preserve that, not just close the
+      security gap).
+
+      Added MAX_OCCURRED_AT_SKEW = timedelta(minutes=30) and _clamp_occurred_at() to
+      app/services/checkin/service.py; submit_check_in now computes effective_occurred_at once
+      and uses it consistently for both find_recent_check_in() calls (initial + IntegrityError
+      retry path) and the CheckIn.checked_in_at value on insert - using a clamped value for only
+      one of the two would make a legitimate offline-delayed resend fail to find its own earlier
+      row and duplicate silently, which would have been a new bug.
+
+      Documented tradeoff (also in the module docstring and ASSUMPTION-006): 30 minutes is
+      deliberately wider than 2*DEDUPE_WINDOW (5 min) to preserve realistic offline-queue
+      tolerance, which means this closes the *unbounded* bypass the review reported (the
+      concrete failure scenario: incrementing occurred_at forever to escape every prior row)
+      but does not achieve a mathematically airtight closure against an adversary precisely
+      gaming the two clamp edges within one rolling window - a full closure would need the
+      dedupe search to also consider received_at (real arrival time), which changes the dedupe
+      key shape and was left as a documented possible follow-up, not implemented here.
+
+      New tests: test_clamp_occurred_at_passes_through_a_value_inside_the_bound,
+      test_clamp_occurred_at_clamps_a_far_future_value_to_the_upper_bound,
+      test_clamp_occurred_at_clamps_a_far_past_value_to_the_lower_bound,
+      test_submit_check_in_stores_the_clamped_occurred_at_not_the_raw_client_value,
+      test_submit_check_in_bypass_via_incrementing_occurred_at_is_now_caught (the last one is a
+      direct regression test for the review's exact reported failure scenario - two requests
+      sharing the same real `now`, one claiming occurred_at 30 days in the future, are now
+      correctly deduped against each other). All prior check-in tests still pass unmodified since
+      their occurred_at values were already close to `now`, making the clamp a no-op for them.
+
+      Verified: apps/api/tests -q → 1278 passed, 3 skipped, 1 xfailed (was 1273 before these 5
+      new tests, all in test_checkin_api.py). ruff on touched files and the CI-fatal subset both
+      clean; alembic heads unchanged (no schema change - service-layer logic only). Committed on
       feature/contract-005-favorites.
