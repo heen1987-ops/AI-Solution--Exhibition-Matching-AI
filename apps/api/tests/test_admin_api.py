@@ -691,3 +691,15 @@ def test_patch_booth_status_invalid_operating_status_is_422() -> None:
         )
 
     assert response.status_code == 422
+
+
+def test_router_is_registered_in_the_shared_api_router() -> None:
+    """The integration pass publishes the admin routes through /api/v1 (same guard pattern as
+    test_exhibition_public_api.py::test_router_is_registered_in_the_shared_api_router)."""
+
+    from app.main import app as shared_app
+
+    paths = set(shared_app.openapi()["paths"])
+    assert "/api/v1/admin/exhibitors/{exhibitor_id}/approve" in paths
+    assert "/api/v1/admin/exhibitors/{exhibitor_id}/reject" in paths
+    assert "/api/v1/admin/booths/{booth_id}/status" in paths

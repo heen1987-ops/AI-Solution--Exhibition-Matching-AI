@@ -1840,3 +1840,44 @@ tasks:
       - "All ten ported routers take identity from main's principal-derived dependency (app/core/router_auth.py), never from X-Actor-User-Id/X-Profile-Id/X-Staff-Id/X-Tenant-Id headers"
       - "Authorization logic (legacy profile.role/user_role queries) is preserved unchanged — only the identity half is swapped"
     evidence: "ROUTER AUTHENTICATION resolved conflict in this merge; see the individual WAVE2C/2D/2E router entries above for router-specific auth notes"
+
+  - id: INTEGRATE-001
+    title: "Mount favorites/check-in/feedback/admin routers into the shared api_router"
+    wave: 2
+    track: INTEGRATE
+    priority: P0
+    status: DONE
+    depends_on:
+      - BACKEND-009
+      - BACKEND-016
+      - BACKEND-017
+      - contract-005-favorites
+    owned_paths:
+      - "apps/api/app/api/v1/api.py"
+      - "apps/api/tests/test_favorites_api.py"
+      - "apps/api/tests/test_checkin_api.py"
+      - "apps/api/tests/test_feedback_api.py"
+      - "apps/api/tests/test_admin_api.py"
+    acceptance:
+      - "/api/v1/me/favorites, /api/v1/check-ins, /api/v1/feedback, and the three /api/v1/admin/* routes all appear in app.main.app.openapi()['paths']"
+      - "Each of the four affected test files gets a test_router_is_registered_in_the_shared_api_router guard (same pattern as test_exhibition_public_api.py), so this gap cannot silently recur"
+    evidence: >
+      Found by an explicit design-conformance code-review pass on 2026-08-13 (8 finder angles,
+      1-vote verify): build_favorites_router/build_checkin_router/build_feedback_router/
+      build_admin_router were each fully implemented and independently unit-tested (each test
+      file builds its own isolated FastAPI() instance), but none was ever imported or
+      include_router()'d in apps/api/app/api/v1/api.py — all four APIs were completely
+      unreachable in the real running app despite being marked DONE. Fixed by adding the four
+      missing imports + api_router.include_router(...) calls to api.py (no new prefix needed —
+      favorites/checkin/feedback bake in their own full paths, admin.py's router already carries
+      prefix="/admin", exactly as each module's own docstring already documented). Added a
+      registration regression test to each of the four test files. Verified: full suite
+      apps/api/tests -q → 1269 passed, 3 skipped, 1 xfailed (was 1265 passed before the 4 new
+      guard tests); ruff check on touched files and the CI-fatal subset (E9,F63,F7,F82) both
+      clean; alembic heads unchanged at single head 0035_check_constraint_naming_fix. Committed
+      on feature/contract-005-favorites.
+      Two related governance findings from the same review (BACKEND-016/017 self-expanded their
+      own owned_paths into CONTRACTS-locked apps/api/app/models/**/apps/api/alembic/** without a
+      Change Request) were reported to the user but are NOT fixed by this task — they are a
+      process/record-keeping gap, not a runtime defect, and retroactively filing a Change Request
+      after the fact needs a human governance call, not a unilateral second self-authorization.

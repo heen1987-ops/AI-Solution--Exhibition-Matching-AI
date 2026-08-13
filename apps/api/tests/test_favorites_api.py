@@ -759,3 +759,14 @@ def test_router_requires_a_subject_dependency() -> None:
         response = client.get("/me/favorites")
 
     assert response.status_code == 401
+
+
+def test_router_is_registered_in_the_shared_api_router() -> None:
+    """The integration pass publishes /me/favorites through /api/v1 (same guard pattern as
+    test_exhibition_public_api.py::test_router_is_registered_in_the_shared_api_router)."""
+
+    from app.main import app as shared_app
+
+    paths = set(shared_app.openapi()["paths"])
+    assert "/api/v1/me/favorites" in paths
+    assert "/api/v1/me/favorites/{favorite_id}" in paths

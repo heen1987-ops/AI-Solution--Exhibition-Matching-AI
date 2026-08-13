@@ -32,13 +32,17 @@ from app.api.v1.routers import (
     sessions,
     webhooks,
 )
+from app.api.v1.routers.admin import build_admin_router
 from app.api.v1.routers.analytics import build_analytics_router
 from app.api.v1.routers.buyer_match import build_buyer_match_router
 from app.api.v1.routers.buyer_profile import build_buyer_profile_router
+from app.api.v1.routers.checkin import build_checkin_router
 from app.api.v1.routers.document import build_document_router
 from app.api.v1.routers.event_message import build_event_message_router
 from app.api.v1.routers.exhibitor_preference import build_exhibitor_preference_router
 from app.api.v1.routers.extraction import build_extraction_router
+from app.api.v1.routers.favorites import build_favorites_router
+from app.api.v1.routers.feedback import build_feedback_router
 from app.api.v1.routers.notification import build_notification_router
 
 api_router = APIRouter()
@@ -76,3 +80,12 @@ api_router.include_router(build_notification_router(), tags=["notifications"])
 api_router.include_router(
     build_event_message_router(), prefix="/admin", tags=["event-messages"]
 )
+
+# --- MERGE STEP 28: favorites/check-in/feedback/admin (additive only) ------
+# Each track's own docstring documents this exact registration call; none of
+# these need an extra prefix (favorites/checkin/feedback bake in their own
+# full paths, admin.py's router already carries prefix="/admin").
+api_router.include_router(build_favorites_router(), tags=["favorites"])
+api_router.include_router(build_checkin_router(), tags=["checkin"])
+api_router.include_router(build_feedback_router(), tags=["feedback"])
+api_router.include_router(build_admin_router(), tags=["admin"])

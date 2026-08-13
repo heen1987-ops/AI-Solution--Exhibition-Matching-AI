@@ -732,3 +732,13 @@ def test_full_app_has_no_get_patch_put_delete_for_feedback() -> None:
         for method in ("get", "patch", "put", "delete"):
             response = getattr(client, method)("/feedback")
             assert response.status_code in (404, 405), method
+
+
+def test_router_is_registered_in_the_shared_api_router() -> None:
+    """The integration pass publishes /feedback through /api/v1 (same guard pattern as
+    test_exhibition_public_api.py::test_router_is_registered_in_the_shared_api_router)."""
+
+    from app.main import app as shared_app
+
+    paths = set(shared_app.openapi()["paths"])
+    assert "/api/v1/feedback" in paths
