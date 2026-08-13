@@ -388,7 +388,12 @@ async def dispatch_notification(
 
     for sequence, channel in enumerate(CHANNEL_ORDER, start=sequence_offset + 1):
         provider = providers.get(channel)
-        if channel == "EMAIL":
+        # Check provider configuration before spending a consent-lookup round trip - an
+        # unconfigured EMAIL provider (the common pre-launch state, see module docstring) would
+        # otherwise still pay for a DB query whose answer can't change the outcome, and would
+        # mislabel the skip as CONSENT_MISSING instead of PROVIDER_NOT_CONFIGURED whenever both
+        # happened to be true at once.
+        if channel == "EMAIL" and provider is not None:
             has_email_consent = await db.scalar(
                 email_processing_basis_stmt(
                     tenant_id=delivery.tenant_id,

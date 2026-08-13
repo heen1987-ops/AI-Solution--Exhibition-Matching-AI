@@ -1956,3 +1956,40 @@ tasks:
       the notification_delivery.py EMAIL-consent-check-ordering/mislabeling finding; and the two
       BACKEND-016/017 governance violations (still need a human Change Request decision, see
       INTEGRATE-001's evidence note above).
+
+      UPDATE (2026-08-13): the notification_delivery.py finding is now fixed, see QUALITY-005
+      below. The BACKEND-016/017 governance findings are now resolved too, see CR-014/CR-015
+      referenced on those entries and on INTEGRATE-001's evidence note.
+
+  - id: QUALITY-005
+    title: "EMAIL consent-check must not run before checking whether the EMAIL provider is even configured"
+    wave: 2
+    track: QUALITY
+    priority: P2
+    status: DONE
+    depends_on:
+      - QUALITY-004
+    owned_paths:
+      - "apps/api/app/services/notification_delivery.py"
+      - "apps/api/tests/test_notification_delivery.py"
+    acceptance:
+      - "dispatch_notification's EMAIL step only queries email_processing_basis_stmt when an EMAIL provider is actually configured"
+      - "an unconfigured EMAIL provider is skipped with failure_code=PROVIDER_NOT_CONFIGURED, never CONSENT_MISSING, and issues no consent query"
+    evidence: >
+      Fixes the last remaining unambiguous (no design tradeoff) CONFIRMED finding from the
+      2026-08-13 design-conformance review: the NOTIFICATION_EMAIL consent-check query ran
+      unconditionally whenever the Alimtalk->SMS->EMAIL fallback loop reached the EMAIL channel,
+      before checking whether the email provider was even configured - wasting a DB round trip
+      in the common pre-launch unconfigured-provider state, and mislabeling that skip as
+      CONSENT_MISSING instead of PROVIDER_NOT_CONFIGURED (misleading anyone debugging delivery
+      failures via NotificationAttempt records). Fixed by gating the consent-check branch on
+      `provider is not None` in addition to `channel == "EMAIL"` - the existing
+      provider-is-None skip path (already used by KAKAO_ALIMTALK/SMS) now also covers EMAIL when
+      unconfigured, with the correct PROVIDER_NOT_CONFIGURED failure_code and no consent query.
+      New test: test_dispatch_skips_unconfigured_email_without_a_consent_query. Verified: all
+      existing consent tests (test_dispatch_sends_email_when_notification_email_consent_is_
+      effective, test_dispatch_skips_email_when_notification_email_consent_was_withdrawn) still
+      pass unchanged since they configure an EMAIL provider, so the consent-check branch is
+      still reached exactly as before in those cases. apps/api/tests -q: 1273 passed, 3 skipped,
+      1 xfailed (was 1272 before this test); ruff and alembic heads clean. Committed on
+      feature/contract-005-favorites.

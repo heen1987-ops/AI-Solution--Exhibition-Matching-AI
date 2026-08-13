@@ -494,6 +494,40 @@ async def test_dispatch_skips_email_when_notification_email_consent_was_withdraw
 
 
 @pytest.mark.asyncio
+async def test_dispatch_skips_unconfigured_email_without_a_consent_query() -> None:
+    """When no EMAIL provider is configured at all (the common pre-launch state - see this
+    module's own docstring), the skip must be labeled PROVIDER_NOT_CONFIGURED, not
+    CONSENT_MISSING, and must never spend a DB round trip on a consent lookup whose answer
+    can't change the outcome either way."""
+
+    settings = _settings()
+    event = _event()
+    user_id = uuid4()
+    delivery = _delivery(settings, event, user_id)
+    # Only one scalar() call expected: the sequence-offset lookup. No providers configured at
+    # all, so every channel (including EMAIL) hits the provider-is-None branch, never the
+    # consent-check branch.
+    db = _ConsentGatedRecordingDb(scalar_queue=[None])
+
+    outcome = await dispatch_notification(
+        db,  # type: ignore[arg-type]
+        delivery,
+        identity=_identity(settings, user_id),
+        event=event,
+        providers={},
+        release_gate=_live_gate(),
+        settings=settings,
+        now=datetime(2026, 8, 3, tzinfo=UTC),
+    )
+
+    assert outcome.sent is False
+    email_attempt = next(a for a in outcome.attempts if a.channel == "EMAIL")
+    assert email_attempt.status == "SKIPPED"
+    assert email_attempt.failure_code == "PROVIDER_NOT_CONFIGURED"
+    assert delivery.status == "FAILED"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_does_not_consent_gate_alimtalk_or_sms() -> None:
     """The NOTIFICATION_EMAIL consent gate applies only to the EMAIL step - Alimtalk/SMS are
     untouched, matching this repo's existing (lack of) consent gating on those channels."""
