@@ -31,6 +31,12 @@ dependencies = [
     # FastAPI's Form()/UploadFile() support, which requires this package at runtime.
     # The shared dev venv happens to have it already; declaring it keeps CI honest.
     "python-multipart>=0.0.9",
+    # ROUTE-001 (U-13): app/services/routing/pathfinding.py's visit-order optimizer uses this
+    # real open-source TSP solver (python_tsp.heuristics.solve_tsp_local_search) instead of a
+    # hand-rolled 2-opt loop - see that module's docstring. numpy is python-tsp's own
+    # distance-matrix dependency, not otherwise used in this codebase.
+    "python-tsp>=0.4.0,<1.0.0",
+    "numpy>=2.0.0,<3.0.0",
 ]
 
 [project.optional-dependencies]

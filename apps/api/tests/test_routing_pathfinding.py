@@ -79,6 +79,57 @@ def test_two_opt_never_makes_a_route_longer_than_the_greedy_construction() -> No
     assert {c.key for c in improved} == {c.key for c in greedy}
 
 
+def test_two_opt_improve_escapes_a_deliberately_bad_starting_order() -> None:
+    """Regression for the python-tsp integration (2026-08-14): two_opt_improve must genuinely
+    run local search from whatever order it is given, not merely validate/pass through an
+    already-good one. Feeding it the worst possible ordering of a known 4-point square proves
+    the improvement step does real work, not just confirms the greedy construction."""
+
+    start = (0.0, 0.0)
+    # A unit square offset from start; visiting in the given (deliberately criss-crossing) order
+    # is far longer than the two possible non-crossing orders around the perimeter.
+    a = _candidate("a", (0.0, 1.0))
+    b = _candidate("b", (1.0, 1.0))
+    c = _candidate("c", (1.0, 0.0))
+    d = _candidate("d", (0.0, 0.0))
+    worst_order = [b, d, a, c]  # crosses itself twice
+
+    improved = pf.two_opt_improve(start, worst_order, avoid_congestion=False)
+
+    worst_cost = pf.estimate_walking_minutes(start, worst_order)
+    improved_cost = pf.estimate_walking_minutes(start, improved)
+    assert improved_cost < worst_cost
+    assert {c.key for c in improved} == {"a", "b", "c", "d"}
+
+
+def test_optimize_order_handles_a_max_route_targets_scale_input_without_dropping_or_duplicating() -> (
+    None
+):
+    """MAX_ROUTE_TARGETS (app/schemas/route.py) caps real requests at 20 - a sanity check at
+    that scale that the solver returns a complete, valid permutation (no dropped/duplicated
+    candidate) and never regresses versus the plain greedy construction. (A regular grid's
+    boustrophedon nearest-neighbor path is already near-optimal, so this scenario alone can't
+    prove *improvement* - test_two_opt_improve_escapes_a_deliberately_bad_starting_order already
+    covers that with a case hand-picked to have a real, provable gap.)"""
+
+    start = (0.0, 0.0)
+    # A 4x5 grid of points, offset so the origin isn't itself a grid point.
+    candidates = [
+        _candidate(f"g{row}_{col}", (float(col) * 10.0 + 3.0, float(row) * 10.0 + 3.0))
+        for row in range(4)
+        for col in range(5)
+    ]
+
+    greedy = pf.nearest_neighbor_order(start, candidates, avoid_congestion=False)
+    improved = pf.optimize_order(start, candidates, avoid_congestion=False)
+
+    assert {c.key for c in improved} == {c.key for c in candidates}
+    assert len(improved) == len(candidates)
+    greedy_cost = pf.estimate_walking_minutes(start, greedy)
+    improved_cost = pf.estimate_walking_minutes(start, improved)
+    assert improved_cost <= greedy_cost + 1e-9
+
+
 def test_euclidean_distance_is_symmetric_and_zero_for_identical_points() -> None:
     a, b = (1.0, 2.0), (4.0, 6.0)
     assert pf.euclidean_distance(a, a) == 0.0

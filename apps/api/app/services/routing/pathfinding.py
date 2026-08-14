@@ -19,12 +19,55 @@ this module; neither states meters, centimeters, or any other unit. They are jus
 
 Everything in this module is a pure function/dataclass - no DB session, no FastAPI, no I/O - so
 it is unit-testable without Postgres (see tests/test_routing_pathfinding.py).
+
+Local-improvement step uses a real, tested open-source TSP solver (2026-08-14)
+--------------------------------------------------------------------------------------------
+The visit-order optimizer used to be a hand-rolled nearest-neighbor construction followed by a
+hand-rolled, iteration-capped 2-opt loop - this module's own original docstring flagged that as
+"not an exact or metaheuristic solver... a reasonable, fast, testable approximation, not the
+optimum." That gap is now closed with a real library: `python-tsp
+<https://github.com/fillipe-gsm/python-tsp>`_ (pure Python, MIT-licensed, actively maintained,
+pip-installed as an apps/api dependency - see pyproject.toml). :func:`two_opt_improve` still does
+exactly what its name says (locally improve a given order), but the 2-opt neighborhood search
+itself is now ``python_tsp.heuristics.solve_tsp_local_search`` running to a genuine local
+optimum (or ``MAX_LOCAL_SEARCH_SECONDS``, whichever comes first) instead of a fixed iteration
+budget that could stop mid-improvement on a pathological input.
+
+What this does NOT change (still true, still honest, still the same limitation this module has
+always documented): this is still Euclidean plan-distance, not wall-aware indoor navigation.
+python-tsp solves "what order should we visit these points in", not "how do we walk around a
+wall" - there is still no aisle/corridor graph or obstacle data anywhere in this repository (see
+the ACCURACY NOTE above), so applying a real wall-aware indoor-routing open-source project (e.g.
+IndoorGML-based routing engines) would require floor-plan graph data this repo does not have -
+fabricating that data to make one look integrated would repeat the exact dishonesty this feature
+was explicitly built to avoid for camera-based positioning (see
+``.harness/handoffs/backend/indoor-route-navigation.md``'s "Honest scope" section). The
+TSP-ordering problem, by contrast, only needs the coordinates this repo already has
+(``exhibition.booth.map_x``/``map_y``), which is why it is the piece a real open-source library
+can honestly improve today.
+
+Why python-tsp and not networkx's TSP approximations (christofides/greedy_tsp)
+--------------------------------------------------------------------------------------------
+networkx's `travelling_salesman_problem
+<https://networkx.org/documentation/stable/reference/algorithms/approximation.html>`_ needs a
+symmetric graph (its Christofides 3/2-approximation guarantee specifically requires a metric,
+triangle-inequality-respecting distance) and always returns a closed tour (start == end).
+:func:`_edge_cost` below charges the congestion penalty on arrival at the *destination* node -
+an intentionally asymmetric cost (edge(u, v) != edge(v, u) whenever their congestion flags
+differ) - and a visit route is an open path (a visitor does not walk back to their starting
+point). python-tsp's ``solve_tsp_local_search`` takes a plain distance matrix with no symmetry
+requirement, and supports open-path TSP directly (zero the first column - see
+:func:`_distance_matrix`) - a closer fit for this module's actual cost model than forcing it
+into networkx's symmetric/closed-tour shape.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Final
+
+import numpy as np
+from python_tsp.heuristics import solve_tsp_local_search
 
 Point = tuple[float, float]
 
@@ -42,11 +85,12 @@ WALKING_SPEED_PLAN_UNITS_PER_MINUTE: Final[float] = 20.0
 #: explicitly says not to do).
 CONGESTION_PENALTY_PLAN_UNITS: Final[float] = 15.0
 
-#: Bound on 2-opt local-improvement passes (counted in edge-cost evaluations) so route
-#: computation stays fast and deterministic even in pathological inputs.
-#: MAX_ROUTE_TARGETS (app/schemas/route.py) already caps input size to a small number, so this
-#: is a defense-in-depth bound, not the primary performance control.
-MAX_TWO_OPT_ITERATIONS: Final[int] = 200
+#: Wall-clock bound (seconds) on the python-tsp local-search improvement pass, so route
+#: computation stays fast even in pathological inputs. MAX_ROUTE_TARGETS (app/schemas/route.py)
+#: already caps input size to a small number (<=20), so solve_tsp_local_search reaches a genuine
+#: local optimum in a few milliseconds in practice - this is a defense-in-depth bound, not the
+#: primary performance control.
+MAX_LOCAL_SEARCH_SECONDS: Final[float] = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,21 +128,6 @@ def _edge_cost(
     return cost
 
 
-def _route_cost(
-    start: Point, order: list[RouteCandidate], *, avoid_congestion: bool
-) -> float:
-    total = 0.0
-    cursor = start
-    for candidate in order:
-        if candidate.point is None:
-            continue
-        total += _edge_cost(
-            cursor, candidate.point, candidate, avoid_congestion=avoid_congestion
-        )
-        cursor = candidate.point
-    return total
-
-
 def nearest_neighbor_order(
     start: Point, candidates: list[RouteCandidate], *, avoid_congestion: bool
 ) -> list[RouteCandidate]:
@@ -133,18 +162,54 @@ def nearest_neighbor_order(
     return ordered + unlocatable
 
 
+def _distance_matrix(
+    start: Point, locatable: list[RouteCandidate], *, avoid_congestion: bool
+) -> np.ndarray:
+    """Row/column 0 is ``start``; row/column ``i`` (i >= 1) is ``locatable[i - 1]``.
+
+    Asymmetric by design (see module docstring "Why python-tsp" section): entry ``[i][j]`` is
+    ``_edge_cost`` arriving at node ``j`` from node ``i``, so the congestion penalty attached to
+    the destination candidate only appears in columns, not rows. Column 0 is zeroed after
+    construction - the standard python-tsp technique for turning a closed-tour solver into an
+    open-path one (no cost charged for the implicit "return to start" leg the solver still
+    computes internally).
+    """
+
+    points = [start] + [c.point for c in locatable]
+    n = len(points)
+    matrix = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            destination = locatable[j - 1] if j > 0 else None
+            if destination is None:
+                matrix[i][j] = euclidean_distance(points[i], points[j])  # type: ignore[arg-type]
+            else:
+                matrix[i][j] = _edge_cost(
+                    points[i],  # type: ignore[arg-type]
+                    points[j],  # type: ignore[arg-type]
+                    destination,
+                    avoid_congestion=avoid_congestion,
+                )
+    matrix[:, 0] = 0.0  # open path - see docstring above.
+    return matrix
+
+
 def two_opt_improve(
     start: Point,
     order: list[RouteCandidate],
     *,
     avoid_congestion: bool,
-    max_iterations: int = MAX_TWO_OPT_ITERATIONS,
+    max_processing_time: float = MAX_LOCAL_SEARCH_SECONDS,
 ) -> list[RouteCandidate]:
-    """Bounded 2-opt local improvement over the *locatable* prefix of ``order``.
+    """2-opt local improvement over the *locatable* prefix of ``order``, via python-tsp's
+    ``solve_tsp_local_search`` (see module docstring) - runs to a genuine local optimum from
+    ``order`` as the starting tour, bounded by ``max_processing_time`` as a defense-in-depth cap.
 
-    Only swaps within the contiguous locatable prefix - unlocatable candidates (``point is
-    None``) stay fixed at the tail in their nearest-neighbor position, since swapping them would
-    not change any real distance (there is nothing to measure).
+    Only reorders the locatable prefix - unlocatable candidates (``point is None``) stay fixed
+    at the tail in their nearest-neighbor position, since swapping them would not change any
+    real distance (there is nothing to measure).
     """
 
     locatable = [c for c in order if c.point is not None]
@@ -153,25 +218,22 @@ def two_opt_improve(
     if n < 3:
         return locatable + unlocatable
 
-    best = list(locatable)
-    best_cost = _route_cost(start, best, avoid_congestion=avoid_congestion)
-    iterations = 0
-    improved = True
-    while improved and iterations < max_iterations:
-        improved = False
-        for i in range(n - 1):
-            for j in range(i + 1, n):
-                if iterations >= max_iterations:
-                    break
-                candidate_order = best[:i] + list(reversed(best[i : j + 1])) + best[j + 1 :]
-                cost = _route_cost(start, candidate_order, avoid_congestion=avoid_congestion)
-                iterations += 1
-                if cost + 1e-9 < best_cost:
-                    best = candidate_order
-                    best_cost = cost
-                    improved = True
-            if iterations >= max_iterations:
-                break
+    matrix = _distance_matrix(start, locatable, avoid_congestion=avoid_congestion)
+    x0 = list(range(n + 1))  # [start, locatable[0], locatable[1], ...] - order's own sequence.
+    permutation, _cost = solve_tsp_local_search(
+        matrix,
+        x0=x0,
+        perturbation_scheme="two_opt",
+        max_processing_time=max_processing_time,
+    )
+    # solve_tsp_local_search returns a permutation of the closed tour it solved internally - in
+    # practice node 0 (start) stays at index 0 since x0 starts there and 2-opt never gains
+    # anything by moving it (column 0 is all zeros), but that is solver behavior, not a
+    # documented API guarantee - rotate defensively so start is first regardless, then drop it
+    # and map the rest back to locatable candidates (node i -> locatable[i - 1]).
+    start_index = permutation.index(0)
+    rotated = permutation[start_index:] + permutation[:start_index]
+    best = [locatable[node - 1] for node in rotated if node != 0]
     return best + unlocatable
 
 
@@ -242,7 +304,7 @@ def fit_to_budget(
 
 __all__ = [
     "CONGESTION_PENALTY_PLAN_UNITS",
-    "MAX_TWO_OPT_ITERATIONS",
+    "MAX_LOCAL_SEARCH_SECONDS",
     "WALKING_SPEED_PLAN_UNITS_PER_MINUTE",
     "Point",
     "RouteCandidate",

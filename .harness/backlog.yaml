@@ -2048,3 +2048,92 @@ tasks:
       new tests, all in test_checkin_api.py). ruff on touched files and the CI-fatal subset both
       clean; alembic heads unchanged (no schema change - service-layer logic only). Committed on
       feature/contract-005-favorites.
+
+  - id: ROUTE-002
+    title: "Merge feature/indoor-route-navigation (ROUTE-001) into the cumulative branch; replace pathfinding.py's hand-rolled 2-opt with the open-source python-tsp solver"
+    wave: 3
+    track: BACKEND
+    priority: P2
+    status: DONE
+    depends_on:
+      - ROUTE-001
+    owned_paths:
+      - "apps/api/app/services/routing/pathfinding.py"
+      - "apps/api/tests/test_routing_pathfinding.py"
+      - "apps/api/pyproject.toml"
+      - "apps/api/alembic/versions/20260813_0036_route_positioning.py"
+    acceptance:
+      - "feature/indoor-route-navigation (previously unmerged, per its own handoff note 'left for a human decision') is consolidated onto feature/contract-005-favorites, matching every other feature this session"
+      - "The alembic revision-ID collision from two independently-authored 0032_* migrations is resolved by re-chaining, not by editing either migration's actual DDL"
+      - "pathfinding.py's visit-order optimizer uses a real, tested open-source TSP library instead of a hand-rolled, iteration-capped 2-opt loop, per explicit user request (find and apply an open-source indoor-navigation library)"
+    evidence: >
+      User request: "git에서 실내 내비게이션 오픈소스를 찾아서 적용해줘" (find an open-source
+      indoor-navigation project on GitHub and apply it). Investigated real open-source indoor
+      navigation projects (Navigine Indoor Routing Library, INDRZ, OpenIndoorMaps,
+      indoor-wayfinder) - all require an actual floor-plan routing graph (DWG/DXF/PostGIS vector
+      data, SVG paths, etc.) as input, which this repo does not have (pathfinding.py's own
+      ACCURACY NOTE already documents: no aisle/corridor graph, no wall/obstacle data anywhere in
+      this repository). Applying one honestly would require either fabricating floor-plan graph
+      data (repeating the exact dishonesty this feature's own "Honest scope" section was written
+      to avoid for camera-based positioning) or a real venue floor-plan digitization project, well
+      outside a code-level "find and apply" task. The genuinely improvable, already-flagged-weak
+      piece this repo's own data supports is the TSP visit-order optimizer itself
+      (pathfinding.py's own docstring already said "not an exact or metaheuristic solver... not
+      the optimum") - so that is what was replaced with a real open-source library.
+
+      Two-step delivery:
+      (1) MERGE: feature/indoor-route-navigation (branched from an ancestor of
+      feature/contract-005-favorites, never pushed to origin) merged in via
+      `git merge --no-ff`. Three real conflicts, all resolved: .harness/backlog.yaml (kept the
+      newer DONE+evidence versions of NOTIFY-002/CLEANUP-001/QUALITY-001/QUALITY-002 that HEAD
+      had already completed, over the older branch's stale READY versions of the same entries -
+      not a content disagreement, just staleness); apps/api/app/api/v1/api.py (both sides
+      additively registered different routers - combined both include_router blocks); a genuine
+      alembic revision-ID collision - both branches independently authored a migration named
+      0032_* off the same parent (0031_integration_source_sync): HEAD's 0032_favorite (already
+      chained through 0033/0034/0035) and this branch's 0032_route_positioning. Resolved by
+      renumbering the never-published, never-pushed route_positioning migration to
+      0036_route_positioning with down_revision=0035_check_constraint_naming_fix (single head
+      restored) - the actual CREATE TABLE DDL was not touched, only the revision id/parent, and
+      this does not violate the repo's immutable-published-migration convention since the
+      migration was never pushed to origin or run against any real database. Updated
+      test_exhibitor_models.py's two hardcoded assertions (table count 138->141, head
+      0032_route_positioning->0036_route_positioning) to match.
+      (2) OPEN-SOURCE SOLVER: replaced app/services/routing/pathfinding.py's hand-rolled,
+      MAX_TWO_OPT_ITERATIONS-capped 2-opt loop with `python-tsp
+      <https://github.com/fillipe-gsm/python-tsp>`_ (pip-installed, MIT-licensed,
+      python_tsp.heuristics.solve_tsp_local_search), added as a real apps/api dependency
+      (pyproject.toml, python-tsp + numpy). Chose python-tsp over networkx's TSP approximations
+      because this module's congestion-penalty-on-arrival cost model is asymmetric and the route
+      is an open path (no return to start) - networkx's christofides/greedy_tsp need a symmetric
+      metric graph and always return a closed tour; python-tsp's local-search solver takes a
+      plain (possibly asymmetric) distance matrix directly and supports open-path TSP via the
+      documented "zero the first column" technique (see new `_distance_matrix` helper).
+      nearest_neighbor_order (unchanged) still builds the initial tour/warm-start;
+      two_opt_improve's internals now call the library to a genuine local optimum (bounded by a
+      new MAX_LOCAL_SEARCH_SECONDS=1.0 wall-clock cap replacing the old fixed iteration count).
+      The now-dead _route_cost helper (only ever called by the old hand-rolled loop) was removed
+      rather than left unused. Defensively rotates the solver's returned permutation so the
+      start node is first, since python-tsp does not document that as a guaranteed invariant even
+      though empirical testing (10 random trials) showed it always holds for this two_opt
+      perturbation scheme. Module docstring documents both what changed and what explicitly did
+      NOT change (still Euclidean plan-distance, still no wall-aware routing - the same honest
+      limitation as before, now with the added "why not a real indoor-nav library" reasoning).
+
+      All 11 pre-existing tests in test_routing_pathfinding.py pass completely unmodified against
+      the new solver (proving behavioral equivalence on every previously-hand-verified case,
+      including the D->F->E 2-opt-improvement case). Added 2 new tests:
+      test_two_opt_improve_escapes_a_deliberately_bad_starting_order (a hand-picked criss-crossing
+      4-point order the old bounded loop could plausibly have also fixed, but now proven against
+      the real library) and
+      test_optimize_order_handles_a_max_route_targets_scale_input_without_dropping_or_duplicating
+      (a 20-candidate grid at the real MAX_ROUTE_TARGETS cap, proving no candidate is
+      dropped/duplicated and cost never regresses at that scale).
+
+      Verified: apps/api/tests -q → 1318 passed, 3 skipped, 1 xfailed (was 1278 before the merge
+      + these changes; merge alone added 38 tests from ROUTE-001's own test_route_api.py/
+      test_routing_pathfinding.py, this task's own changes net +2). ruff on touched files and the
+      CI-fatal subset both clean. `alembic heads` -> single head, 0036_route_positioning.
+      `alembic upgrade head --sql` compiles clean through all 36 migrations. Merge commit
+      7c83f14, solver-swap commit follows. Pushed to origin (feature/contract-005-favorites, not
+      main/codex/backju-ontology-ai-gateway per this session's standing rule).
