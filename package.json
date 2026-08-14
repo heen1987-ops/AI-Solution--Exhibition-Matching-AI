@@ -7,6 +7,7 @@
   "scripts": {
     "dev:user-web": "pnpm --filter backju-ai-sherpa-frontend dev",
     "dev:admin": "pnpm --filter backju-admin dev",
+    "dev:kiosk": "pnpm --filter backju-kiosk dev",
     "lint": "pnpm -r --if-present run lint",
     "typecheck": "pnpm -r --if-present run typecheck && tsc --noEmit",
     "test": "pnpm -r --if-present run test",

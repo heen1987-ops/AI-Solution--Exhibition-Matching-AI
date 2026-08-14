@@ -82,3 +82,38 @@ CR-004의 검색 임베딩은 `text-embedding-3-small` 512차원과 cosine을 �
 새 모델이나 다른 차원은 기존 벡터를 제자리에서 덮어쓰지 않고 새 모델 버전·백필·검증·활성
 포인터 교체 순서로 전환한다. 이 가정은 공급자 비용·개인정보 처리 검토 결과에 따라 새 CR로
 교체할 수 있다.
+
+---
+
+## ASSUMPTION-005 (2026-08-11) — corrects a mis-citation: `apps/worker`'s zero-dependency rule was never covered by ASSUMPTION-003
+
+**Correction, not a new independent choice**: the WAVE2C/2D/2E worktree's `apps/worker/pyproject.toml`
+declared `dependencies = []` with an inline comment citing "ASSUMPTION-003" as its justification, and
+`.harness/state.json` repeated the same citation ("zero third-party deps by design ... ASSUMPTION-003").
+That citation is wrong: ASSUMPTION-003 (above) is scoped entirely to *file-layout* mapping
+(`apps/api/src/modules/**` → the existing flat `app/**` layout) and says nothing about a dependency
+policy. No prior assumption or decision anywhere in this file actually approved a zero-dependency rule
+for `apps/worker` — it was asserted, not decided, and then cited to a document that never said it.
+
+**Correction applied during the WAVE2C/2D/2E → main unification merge**: the zero-dependency premise
+was also empirically false regardless of citation — `openpyxl>=3.1.5` is already an `apps/api`
+dependency and main ships a 511-line production `openpyxl` reader
+(`apps/api/app/services/excel_import.py`), so "the venv has no XLSX/PDF/DOCX libraries" was never
+true once `apps/worker` runs alongside `apps/api`. Holding the rule anyway had already produced two
+empirically unfit stdlib-only parsers in the worktree: its `XlsxParser` returns `SUCCEEDED` while
+silently dropping every `inlineStr` cell, and its `PdfTextParser` returns zero segments for
+hex-encoded CID Korean text while decoding literal-string Korean to mojibake and still reporting
+`SUCCEEDED`. The merge therefore drops the zero-dependency rule for `apps/worker` and lets it declare
+real dependencies (openpyxl, pypdf/pdf parsing, python-docx as needed), rewritten against
+`apps/api/app/services/excel_import.py`'s hardened reader as the reference implementation rather than
+against the stdlib.
+
+**Also folded into this same correction**: `apps/worker`'s import root is renamed from `app` to
+`worker`. In the worktree the collision with `apps/api`'s `app` import root was survivable because
+the worker imported nothing from `apps/api`; in the unified repo it is fatal, because every real
+worker job writes to `apps/api`'s own models and both packages now sit on `sys.path` simultaneously.
+See `.harness/decisions.md` for the dated decision record of this rename.
+
+**Reversible**: yes — this is a dependency-list and import-root correction, not a schema or API
+change.
+

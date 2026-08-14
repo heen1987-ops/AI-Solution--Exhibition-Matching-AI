@@ -34,11 +34,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import and_, delete, func, or_, select
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import VerifiedPrincipal, get_verified_principal
+from app.core.router_auth import get_actor_user_id, require_exhibitor_access
 from app.db.session import get_db
 from app.models.exhibitor import (
     EventProduct,
@@ -53,7 +53,6 @@ from app.models.exhibitor import (
     TradeCondition,
     TradeConditionTerm,
 )
-from app.models.identity import Role, UserRole
 from app.models.ontology_refs import concept as ontology_concept
 from app.schemas.partner import (
     BuyerPreferenceItem,
@@ -75,40 +74,9 @@ from app.schemas.partner import (
 router = APIRouter()
 
 
-async def get_actor_user_id(
-    principal: VerifiedPrincipal = Depends(get_verified_principal),
-) -> UUID:
-    """검증된 세션/JWT principal에서만 행위자를 파생한다."""
-
-    return principal.user_id
-
-
-async def _require_exhibitor_access(
-    db: AsyncSession, *, actor_user_id: UUID, exhibitor_id: UUID
-) -> None:
-    """actor_user_id가 이 exhibitor_id 소속 EXHIBITOR 역할이거나 OPERATOR/ADMIN인지 검사한다.
-
-    db-erd-table-spec.md 8.2절 "EXHIBITOR 역할은 exhibitor_id 필수"를 이용해, 다른 업체
-    소속 담당자가 남의 업체 프로파일을 고치지 못하게 막는다(인터페이스 명세 23절 "다른
-    업체의 ... 리소스를 조회할 수 없다").
-    """
-
-    stmt = (
-        select(UserRole.user_role_id)
-        .join(Role, Role.role_id == UserRole.role_id)
-        .where(
-            UserRole.user_id == actor_user_id,
-            UserRole.valid_until.is_(None),
-            or_(
-                and_(Role.role_code == "EXHIBITOR", UserRole.exhibitor_id == exhibitor_id),
-                Role.role_code.in_(("OPERATOR", "ADMIN")),
-            ),
-        )
-        .limit(1)
-    )
-    allowed = (await db.execute(stmt)).scalar_one_or_none()
-    if allowed is None:
-        raise HTTPException(status_code=403, detail="RESOURCE_FORBIDDEN")
+# 행위자 식별/인가는 공용 어댑터(app/core/router_auth.py)가 정본이다. 아래 두 이름은
+# 기존 참조(및 테스트의 dependency_overrides)를 깨지 않기 위한 동일 객체 별칭이다.
+_require_exhibitor_access = require_exhibitor_access
 
 
 async def _get_exhibitor_or_404(db: AsyncSession, exhibitor_id: UUID) -> Exhibitor:

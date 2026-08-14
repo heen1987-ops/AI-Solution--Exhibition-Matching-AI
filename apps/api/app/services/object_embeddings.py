@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -33,6 +34,30 @@ MAX_EMBEDDING_SOURCE_BYTES = 8_000
 MAX_EMBEDDING_REQUEST_BYTES = 240_000
 MAX_EMBEDDING_REQUEST_DOCUMENTS = 256
 
+#: The only approval value any source row may carry into an embedding input. Asserted in
+#: Python as a second line of defence behind the SQL WHERE clauses below: a future edit that
+#: loosens a join or drops a predicate must fail loudly here rather than quietly embed an
+#: unapproved exhibitor or product into the public recall index.
+REQUIRED_APPROVAL_STATUS = "APPROVED"
+
+# Defence in depth against operator-pasted contact details reaching a public embedding.
+# Every field this module reads is a typed, approved, public catalog column with no contact
+# semantics, so nothing here is *expected* to match - but an approved company_summary is
+# free text a human typed, and a leaked address/number would otherwise become permanently
+# searchable through semantic recall. Over-redaction is the safe failure direction: a
+# stripped digit run costs a little recall, a leaked number is a privacy breach.
+_EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# Korean phone shapes: mobile 010-xxxx-xxxx, area codes 02-xxx-xxxx, +82 international.
+_PHONE_PATTERN = re.compile(r"(?:\+?\d{1,3}[-.\s]?)?(?:\d{2,4}[-.\s]){1,3}\d{4}")
+
+
+class UnapprovedEmbeddingSourceError(RuntimeError):
+    """A source row reached the embedding builder without an APPROVED status.
+
+    Raised, never logged-and-skipped: silently dropping the row would hide the fact that the
+    approval boundary had already been crossed by the query that produced it.
+    """
+
 
 @dataclass(frozen=True, slots=True)
 class EmbeddingDocument:
@@ -54,7 +79,37 @@ class EmbeddingBackfillResult:
 
 
 def _normalize_public_part(part: str | None) -> str:
-    return " ".join(part.split()) if part else ""
+    """Collapse whitespace and scrub anything shaped like contact information.
+
+    The scrub runs on every part, structured identifiers included, because an operator can
+    paste a phone number into any free-typed catalog column.
+    """
+
+    if not part:
+        return ""
+    scrubbed = _EMAIL_PATTERN.sub(" ", part)
+    scrubbed = _PHONE_PATTERN.sub(" ", scrubbed)
+    return " ".join(scrubbed.split())
+
+
+def _assert_approved(
+    statuses: dict[str, str | None],
+    *,
+    recommendable_id: uuid.UUID,
+    content_type: str,
+) -> None:
+    """Fail loudly if any approval column on a loaded row is not APPROVED."""
+
+    offending = {
+        column: value
+        for column, value in statuses.items()
+        if value != REQUIRED_APPROVAL_STATUS
+    }
+    if offending:
+        raise UnapprovedEmbeddingSourceError(
+            f"refusing to embed {content_type} recommendable_id={recommendable_id}: "
+            f"expected {REQUIRED_APPROVAL_STATUS} on every approval column, got {offending}"
+        )
 
 
 def _truncate_utf8(text: str, max_bytes: int) -> str:
@@ -181,7 +236,13 @@ async def load_approved_catalog_documents(
     event_id: uuid.UUID,
     language: str,
 ) -> list[EmbeddingDocument]:
-    """Load only approved, non-deleted public fields; never identity/profile data."""
+    """Load only approved, non-deleted public fields; never identity/profile data.
+
+    Two independent guards enforce the approval boundary: the WHERE clauses below, and
+    ``_assert_approved`` on every loaded row (``UnapprovedEmbeddingSourceError``). The second
+    exists because the first is a join away from being weakened by an unrelated edit, and an
+    unapproved row that reaches the index is not recoverable by fixing the query later.
+    """
 
     exhibitor_stmt = (
         select(
@@ -192,6 +253,9 @@ async def load_approved_catalog_documents(
             Exhibitor.company_name,
             Exhibitor.company_summary,
             ExhibitorParticipation.promotion_summary,
+            # Selected only so the Python-side approval assertion has something to check.
+            ExhibitorParticipation.participation_status,
+            Exhibitor.master_approval_status,
         )
         .join(
             ExhibitorParticipation,
@@ -230,6 +294,11 @@ async def load_approved_catalog_documents(
             Product.product_name,
             Product.product_summary,
             Product.production_method,
+            # Selected only so the Python-side approval assertion has something to check.
+            EventProduct.approval_status,
+            Product.master_approval_status,
+            ExhibitorParticipation.participation_status,
+            Exhibitor.master_approval_status,
         )
         .join(
             EventProduct,
@@ -284,7 +353,23 @@ async def load_approved_catalog_documents(
         name,
         summary,
         method,
+        event_product_approval,
+        product_master_approval,
+        product_participation_status,
+        product_exhibitor_approval,
     ) in product_rows:
+        _assert_approved(
+            {
+                "event_product.approval_status": event_product_approval,
+                "product.master_approval_status": product_master_approval,
+                "exhibitor_participation.participation_status": (
+                    product_participation_status
+                ),
+                "exhibitor.master_approval_status": product_exhibitor_approval,
+            },
+            recommendable_id=recommendable_id,
+            content_type="PRODUCT",
+        )
         text = _public_text(name, summary, method)
         if text:
             product_sources_by_participation.setdefault(participation_id, []).append(
@@ -310,7 +395,17 @@ async def load_approved_catalog_documents(
         name,
         summary,
         promotion,
+        participation_status,
+        exhibitor_approval,
     ) in exhibitor_rows:
+        _assert_approved(
+            {
+                "exhibitor_participation.participation_status": participation_status,
+                "exhibitor.master_approval_status": exhibitor_approval,
+            },
+            recommendable_id=recommendable_id,
+            content_type="SUMMARY",
+        )
         text = _summary_public_text(
             company_name=name,
             company_summary=summary,

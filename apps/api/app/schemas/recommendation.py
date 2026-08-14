@@ -184,6 +184,10 @@ class InteractionEventIn(BaseModel):
     visible_duration_ms: int | None = Field(default=None, ge=0)
     screen: str | None = Field(default=None, max_length=30)
     zone: str | None = Field(default=None, max_length=50)
+    #: 클라이언트가 제출한 검색 자유입력 원문. 절대 원문 그대로 저장하지 않는다 -
+    #: 라우터가 app/services/interaction_event/masking.py::mask_search_query로
+    #: 전화번호/이메일/주민등록번호/계좌번호 형태를 마스킹한 뒤에만 context_json에 담는다.
+    search_query: str | None = Field(default=None, max_length=500)
     occurred_at: datetime
     consent_snapshot_id: uuid.UUID | None = None
     # 16.2절 마지막 문단: "직접 식별정보, 자유메모 원문, OTP, 토큰, 전체 URL query string을

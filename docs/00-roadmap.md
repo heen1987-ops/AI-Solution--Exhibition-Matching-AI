@@ -11,7 +11,7 @@
 > ## ⚠️ 2026-08-02 재설계 선언 (12단계에서 30단계 순차진행 중단)
 > 12단계(바이어 B2B 매칭점수) 완료 직후, 별도 대화에서 **"기존 연속 30단계를 중단"**하고 웹 초개인화/키오스크 검색/공통 AI플랫폼 3모듈 체계로 전환하는 재설계가 나왔다. 상세: [redesign-web-kiosk-split.md](./redesign-web-kiosk-split.md), 통합 마스터스펙: [vibe-coding-master-spec-v1.md](./vibe-coding-master-spec-v1.md), 실행방법론(하네스): [harness-orchestrator-prompt-pack.md](./harness-orchestrator-prompt-pack.md).
 >
-> **미해결**: 이 재설계는 `apps/user-web`, `apps/kiosk`, `apps/admin`, `apps/api`, `apps/worker` 모노레포 구조와 `.harness/` 기반 병렬개발 체계를 요구하는데, 이 저장소에는 이미 `backend/`(FastAPI 단일 백엔드, 48개 API 검증완료) + `frontend/`(Next.js 단일 프런트, 빌드검증완료) 구조가 만들어져 있다. 아래 "산출물 확보 19단계"/"구현 18단계" 진행상황은 재설계 이전(기존 30단계 트랙) 기준이며, 재설계와의 관계가 아직 정리되지 않았다. **실제로 리포 구조를 재설계에 맞춰 바꿀지, 기존 backend/frontend를 유지한 채 설계 내용만 반영할지는 사용자 확인 필요.**
+> **미해결 — RESOLVED by DECISION-006 (2026-08-02)**: 이 재설계는 `apps/user-web`, `apps/kiosk`, `apps/admin`, `apps/api`, `apps/worker` 모노레포 구조와 `.harness/` 기반 병렬개발 체계를 요구하는데, 이 저장소에는 이미 `backend/`(FastAPI 단일 백엔드, 48개 API 검증완료) + `frontend/`(Next.js 단일 프런트, 빌드검증완료) 구조가 만들어져 있었다. 아래 "산출물 확보 19단계"/"구현 18단계" 진행상황은 재설계 이전(기존 30단계 트랙) 기준이었다. **사용자가 DECISION-006에서 확정**: `backend/`→`apps/api`, `frontend/`→`apps/user-web`로 물리 이동하고 pnpm+`apps/*` 정식 모노레포로 전환한다. 2026-08-11 기준 `apps/api`, `apps/user-web`, `apps/admin`, `apps/worker`, `apps/kiosk`(비활성 호환 자산) 구조가 모두 실제로 존재하며 이 문서 하단의 "예정" 표기 다수는 그 사이 WAVE2C/2D/2E 작업으로 구현됐다 — 아래 단계별 현황 표를 참고.
 
 ## 진행 현황
 
@@ -55,13 +55,13 @@
 | 17 | 행동학습·피드백 반영 | 구현완료 | [17단계 구현](./17-behavior-learning-implementation.md) | 동의·유효성 검증·감쇠 신호·명시 선호 우선·제한적 프로파일 갱신 |
 | 18 | 추천 이유 생성 | 구현완료 | [18단계 구현](./18-grounded-explanation-implementation.md) | 허용 근거 템플릿·정책 버전·입력 지문·오해 없는 탐색 사유 저장 |
 | 19 | 대화형 AI 프로파일링 | 구현중 | [19단계 구현](./19-conversational-profiling-implementation.md) | 결정론 코어·제안/확정 분리·마스킹 원장·모바일 UI·JSON Schema 모델 경계 구현 |
-| 20 | 참가업체 정보 AI 구조화 | 예정 | — | |
-| 21 | 임베딩·벡터 검색·RAG | 부분 완료 | AISEARCH-002 | 객체·질의 임베딩, pgvector 검색·fallback 구현. 운영 데이터 백필·평가셋 검증 필요 |
+| 20 | 참가업체 정보 AI 구조화 | 구현완료 | [document-structuring.md](../.harness/contracts/document-structuring.md) | WAVE2D: 업체 문서 업로드 → 근거연결 AI 추출(`ai/extraction/`) → 업체 확인 → 운영자 승인 → 검색색인 파이프라인. AI 산출물은 결정론 검증과 양쪽 확인·승인 전까지 제안 상태에 머무름 |
+| 21 | 임베딩·벡터 검색·RAG | 구현완료 | AISEARCH-002 | 객체·질의 임베딩, pgvector VECTOR(512) SUMMARY partial-HNSW cosine 검색·fallback 구현·운영 CLI. WAVE2D의 별도 `ai/embedding/` 미저장 스텁은 통합 병합에서 폐기됨(DECISION-025) |
 | 22 | AI 모델 오케스트레이션 | 예정 | — | |
 | 23 | 데이터·AI 파이프라인 | 예정 | — | 수집·정제·검수·배포·재처리 |
 | 24 | MLOps·모델 버전관리 | 예정 | — | |
-| 25 | 이벤트·성과분석 체계 | 예정 | — | |
-| 26 | 관리자·파트너 운영체계 | 예정 | — | |
+| 25 | 이벤트·성과분석 체계 | 구현완료 | [operations-analytics.md](../.harness/contracts/operations-analytics.md) | WAVE2E: 상호작용 이벤트 수집 → 집계·펀넬 → 운영자 분석 대시보드, k<5 그룹 DB 레벨 강제 억제 |
+| 26 | 관리자·파트너 운영체계 | 부분 완료 | [operations-analytics.md](../.harness/contracts/operations-analytics.md) | ADMIN-001(골격+인증) 완료. WAVE2E 운영/이벤트메시지 대시보드 구현완료. 업체 승인/반려+검색통계를 다루는 BACKEND-007과 그에 의존하는 ADMIN-002는 이번 병합 범위 밖으로 여전히 미완료 |
 | 27 | 개인정보·보안·AI 거버넌스 | 예정 | — | 수탁자 불일치(라온비앤피 vs ㈜더페어스) 실사이트 검증 완료 — [privacy 원문](https://www.backju.kr/subpage.php?code=privacy&sf=etc) |
 | 28 | 인프라·배포·장애대응 | 예정 | — | |
 | 29 | 시험·검증·현장 실증 | 예정 | — | |

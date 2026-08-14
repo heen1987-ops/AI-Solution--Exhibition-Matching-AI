@@ -14,25 +14,25 @@ gates:
     status: PASSED
     criteria:
       - "도메인모델 확정 — .harness/contracts/domain-model.md 승격 완료"
-      - "OpenAPI 유효 — 기존 FastAPI 경로와 CR-006 인증 5개 경로를 포함한 73개 경로를 .harness/contracts/openapi.json 0.2.0으로 고정"
-      - "DB 스키마 초안 — 완료(17개 마이그레이션, 단일 head 0017_object_embedding, 94 ORM 테이블)"
+      - "OpenAPI 유효 — WAVE2C/2D/2E -> main 통합 병합(2026-08-11) 후 실제 app.openapi()에서 재수출한 116개 경로를 .harness/contracts/openapi.json으로 재동결(이전 73개 경로 스냅샷은 CR-004~CR-013 및 이번 통합 병합으로 대체됨)"
+      - "DB 스키마 초안 — 완료(31개 마이그레이션, 단일 head 0031_integration_source_sync, 135 ORM 테이블). 병합 계획은 마지막 리비전을 0030_event_ingestion_failure로 예상했으나, Foundation 단계가 병합 중 발견한 추가 드리프트(app/models/integration.py의 5개 테이블에 대해 어느 쪽에도 생성 마이그레이션이 없었음, tests/test_alembic_orm_parity.py가 이 부류의 드리프트를 이후 차단)를 0031_integration_source_sync로 반영해 실제 head는 0031이다 — 단일 head라는 불변조건은 그대로 충족된다."
       - "온톨로지 유효 — 완료(259개 개념, catalog.v1.json)"
-      - "오류코드 정의 — .harness/contracts/error-codes.yaml에 공개검색·인증/세션/RBAC/MFA 코드 포함"
+      - "오류코드 정의 — .harness/contracts/error-codes.yaml에 공개검색·인증/세션/RBAC/MFA 코드에 더해 WAVE2C/2D/2E에서 포팅된 10개 라우터 도메인의 코드를 추가(포팅 당시 worktree는 이 라우터들에 코드를 하나도 등록하지 않았었음)"
       - "API Mock 동작 — 해당없음(이미 실제 백엔드가 존재하므로 Mock 대신 실제 API로 프론트가 동작 중)"
       - "계약 변경절차 정의 — AGENTS.md + 본 하네스 문서로 정의됨"
-    verdict_note: "CONTRACT-002/003/006과 CR-004/CONTRACT-004 완료, DECISION-004/005/007 및 CR-006 반영 후 재동결. 이후 신규 경로는 OpenAPI 스냅샷과 오류코드 카탈로그를 함께 갱신한다."
+    verdict_note: "CONTRACT-002/003/006과 CR-004/CONTRACT-004 완료, DECISION-004/005/007 및 CR-006 반영 후 재동결. 2026-08-11 WAVE2C/2D/2E 통합 병합으로 domain-model.md/openapi.json/error-codes.yaml을 다시 실제 코드 기준으로 재동결했다(.harness/decisions.md DECISION-023~028, RISK-007 참고). 이후 신규 경로는 OpenAPI 스냅샷과 오류코드 카탈로그를 함께 갱신한다."
 
   G2_FEATURE_COMPLETE:
     status: IN_PROGRESS
     criteria:
-      - "핵심 API 구현 — 공개 카탈로그/검색/키오스크 완료, 관리자·관심목록 API 남음"
-      - "user-web 핵심 흐름 구현 — 완료(4/4) + 익명 QR 게스트 조회 추가"
+      - "핵심 API 구현 — 공개 카탈로그/검색/키오스크 완료. WAVE2C/2D/2E 통합 병합으로 검증바이어 매칭·미팅 3게이트 공개·문서추출승인·상담연동·인앱알림·운영자 분석/이벤트메시지 API가 추가됐다. 업체 승인/반려+검색통계를 다루는 좁은 의미의 BACKEND-007(/admin/exhibitors/{id}/approve 등)과 관심목록 BACKEND-009는 이번 병합 범위 밖으로 여전히 남아 있다(partner.py 자체 문서화 — 명시적으로 범위 밖)."
+      - "user-web 핵심 흐름 구현 — 완료(4/4) + 익명 QR 게스트 조회 + 바이어/미팅/알림 화면군 추가(WAVE2C/2E)"
       - "kiosk 핵심 흐름 구현 — 완료(KIOSK-001~004, K00~K10 및 세션종료)"
-      - "admin 핵심 흐름 구현 — 화면은 부분 구현, 실제 인증·관리자 API 의존으로 ADMIN-001~003 대기"
+      - "admin 핵심 흐름 구현 — ADMIN-001(골격+인증)은 완료. WAVE2C/2D/2E로 바이어 검증·파트너 미팅·AI검수·분석·운영·이벤트메시지 화면 8개 features/ + 7개 신규 라우트가 추가됐다. ADMIN-002(업체/AI추출 검수 화면, BACKEND-007 의존)는 여전히 BLOCKED. ADMIN-003은 CR-009로 CANCELLED."
       - "검색·추천 구현 — PostgreSQL FTS·구조화 필터·SUMMARY-only filtered-HNSW semantic top-K·가중합·중복제거·fallback 완료, 운영 벡터 백필/평가는 G3에서 수행"
-      - "상담 최소기능 구현 — 완료"
-      - "권한 적용 — CR-006 계약은 완료, 실제 세션/JWT principal·RBAC·관리자 MFA와 신뢰 헤더 제거는 BACKEND-010 대기"
-    blocking_tasks: [CONTRACT-005, BACKEND-007, BACKEND-009, BACKEND-010, ADMIN-001, ADMIN-002, ADMIN-003]
+      - "상담 최소기능 구현 — 완료. WAVE2C 병합으로 3게이트(수락+바이어동의+업체공개활성화) contact-disclosure가 완전히 구현됐다(병합 전 main은 2/3만 검사하는 실제 결함이 있었다 — .harness/decisions.md 참고)."
+      - "권한 적용 — CR-006 계약은 완료, BACKEND-010 구현 완료(main 자체 backlog DONE). WAVE2C/2D/2E에서 포팅된 10개 라우터는 이번 통합 병합에서 app/core/router_auth.py 공유 어댑터로 identity를 교체했다(BACKEND-014, DONE) — 원본 worktree 라우터 58/60개가 신뢰 헤더(X-Actor-User-Id 등)로 주체를 식별하던 상태에서 전환 완료."
+    blocking_tasks: [CONTRACT-005, BACKEND-007, BACKEND-009, ADMIN-002]
 
   G3_MVP_RELEASE:
     status: NOT_STARTED

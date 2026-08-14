@@ -125,6 +125,38 @@ def idempotency_key_reused(
     return RecommendationError("IDEMPOTENCY_KEY_REUSED", message, http_status=409)
 
 
+def payload_too_large(
+    message: str = "요청 본문이 허용된 크기를 초과했습니다.",
+) -> RecommendationError:
+    """413 PAYLOAD_TOO_LARGE - 19절 표에는 없으나 모듈 docstring이 허용하는 세분화 코드.
+
+    행동 이벤트 수집(16.1절)은 오프라인 큐를 한 번에 게시하는 비콘 트래픽을 받으므로,
+    Pydantic 파싱 이전에 원문 바이트 상한을 강제해야 한다
+    (app/api/v1/routers/recommendations.py의 ``_PayloadCappedRoute`` 참고).
+    """
+
+    return RecommendationError("PAYLOAD_TOO_LARGE", message, http_status=413)
+
+
+def rate_limited(
+    message: str = "짧은 시간에 너무 많은 요청을 보냈습니다.",
+    *,
+    retry_after_seconds: int | None = None,
+) -> RecommendationError:
+    """429 RATE_LIMITED - 19절 표에는 없으나 모듈 docstring이 허용하는 세분화 코드.
+
+    재시도로 해소되는 일시적 거절이므로 ``retryable=True``로 표시한다.
+    """
+
+    return RecommendationError(
+        "RATE_LIMITED",
+        message,
+        http_status=429,
+        retryable=True,
+        retry_after_seconds=retry_after_seconds,
+    )
+
+
 def service_temporarily_unavailable(
     message: str = "행사가 아직 운영 중이 아니거나 일시적으로 추천을 제공할 수 없습니다.",
 ) -> RecommendationError:

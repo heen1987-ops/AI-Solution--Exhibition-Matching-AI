@@ -132,6 +132,21 @@ MEETING_STATUSES: tuple[str, ...] = (
 #: 단계에 해당하며, 이 프로젝트에서는 6.2절 표기를 따라 "accepted"로 부른다.
 MEETING_CONFIRMED_STATUS = "accepted"
 
+#: WAVE 2C(바이어-업체 매칭 상담, BACKEND-MEETING 트랙) 확장. 업체가 상담 요청을 거절할 때
+#: 쓰는 사유코드 목록. DB CHECK 제약으로는 강제하지 않는다 - meeting_status_history.
+#: reason_code 컬럼은 취소 사유·OUTCOME_RECORDED 등 이 상태 머신 밖의 다른 흐름도 함께
+#: 저장하는 공용 컬럼이라, 특정 값 집합으로 잠그면 기존(BACKEND-004) 사용을 깨뜨린다.
+#: 이 상수는 app/schemas/meeting.py의 Literal 검증과 app/services/meeting/buyer_matching.py의
+#: 애플리케이션 계층 검증이 참조하는 단일 진실 공급원이다.
+MEETING_REJECT_REASON_CODES: tuple[str, ...] = (
+    "NOT_RELEVANT",
+    "SCHEDULE_UNAVAILABLE",
+    "TRADE_CONDITION_MISMATCH",
+    "CAPACITY_UNAVAILABLE",
+    "INFORMATION_INSUFFICIENT",
+    "OTHER",
+)
+
 #: docs/db-erd-table-spec.md 14.1절.
 AVAILABILITY_SLOT_STATUSES: tuple[str, ...] = ("OPEN", "FULL", "BLOCKED")
 
@@ -394,6 +409,25 @@ class MeetingRequest(Base):
         ForeignKey("matching.match_result.match_result_id"),
         nullable=True,
     )
+    # WAVE 2C(BACKEND-MEETING 트랙) 확장 — 기존 상담 주제(taxonomy_version_id/concept_id)와는
+    # 별개로, 바이어가 상담을 요청한 구체적 제품을 선택적으로 남긴다. exhibition.product는
+    # 참가(participation) 단위가 아니라 업체(exhibitor_id) 단위로 귀속되므로, 이 제품이
+    # 실제로 이 participation의 업체 소속인지는 DB 복합 FK로 표현할 근거 컬럼이 없어
+    # 애플리케이션 계층(app/services/meeting/buyer_matching.py)에서 검증한다.
+    # FK 이름을 명시하는 이유: NAMING_CONVENTION의 fk 패턴을 그대로 적용하면
+    # "fk_meeting_product_id_product"보다 긴 이름이 파생되어 PostgreSQL의 63바이트
+    # 식별자 한계에 부딪히는 경우가 생기고, 마이그레이션(0020)의 리터럴 이름과도 어긋난다.
+    product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("exhibition.product.product_id", name="fk_meeting_product"),
+        nullable=True,
+    )
+    # 바이어가 상담 요청 시점에 밝힌 예상 발주 규모 코드(예: SAMPLE/RETAIL/WHOLESALE/
+    # CONTAINER). 정식 온톨로지 네임스페이스가 아직 없어(모듈 docstring "taxonomy 참조에
+    # 대하여"와 동일한 사유) 자유 문자열로 저장하고 API 스키마 계층에서 허용값을 관리한다.
+    # TODO(6단계 온톨로지에 ORDER_SCALE.* 네임스페이스가 시드되면 taxonomy_version_id/
+    # concept_id 복합 컬럼으로 교체 검토).
+    order_scale_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     viewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -530,6 +564,27 @@ class MeetingContactShare(Base):
     disclosed_to_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("profile.user_account.user_id"),
+        nullable=True,
+    )
+    # WAVE 2C(BACKEND-MEETING 트랙) 확장 — "업체측이 이 상담에 한해 연락처 공유를 명시적으로
+    # 켰다"는 세 번째 게이트. accepted_at(바이어 동의)과 독립적으로, 업체 담당자가 수락
+    # 결정과 함께(또는 별도 액션으로) 명시적으로 채워야 한다. 이 컬럼이 NULL이면
+    # meeting.status가 accepted이고 바이어 동의가 있어도 연락처를 공개하지 않는다.
+    # 세 조건(확정 + 바이어 동의 + 업체 활성화)을 모두 만족해야 하는 판단은
+    # app/services/meeting/buyer_matching.py의 contact_reveal_allowed()가 단일 진실
+    # 공급원으로 수행한다 — 이 컬럼 자체는 저장소일 뿐 판단 로직을 갖지 않는다.
+    exhibitor_enabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # FK 이름 명시 사유는 MeetingRequest.product_id 주석과 동일하다. 규약 파생 이름
+    # ("fk_meeting_contact_share_exhibitor_enabled_by_staff_id_exhibitor_staff")은
+    # PostgreSQL 식별자 한계인 63바이트를 넘긴다.
+    exhibitor_enabled_by_staff_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "exhibition.exhibitor_staff.staff_id",
+            name="fk_meeting_contact_share_exhibitor_enabled_by",
+        ),
         nullable=True,
     )
 

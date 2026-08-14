@@ -201,6 +201,17 @@ class Settings(BaseSettings):
     KIOSK_PRIMARY_COLOR: str = "#7A2432"
     GUEST_WEB_BASE_URL: str = "http://localhost:3000"
 
+    # --- 참가업체 문서 업로드 (BACKEND-DOCUMENT, WAVE 2D) ---
+    # app/services/document/storage.py가 이 세 값을 참조한다. object storage 서비스가
+    # 아직 없어 로컬 파일시스템 어댑터의 저장 루트를 DOCUMENT_STORAGE_DIR로 대체한다.
+    DOCUMENT_STORAGE_DIR: str = Field(default="./var/document-storage")
+    DOCUMENT_MAX_UPLOAD_BYTES: int = Field(
+        default=25 * 1024 * 1024, description="문서 업로드 최대 크기 (기본 25MB)"
+    )
+    DOCUMENT_DOWNLOAD_TOKEN_TTL_SECONDS: int = Field(
+        default=300, description="다운로드 토큰(서명된 URL 대체) 유효시간"
+    )
+
     @property
     def kiosk_supported_languages(self) -> list[Literal["ko", "en", "ja", "zh"]]:
         allowed = {"ko", "en", "ja", "zh"}

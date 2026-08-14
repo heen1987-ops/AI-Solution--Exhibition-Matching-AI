@@ -5,15 +5,22 @@ import { usePathname } from "next/navigation";
 
 import { hasCapability, type AdminCapability } from "@/lib/auth-state";
 import { useSession } from "@/lib/use-session";
+import type { AdminRole } from "@/lib/types";
 
 /**
- * 작업 지시가 지정한 6개 화면 + 홈. §43절 A00~A15 화면군 중 이 작업 범위에 해당하는
- * 것만 연결한다(나머지는 ADMIN-002/003 등 후속 과제).
+ * 작업 지시가 지정한 6개 화면 + 홈, 그리고 WAVE 2C/2D/2E가 새로 추가한 화면들
+ * (바이어 검증, 상담 운영, AI 검수, 통계, 운영, 행사 메시지, 참가업체 포털). §43절 A00~A15
+ * 화면군 중 이 작업 범위에 해당하는 것만 연결한다.
+ *
+ * `AdminCapability`(apps/admin/lib/auth-state.ts, 공유 파일 - 이 트랙 소유 밖이라 새
+ * capability를 추가하지 않는다)로 표현되지 않는 새 화면은 `roles`로 직접 게이트한다 -
+ * 백엔드 라우터 인가(require_roles)와 동일한 역할 집합을 그대로 미러링했다.
  */
 const NAV_ITEMS: {
   href: string;
   label: string;
   capabilities?: AdminCapability[];
+  roles?: AdminRole[];
 }[] = [
   { href: "/dashboard", label: "관리자 홈" },
   { href: "/events", label: "행사 관리", capabilities: ["EVENT_MANAGE"] },
@@ -32,6 +39,51 @@ const NAV_ITEMS: {
     label: "부스",
     capabilities: ["BOOTH_MANAGE", "BOOTH_STATUS_CHANGE"],
   },
+  {
+    href: "/buyers",
+    label: "바이어 검증",
+    roles: ["EVENT_ADMIN", "DATA_REVIEWER"],
+  },
+  {
+    href: "/meetings",
+    label: "상담 운영",
+    roles: ["EVENT_ADMIN", "DATA_REVIEWER"],
+  },
+  {
+    href: "/ai-review",
+    label: "AI 검수",
+    roles: ["EVENT_ADMIN", "DATA_REVIEWER"],
+  },
+  {
+    href: "/analytics",
+    label: "통계",
+    roles: ["EVENT_ADMIN", "DATA_REVIEWER", "EXHIBITOR_ADMIN"],
+  },
+  {
+    href: "/operations",
+    label: "운영",
+    roles: ["EVENT_ADMIN"],
+  },
+  {
+    href: "/event-messages",
+    label: "행사 메시지",
+    roles: ["EVENT_ADMIN"],
+  },
+  {
+    href: "/partner/meetings",
+    label: "포털 · 상담",
+    roles: ["EXHIBITOR_ADMIN"],
+  },
+  {
+    href: "/partner/documents",
+    label: "포털 · 문서",
+    roles: ["EXHIBITOR_ADMIN"],
+  },
+  {
+    href: "/partner/ai-review",
+    label: "포털 · AI 검수",
+    roles: ["EXHIBITOR_ADMIN"],
+  },
   { href: "/audit", label: "감사로그", capabilities: ["AUDIT_VIEW"] },
 ];
 
@@ -39,11 +91,15 @@ export default function SideNav() {
   const pathname = usePathname();
   const [session] = useSession();
   const visibleItems = session.role
-    ? NAV_ITEMS.filter(
-        (item) =>
-          !item.capabilities ||
-          item.capabilities.some((capability) => hasCapability(session.role, capability)),
-      )
+    ? NAV_ITEMS.filter((item) => {
+        if (item.capabilities) {
+          return item.capabilities.some((capability) => hasCapability(session.role, capability));
+        }
+        if (item.roles) {
+          return session.role !== null && item.roles.includes(session.role);
+        }
+        return true;
+      })
     : [];
 
   return (

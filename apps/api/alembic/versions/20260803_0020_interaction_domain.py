@@ -13,21 +13,23 @@ ForeignKey(예: participation_id, staff_id, booth_id 등)는 app/db/base.py의 N
 이름을 준다 - 20260801144653_profile_domain 마이그레이션이 이미 같은 이유로 채택한 방식이다
 (그 마이그레이션의 모듈 docstring 참고).
 
-Revises: 0004_profile_domain 이지만, 이 마이그레이션을 작성하는 시점(2026-08-01)에는 다음
-참조 대상이 아직 어떤 마이그레이션으로도 만들어지지 않았다(여러 도메인 에이전트가 동시에
-작업 중이라 발생하는 타이밍 문제 - 20260801150500_matching_domain 마이그레이션의 동일한
-NEEDS_REBASE 설명 참고):
+이 파일은 2026-08-01에 alembic/pending/에 보류(parking)돼 있었다. 보류 사유는 작성 시점에
+아래 FK 대상 테이블이 아직 어떤 마이그레이션으로도 만들어지지 않았다는 것이었다. 그 사유는
+2026-08-03 통합 시점에 모두 해소됐고(아래 [해소] 표기), 그래서 이 리비전을 체인에 정식
+편입한다(down_revision = 0019_notification_outbox):
 
-    - exhibition.exhibitor_participation(participation_id)  [없음]
+    - exhibition.exhibitor_participation(participation_id)  [해소: 0005_exhibition]
       availability_slot.participation_id, meeting.participation_id
-    - exhibition.exhibitor_staff(staff_id)                   [없음]
+    - exhibition.exhibitor_staff(staff_id)                   [해소: 0005_exhibition]
       availability_slot.staff_id, meeting.staff_id
-    - exhibition.booth(booth_id)                             [없음]
+    - exhibition.booth(booth_id)                             [해소: 0005_exhibition]
       availability_slot.booth_id, meeting.booth_id
-    - matching.match_result(match_result_id)                 [없음, matching 도메인 마이그레이션이
-      아직 이 리비전 체인에 합류하지 않음] meeting.match_result_id
+    - exhibition.product(product_id)                         [해소: 0005_exhibition]
+      meeting.product_id
+    - matching.match_result(match_result_id)                 [해소: 0008_matching_runtime]
+      meeting.match_result_id
 
-반면 다음은 이미 존재한다:
+그 외 참조 대상은 처음부터 존재했다:
 
     - exhibition.event(tenant_id, event_id)                 [존재: 0003_foundation]
     - profile.user_profile(profile_id)                       [존재: 0004_profile_domain]
@@ -35,11 +37,13 @@ NEEDS_REBASE 설명 참고):
     - profile.user_account(user_id)                          [존재: 0003_foundation]
     - ontology.concept_revision(taxonomy_version_id, concept_id) [존재: 0002_ontology]
 
-즉 이 마이그레이션은 alembic upgrade 시 위 "없음" 항목의 FK 때문에 exhibition/matching
-도메인 마이그레이션이 먼저 적용되기 전까지는 단독으로 성공하지 못한다. 통합 담당자를 위한
-처리 순서 제안: exhibition.booth/exhibitor_participation/exhibitor_staff와
-matching.match_result를 만드는 마이그레이션을 이 리비전보다 먼저 오도록 재배치(또는 이
-리비전의 down_revision을 그 마지막 리비전으로 갱신)한다.
+WAVE 2C(BACKEND-MEETING 트랙)가 별도 마이그레이션(0017_meeting_buyer_extension)으로 추가하려
+했던 네 개의 컬럼 - meeting.product_id / meeting.order_scale_code /
+meeting_contact_share.exhibitor_enabled_at / meeting_contact_share.exhibitor_enabled_by_staff_id -
+은 이 리비전이 애초에 테이블을 만드는 리비전이므로 ALTER가 아니라 CREATE TABLE 안으로 접어
+넣었다. 그 별도 마이그레이션은 폐기했고, 두 FK의 리터럴 이름(fk_meeting_product,
+fk_meeting_contact_share_exhibitor_enabled_by)만 여기로 옮겨왔다. 규약 파생 이름은
+PostgreSQL 식별자 한계(63바이트)를 넘겨 autogenerate가 매번 차이를 보고하게 된다.
 
 taxonomy(개념) 참조에 대하여: availability_slot.(taxonomy_version_id, concept_id),
 meeting.(taxonomy_version_id, concept_id), meeting_outcome.(taxonomy_version_id, concept_id),
@@ -59,9 +63,9 @@ docs/user-ia-wireframes.md 6.2절(상담 상태 머신), 8절 E-02~E-04.
 docs/frontend-backend-ai-interface-spec.md 12절(상담 API).
 대응하는 SQLAlchemy 모델: backend/app/models/meeting.py.
 
-Revision ID: 0005_interaction_domain
-Revises: 0004_profile_domain
-Create Date: 2026-08-01
+Revision ID: 0020_interaction_domain
+Revises: 0019_notification_outbox
+Create Date: 2026-08-01 (작성) / 2026-08-03 (체인 편입)
 """
 
 from __future__ import annotations
@@ -75,8 +79,8 @@ from sqlalchemy.dialects import postgresql
 from app.db.base import SCHEMA_EXHIBITION, SCHEMA_INTERACTION, SCHEMA_MATCHING, SCHEMA_PROFILE
 
 # revision identifiers, used by Alembic.
-revision: str = "0005_interaction_domain"
-down_revision: str | None = "0004_profile_domain"
+revision: str = "0020_interaction_domain"
+down_revision: str | None = "0019_notification_outbox"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -284,6 +288,19 @@ def upgrade() -> None:
             ),
             nullable=True,
         ),
+        # WAVE 2C(BACKEND-MEETING) 확장 컬럼. 폐기된 0017_meeting_buyer_extension이
+        # ALTER로 붙이려던 것을 CREATE TABLE 안으로 접어 넣었다. FK 이름은 그 파일의
+        # 리터럴을 그대로 옮겨왔다(규약 파생 이름은 63바이트 한계를 넘긴다).
+        sa.Column(
+            "product_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey(
+                f"{SCHEMA_EXHIBITION}.product.product_id",
+                name="fk_meeting_product",
+            ),
+            nullable=True,
+        ),
+        sa.Column("order_scale_code", sa.String(50), nullable=True),
         sa.Column("viewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("row_version", sa.BigInteger(), nullable=False, server_default="0"),
         _timestamptz("created_at", nullable=False, server_default_now=True),
@@ -448,6 +465,18 @@ def upgrade() -> None:
             sa.ForeignKey(
                 f"{SCHEMA_PROFILE}.user_account.user_id",
                 name="fk_meeting_contact_share_disclosed_to_user_id_user_account",
+            ),
+            nullable=True,
+        ),
+        # WAVE 2C(BACKEND-MEETING) 확장 - 연락처 공개 3번째 게이트("업체가 이 상담에 한해
+        # 공유를 켰다"). 폐기된 0017_meeting_buyer_extension에서 접어 넣었다.
+        sa.Column("exhibitor_enabled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "exhibitor_enabled_by_staff_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey(
+                f"{SCHEMA_EXHIBITION}.exhibitor_staff.staff_id",
+                name="fk_meeting_contact_share_exhibitor_enabled_by",
             ),
             nullable=True,
         ),

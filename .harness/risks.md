@@ -86,3 +86,26 @@ invalidation trigger와 최종 백필이 공유하는 짧은 전역 catalog advi
 긴 첫 제품 설명이 뒤 제품명을 밀어내지 않도록 업체명·제품명을 우선 보존하고 설명 예산을 공정
 배분한다. 실제 PostgreSQL에서 trigger 동작과 동시성 경합을 확인하는 통합 검증은 위 G3 운영 항목에
 남긴다.
+
+## RISK-007: Frozen contract snapshots drift silently from the live app
+
+`.harness/contracts/openapi.json` (and, to a lesser extent, `error-codes.yaml` and
+`domain-model.md`) is a point-in-time export, not a generated-on-every-run artifact — nothing fails
+CI when the live `app.openapi()` output and the checked-in snapshot diverge. This is not
+hypothetical: at the point the WAVE2C/2D/2E worktree was assessed for this merge, its own frozen
+`.harness/contracts/openapi.json` was already 52 paths behind its own running code (66 frozen vs.
+118 live) — the snapshot had silently stopped being trustworthy well before the merge, and nothing
+in that tree's CI (it had none — `.github/workflows/` does not exist there) or review process
+caught it. main's own frozen copy was in sync at merge time (75 frozen == 75 live) purely because it
+had been re-exported recently, not because anything enforces the invariant.
+
+### 2026-08-11 update — mitigated by regeneration, not yet enforced
+
+During the WAVE2C/2D/2E → main unification merge, `.harness/contracts/openapi.json` was regenerated
+from a live `app.openapi()` export of the merged app (see `.harness/decisions.md` and the 2026-08-11
+run-log entry) rather than hand-edited, bringing it back in sync with the merged code's real path
+count. This closes the drift for this one snapshot at this one moment but does not close the risk:
+no CI step asserts `live paths == frozen paths` on every run, so the same silent drift can recur on
+the very next unreviewed router change. Adding that assertion as a CI gate (compare
+`app.openapi()['paths']` against the checked-in `openapi.json` and fail on mismatch) is tracked as
+follow-up work and is not yet implemented as of this update.

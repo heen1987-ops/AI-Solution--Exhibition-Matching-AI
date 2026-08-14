@@ -7,6 +7,13 @@
 > DB 기준: [ERD 상세설계 및 테이블 정의서](./db-erd-table-spec.md)  
 > 매칭 처리 기준: [5단계 AI 매칭엔진 아키텍처](./05-ai-matching-engine-architecture.md)
 > 코드 의미체계: [6단계 매칭 분류체계·온톨로지](./06-matching-ontology.md)
+>
+> **2026-08-11 안내**: API 경로·인증 방식의 최신 정본은 `.harness/contracts/openapi.json`(실제
+> `app.openapi()` 재수출본, 116개 경로)이다. 이 문서 작성 시점(2026-08-01) 이후 인증은
+> 신뢰 헤더(X-Actor-User-Id 등)에서 CR-006/BACKEND-010의 검증된 세션·서비스 JWT principal로,
+> 키오스크는 CR-009로 비활성 채널로 각각 바뀌었다. 이 문서의 경로 목록·헤더 예시를 코드와
+> 대조 없이 그대로 구현하지 말 것 — 불일치가 있으면 `.harness/contracts/openapi.json`과
+> `apps/api/app/api/v1/api.py`가 우선한다.
 
 ## 1. 목적과 적용 범위
 

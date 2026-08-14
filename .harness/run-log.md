@@ -549,3 +549,101 @@ FND-001 완료. ARCHITECTURE.md(FND-002)는 다음 사이클로 이월.
 - Verification: notification-focused 9 passed; API 257 passed/2 PostgreSQL environment skips;
   common engine 72 passed; touched Ruff, compileall, pip check, Alembic single head/full offline
   upgrade, harness parse, and diff check PASS.
+
+## 2026-08-03 — WAVE 2C/2D/2E (31 tracks) + integration
+
+> Ported 2026-08-11 from the parallel worktree's own run-log
+> (`.claude/worktrees/site-check-6882c1/.harness/run-log.md`, that tree's newest-first top entry)
+> during the WAVE2C/2D/2E → main unification merge. This project's convention appends new entries
+> at the bottom, so this entry is placed here rather than at the top of this file; its original
+> 2026-08-03 date is preserved as a historical record. One factual line is corrected below — see the
+> 2026-08-11 note that follows it — everything else is reproduced unchanged.
+
+- 사용자 명시 지시("내가 준대로 다 병렬개발해줘 한꺼번에 10개 되었던 100개가되었던 다 각각
+  병렬개발")에 따라 WAVE 2C(11) + 2D(10) + 2E(10) = 31개 트랙을 단일 Workflow 배치로 전부
+  병렬 실행. 세션 한도로 3차례 중단됐으나 매번 동일 `resumeFromRunId`로 재개 — 이미 완료된
+  트랙은 캐시로 즉시 복원, 실패한 트랙만 재실행되어 유실 작업 0건.
+- WAVE 2A/2B는 원문이 이전 컨텍스트 윈도우에만 존재해 이번 배치에 포함하지 못함 — 사용자가
+  재요청 시 처리.
+- 경로 규칙 충돌(신규 프롬프트의 `apps/api/src/modules/**` vs 실제 저장소의
+  `apps/api/app/**` 평면 구조)은 ASSUMPTION-003으로 기록 후 기존 구조에 매핑.
+- **통합(worktree 자체 세션 내에서 직접 수행, 병렬 워커 아님)**:
+  - Alembic 헤드 7개 분기(0017_analytics_aggregation/buyer_match/document_storage/
+    exhibitor_preference, 0018_buyer_profile, 0020_event_message/notification) →
+    `0021_merge_wave2cde` 병합 리비전으로 단일화. `alembic upgrade head --sql` 전체 컴파일 확인.
+  - `app/api/v1/api.py`에 신규 라우터 10개(analytics/buyer_match/buyer_profile/document/
+    event_message/exhibitor_preference/extraction/interaction_event/
+    meeting_buyer_extension/notification) wiring. 경로 충돌 없음 확인.
+  - `app/models/__init__.py`에 신규 모델 모듈 10개 등록.
+  - `alembic/env.py`의 하드코딩된 모델 import 목록이 최신이 아니었던 것을 발견 →
+    `import app.models`로 교체(향후 드리프트 방지).
+  - `tests/test_exhibitor_models.py`의 하드코딩된 기대값(93 테이블→125, 헤드
+    0016_kiosk_session→0021_merge_wave2cde) 갱신.
+  - `tests/integration/test_buyer_meeting_e2e.py`의 스테일 테스트 1건 수정 — QA-BUYER
+    트랙이 작성 당시 참고한 DECISION-005 가정("매칭은 /recommendations로만 서빙됨")이
+    같은 배치의 BACKEND-BUYER-MATCH/AI-BUYER-MATCH 트랙이 의도적으로 만든 별도의
+    결정론적 hard-filter 엔진(`/buyer/matches`, `/buyer/compare`)과 충돌 — 새 엔드포인트가
+    실제로 더 완성도 높은 구현이므로 테스트를 현실에 맞게 갱신(엔드포인트 삭제 아님).
+  - **실제 버그 2건 발견 및 수정**(제품 코드 자체의 버그, 하네스 오케스트레이션 문제 아님):
+    1. `apps/user-web/tests/setup.ts`에 RTL `afterEach(cleanup)`이 없어 `vitest.config.ts`의
+       `test.globals: false`와 겹쳐 렌더 결과가 테스트 간 누적 — 21개 테스트가 "Found
+       multiple elements" 오탐. `afterEach(cleanup)` 추가로 21건 전부 해결.
+    2. `apps/admin/features/buyer-verification/tests/api.test.ts`가 동기적으로 throw하는
+       함수(`decideBuyerVerification`, sibling `rejectExhibitor`와 동일 패턴)를
+       `expect(fn()).rejects...`로 검증 시도 — throw가 `expect()` 인자 평가 중 발생해
+       Promise를 받지 못함. `expect(() => fn()).toThrowError(...)`로 수정.
+- **최종 재검증 결과(worktree 단독 기준)**: `apps/api` pytest 760 passed/5 skipped/7 xfailed,
+  `apps/worker`(신규 앱) pytest 78/78, `apps/user-web` vitest 99/99, `apps/admin` vitest 306/306,
+  `apps/user-web`+`apps/admin`+`apps/kiosk` typecheck 전부 클린(Google Drive 손상 회피용
+  클린 C:\ 임시 복사본에서 검증), OpenAPI 118개 경로, ruff 292→193 errors(안전 자동수정만
+  적용, 나머지는 스타일 수준·비차단).
+- `exhibition_public.py`(이전 WAVE2 산출물)는 이 worktree 세션이 종료된 시점에는 여전히
+  미등록 상태로 남아 있었다 — 이 세션은 `exhibitors.py`/`search.py`와 중복되는 것으로 보고
+  별도 정리(reconciliation)가 필요하다고 판단해 이번 배치 범위 밖으로 미뤘다.
+
+> **2026-08-11 correction (recorded during WAVE2C/2D/2E → main unification):** the line
+> immediately above reflects what the worktree session believed at the time. It was independently
+> re-checked by direct read during the merge and found to be **false on both trees, not just
+> main**: `apps/api/app/api/v1/api.py:49` includes `exhibitors.router`, and `exhibitors.py` is an
+> 11-line module whose entire body is `from app.api.v1.routers.exhibition_public import router`
+> (a deliberate shim, per its own docstring, that exists precisely to avoid a duplicate FastAPI
+> registration). `exhibition_public.py` is therefore the live, registered public-catalog
+> implementation — not an unregistered duplicate of `exhibitors.py`/`search.py` — on both sides,
+> and `kiosk.py` also imports `get_booth_detail` from the same service module. No reconciliation
+> pass removes it; see `.harness/state.json` (2026-08-11 rewrite) and the "exhibition_public.py"
+> entry in this merge's KEEP-FROM-MAIN list for the corrected record. `.harness/state.json`'s own
+> now-superseded note repeating this same false premise has been dropped in the same rewrite.
+>
+> Two further superseded-annotations for the WAVE2C/2D/2E handoffs copied into this repo verbatim
+> at `.harness/handoffs/contracts/WAVE2{C,D,E}-CONTRACTS.md` (their text itself is left unmodified
+> per this project's append-only/no-rewrite convention for historical documents):
+> - WAVE2C-CONTRACTS.md's TL;DR items 3-4 ("Do not build a separate `/buyer/matches` router" /
+>   "Do not build a separate `/me/buyer-profile` router") were sound advice for the moment they were
+>   written but were overtaken within the *same* WAVE2C batch: its own BACKEND-BUYER-MATCH/
+>   AI-BUYER-MATCH tracks shipped exactly the routers that guidance says not to build, and the run
+>   log above records that as an intentional, reconciled outcome (see DECISION-023). Readers of
+>   WAVE2C-CONTRACTS.md today should treat those two bullets as historical context for why
+>   `/buyer/matches` and `/recommendations` coexist, not as live guidance.
+> - Any WAVE2C/2D/2E-era note treating pgvector/semantic search as "not yet published" (the clearest
+>   instance is the worktree's own `.harness/state.json`, corrected in this repo's 2026-08-11
+>   `state.json` rewrite) is false against main: main shipped a complete, trigger-guarded,
+>   feature-flagged pgvector implementation before this merge began. See DECISION-025.
+
+## 2026-08-11 — WAVE2C/2D/2E ↔ main unification merge (steps 35-39: documentation and final gate)
+
+Closing phase of the two-codebase unification (see `.harness/decisions.md` DECISION-023..028 for
+the individual conflict-resolution records this phase authored, and RISK-007 /
+ASSUMPTION-005 for the two new entries in those files). This entry covers only the
+documentation/state/gate work; the code-level merge (steps 1-34) was completed and verified by
+earlier steps in the same effort. Ported the ten worktree-only harness assets unchanged
+(`.harness/contracts/{buyer-matching,meeting,document-structuring,operations-analytics}.md`,
+`.harness/handoffs/contracts/WAVE2{C,D,E}-CONTRACTS.md`,
+`.harness/reports/{buyer-matching,ai-structuring,operations}/*-QA.md`); rewrote
+`.harness/state.json`, `quality-gates.yaml`, `backlog.yaml`, `locks.yaml` against merged reality
+rather than taking either side's stale copy; amended `PROJECT_SCOPE.md`, `AGENTS.md`,
+`ARCHITECTURE.md`, `README.md`, and `docs/00-roadmap.md`, and added SUPERSEDED banners (not
+deletions) to `docs/vibe-coding-master-spec-v1.md` and `docs/redesign-web-kiosk-split.md`;
+regenerated `.harness/contracts/openapi.json` from a live `app.openapi()` export instead of
+hand-editing the frozen copy, and extended `error-codes.yaml`, `domain-model.md`, and
+`.github/workflows/ci.yml`; ran the final verification sweep (pytest, alembic heads, OpenAPI path
+count, ruff) reported in this session's closing message.
