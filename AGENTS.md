@@ -1,0 +1,101 @@
+# Project implementation contract
+
+## Required design baseline
+
+Before changing architecture, data models, AI behavior, API contracts, or user flows, review the shared ChatGPT design thread:
+
+- https://chatgpt.com/share/6a6d8239-5d0c-83ee-a5b5-7505c996e874
+
+The page is larger than ordinary text fetch limits. If a tool cannot return it directly, inspect the page through a browser session or decode the page's serialized current-branch conversation. Do not treat a failed lightweight fetch as evidence that the reference is unavailable.
+
+Apply its transferable design principles to this exhibition domain; do not copy the source thread's unrelated research-platform entities.
+
+### Living product-roadmap conversation
+
+The evolving product and release roadmap is maintained in the shared ChatGPT conversation:
+
+- `chatgpt-conversation://6a6c5792-ca44-83ee-ad67-b02c77ba7f7b` (`사이트 확인 및 매칭 서비스`)
+
+At the start of every implementation unit, read the newest relevant turns from that conversation
+and compare them with `.harness/state.json`, `.harness/backlog.yaml`, the active contracts, and the
+latest handoffs. Treat the conversation as the intended roadmap and product-direction record, while
+the repository harness remains the authority for which prerequisites and gates have actually passed.
+Never skip ahead to a later conversational Wave merely because it is the newest turn. If the two
+sources conflict, preserve the safer frozen contract, record the mismatch in the harness, and resolve
+it before implementing a divergent architecture, data model, AI behavior, API contract, or user flow.
+
+Mandatory invariants:
+
+1. Start as a modular monolith and add service boundaries only from measured operational need.
+2. Keep canonical business records separate from user, AI, and review overlays.
+3. Version immutable published artifacts; changes create a new version rather than rewriting history.
+4. Put external AI and integration providers behind adapters.
+5. Store provenance, evidence references, review state, and append-only activity needed to reproduce decisions.
+6. Include observability, retry/idempotency, recovery, privacy, and operator review in the design—not as later add-ons.
+7. AI output is a proposal. Deterministic validation and user/operator confirmation govern hard constraints and canonical data.
+
+Record any deliberate exception in the relevant design document before implementing it.
+
+## Delivery
+
+After an implementation unit passes relevant checks, commit it intentionally and push it to the `exhibition` Git remote unless the user says otherwise. Never include secrets, local dependency directories, or unrelated workspace changes.
+
+---
+
+## Parallel development harness (added 2026-08-02)
+
+This project is developed by multiple parallel agents/workers coordinated through a
+persistent harness in `.harness/`. Read these before any task:
+
+1. `PROJECT_SCOPE.md` — the active web channels and common AI platform, fixed tech stack, explicit exclusions.
+2. `.harness/state.json` — current wave/gate/task pointers.
+3. `.harness/backlog.yaml` — the task list.
+4. `.harness/locks.yaml` — which track owns which paths.
+5. `.harness/contracts/**` — domain model, OpenAPI, event catalog, ontology, error codes.
+6. Relevant prior `.harness/handoffs/**`.
+
+Full methodology (tracks, waves, quality gates, "다음"/status/verify/retry/rollback command
+protocol, worker prompt templates): [docs/harness-orchestrator-prompt-pack.md](./docs/harness-orchestrator-prompt-pack.md).
+Current product scope: [PROJECT_SCOPE.md](./PROJECT_SCOPE.md) and
+[.harness/handoffs/contracts/change-request-009-web-first-scope.md](./.harness/handoffs/contracts/change-request-009-web-first-scope.md).
+The older [docs/redesign-web-kiosk-split.md](./docs/redesign-web-kiosk-split.md) and
+[docs/vibe-coding-master-spec-v1.md](./docs/vibe-coding-master-spec-v1.md) are historical where they
+conflict with CR-009.
+
+### Absolute rules
+
+- Never modify files outside your assigned `owned_paths` (see `.harness/locks.yaml`).
+- Never modify shared contracts without a Change Request (`.harness/handoffs/contracts/change-request-{id}.md`), approved before implementing.
+- Never implement out-of-scope features (see `PROJECT_SCOPE.md` §exclusions) — record ideas in `.harness/expansion-candidates.md` instead.
+- Never mark a task complete without meeting its acceptance criteria and tests.
+- Validate all AI output against a JSON Schema before use.
+- Never write personal data into logs, fixtures, or snapshots.
+- Never leave a temporary mock committed as if it were production code.
+- Trust only published contracts for other tracks' implementations — never guess.
+- Database schema changes go through Alembic migrations only, owned by the CONTRACTS track.
+- Dedicated kiosk runtime/deployment is excluded from MVP/v1.x. Retained kiosk source is compatibility-only and receives no feature work.
+- Meeting/contact details stay hidden until all three hold: the meeting is accepted, the buyer
+  consented to sharing, and the exhibitor has itself explicitly enabled contact sharing for that
+  meeting (`meeting_contact_share.exhibitor_enabled_at`) — acceptance alone is not sufficient. See
+  `PROJECT_SCOPE.md` and `.harness/decisions.md` DECISION-026.
+- Unapproved exhibitor data never reaches search or recommendation output.
+
+### Monorepo layout (pnpm workspace, canonical since 2026-08-02, DECISION-006)
+
+`backend/` and `frontend/` were physically migrated to `apps/api` and `apps/user-web` on
+2026-08-02 (this superseded the earlier ASSUMPTION-001, which had deliberately kept the legacy
+names — see `.harness/assumptions.md` for that history). The repo now uses a pnpm workspace
+(`pnpm-workspace.yaml`: `apps/*`, `packages/*`) with all app names canonical:
+`apps/api`, `apps/user-web`, `apps/admin`, `apps/worker`. `apps/kiosk` exists only as an inactive
+compatibility source under CR-009; do not include it in the default release path. `apps/worker`
+(document parsing/search indexing/analytics aggregation/notification-outbox jobs, `worker` import
+root — not `app`, see DECISION-028) and `ai/` (buyer_matching/, extraction/, prompts/, schemas/,
+evaluation/) were materialized by the WAVE2C/2D/2E work and the 2026-08-11 unification merge; both
+are active, not planned. `packages/**` and `database/**` remain reserved namespaces that neither
+side of the merge materialized — `apps/api/app/models/**` + `apps/api/alembic/**` are the de facto
+schema/contract location instead (see `.harness/locks.yaml`).
+
+Two hardcoded-path bugs were found and fixed during the migration (Alembic DDL-file lookups and
+test `ROOT` path constants that assumed the old `backend/` nesting depth) — if you find another
+file computing paths via `Path(__file__).resolve().parents[N]` with a hardcoded `N`, re-verify it
+after any further directory moves.

@@ -1,0 +1,103 @@
+{
+  "schema_version": "intent-normalization-fixture-v1.0",
+  "fixture_version": "backju-intent-regression-2026-08-03",
+  "scenarios": [
+    {
+      "scenario_id": "ko-published-synonym",
+      "source": "NATURAL_LANGUAGE",
+      "command": {"query": "막걸리", "locale": "ko-KR", "context": "PRODUCT"},
+      "parity_group": "takju-preference",
+      "expected": {
+        "must_codes": [],
+        "prefer_codes": ["ALCOHOL.TAKJU"],
+        "exclude_codes": [],
+        "unknown_fields": [],
+        "unresolved": []
+      }
+    },
+    {
+      "scenario_id": "excel-canonical-code",
+      "source": "CANONICAL_PROFILE",
+      "command": {"prefer_codes": ["ALCOHOL.TAKJU"]},
+      "parity_group": "takju-preference",
+      "expected": {
+        "must_codes": [],
+        "prefer_codes": ["ALCOHOL.TAKJU"],
+        "exclude_codes": [],
+        "unknown_fields": [],
+        "unresolved": []
+      }
+    },
+    {
+      "scenario_id": "en-published-code-token",
+      "source": "NATURAL_LANGUAGE",
+      "command": {"query": "TAKJU", "locale": "en-US", "context": "PRODUCT"},
+      "parity_group": "takju-preference",
+      "expected": {
+        "must_codes": [],
+        "prefer_codes": ["ALCOHOL.TAKJU"],
+        "exclude_codes": [],
+        "unknown_fields": [],
+        "unresolved": []
+      }
+    },
+    {
+      "scenario_id": "abbreviation-remains-ambiguous",
+      "source": "NATURAL_LANGUAGE",
+      "command": {"query": "OEM", "locale": "en-US", "context": "BUYER"},
+      "expected": {
+        "must_codes": [],
+        "prefer_codes": [],
+        "exclude_codes": [],
+        "unknown_fields": [],
+        "unresolved": [
+          {
+            "reason_code": "AMBIGUOUS_PUBLISHED_TERM",
+            "candidate_codes": ["BIZ_GOAL.OEM", "BUYER.OEM_CLIENT", "CAPACITY.OEM", "MEETING.OEM", "TRADE.OEM"]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "ko-explicit-negation",
+      "source": "NATURAL_LANGUAGE",
+      "command": {"query": "막걸리 제외", "locale": "ko-KR", "context": "PRODUCT"},
+      "expected": {
+        "must_codes": [],
+        "prefer_codes": [],
+        "exclude_codes": ["ALCOHOL.TAKJU"],
+        "unknown_fields": [],
+        "unresolved": []
+      }
+    },
+    {
+      "scenario_id": "ko-ambiguous-label-not-guessed",
+      "source": "NATURAL_LANGUAGE",
+      "command": {"query": "수출", "locale": "ko-KR", "context": "BUYER"},
+      "expected": {
+        "must_codes": [],
+        "prefer_codes": [],
+        "exclude_codes": [],
+        "unknown_fields": [],
+        "unresolved": [
+          {
+            "reason_code": "AMBIGUOUS_PUBLISHED_TERM",
+            "candidate_codes": ["CHANNEL.EXPORT", "MEETING.EXPORT", "TRADE.EXPORT", "USE.EXPORT"]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "excel-unknown-remains-state",
+      "source": "CANONICAL_PROFILE",
+      "command": {"must_codes": ["TRADE.OEM"], "unknown_fields": ["MOQ"]},
+      "expected": {
+        "must_codes": ["TRADE.OEM"],
+        "prefer_codes": [],
+        "exclude_codes": [],
+        "unknown_fields": ["MOQ"],
+        "unresolved": []
+      }
+    }
+  ]
+}

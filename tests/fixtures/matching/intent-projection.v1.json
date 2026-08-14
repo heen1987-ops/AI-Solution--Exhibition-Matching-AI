@@ -1,0 +1,119 @@
+{
+  "schema_version": "intent-projection-fixture-v1.0",
+  "fixture_version": "backju-intent-projection-2026-08-03",
+  "scenarios": [
+    {
+      "scenario_id": "natural-public-preference",
+      "source": "NATURAL_LANGUAGE",
+      "command": {"query": "막걸리", "locale": "ko-KR", "context": "PRODUCT"},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "parity_group": "public-takju-preference",
+      "expected": {
+        "retrieval_codes": ["ALCOHOL.TAKJU"],
+        "constraints": [],
+        "information_required": [],
+        "deferred_reasons": []
+      }
+    },
+    {
+      "scenario_id": "excel-public-preference",
+      "source": "CANONICAL_PROFILE",
+      "command": {"prefer_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "parity_group": "public-takju-preference",
+      "expected": {
+        "retrieval_codes": ["ALCOHOL.TAKJU"],
+        "constraints": [],
+        "information_required": [],
+        "deferred_reasons": []
+      }
+    },
+    {
+      "scenario_id": "natural-buyer-must-oem",
+      "source": "NATURAL_LANGUAGE",
+      "command": {"query": "BIZ_GOAL.OEM must", "locale": "en-US", "context": "BUYER"},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "parity_group": "buyer-oem-required",
+      "expected": {
+        "retrieval_codes": [],
+        "constraints": [
+          {
+            "concept_code": "BIZ_GOAL.OEM",
+            "operator": "REQUIRE_MATCH",
+            "candidate_field": "supply_profile.trade_profile.oem_status",
+            "verification_mode": "TRADE_STATUS"
+          }
+        ],
+        "information_required": [],
+        "deferred_reasons": []
+      }
+    },
+    {
+      "scenario_id": "excel-buyer-must-oem",
+      "source": "CANONICAL_PROFILE",
+      "command": {"must_codes": ["BIZ_GOAL.OEM"]},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "parity_group": "buyer-oem-required",
+      "expected": {
+        "retrieval_codes": [],
+        "constraints": [
+          {
+            "concept_code": "BIZ_GOAL.OEM",
+            "operator": "REQUIRE_MATCH",
+            "candidate_field": "supply_profile.trade_profile.oem_status",
+            "verification_mode": "TRADE_STATUS"
+          }
+        ],
+        "information_required": [],
+        "deferred_reasons": []
+      }
+    },
+    {
+      "scenario_id": "unverifiable-must-needs-information",
+      "source": "CANONICAL_PROFILE",
+      "command": {"must_codes": ["MEETING.SAMPLE"]},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "expected": {
+        "retrieval_codes": [],
+        "constraints": [],
+        "information_required": [
+          {"concept_code": "MEETING.SAMPLE", "reason_code": "NO_VERIFIABLE_CANDIDATE_FIELD"}
+        ],
+        "deferred_reasons": []
+      }
+    },
+    {
+      "scenario_id": "public-buyer-condition-is-restricted",
+      "source": "CANONICAL_PROFILE",
+      "command": {"must_codes": ["BIZ_GOAL.OEM"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "expected": {
+        "retrieval_codes": [],
+        "constraints": [],
+        "information_required": [
+          {"concept_code": "BIZ_GOAL.OEM", "reason_code": "CATALOG_SCOPE_RESTRICTED"}
+        ],
+        "deferred_reasons": []
+      }
+    },
+    {
+      "scenario_id": "public-explicit-exclusion",
+      "source": "CANONICAL_PROFILE",
+      "command": {"exclude_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "expected": {
+        "retrieval_codes": [],
+        "constraints": [
+          {
+            "concept_code": "ALCOHOL.TAKJU",
+            "operator": "FORBID_MATCH",
+            "candidate_field": "candidate.category_codes",
+            "verification_mode": "ONTOLOGY_MATCH"
+          }
+        ],
+        "information_required": [],
+        "deferred_reasons": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "schema_version": "runtime-constraint-shadow-fixture-v1.0",
+  "fixture_version": "backju-runtime-constraint-shadow-2026-08-03",
+  "scenarios": [
+    {
+      "scenario_id": "oem-yes-parity",
+      "status": "YES",
+      "state": null,
+      "legacy_passed": true,
+      "projected_outcome": "ELIGIBLE",
+      "parity_state": "PARITY",
+      "reason_code": "LEGACY_AND_SHADOW_ELIGIBLE"
+    },
+    {
+      "scenario_id": "oem-no-parity",
+      "status": "NO",
+      "state": null,
+      "legacy_passed": false,
+      "projected_outcome": "FILTERED_OUT",
+      "parity_state": "PARITY",
+      "reason_code": "LEGACY_AND_SHADOW_FILTERED"
+    },
+    {
+      "scenario_id": "oem-unknown-safety-gap",
+      "status": "UNKNOWN",
+      "state": null,
+      "legacy_passed": true,
+      "projected_outcome": "INFORMATION_REQUIRED",
+      "parity_state": "SAFETY_GAP",
+      "reason_code": "LEGACY_PASSED_INFORMATION_REQUIRED"
+    },
+    {
+      "scenario_id": "oem-missing-safety-gap",
+      "status": null,
+      "state": null,
+      "legacy_passed": true,
+      "projected_outcome": "INFORMATION_REQUIRED",
+      "parity_state": "SAFETY_GAP",
+      "reason_code": "LEGACY_PASSED_INFORMATION_REQUIRED"
+    },
+    {
+      "scenario_id": "oem-stale-safety-gap",
+      "status": "YES",
+      "state": "STALE",
+      "legacy_passed": true,
+      "projected_outcome": "INFORMATION_REQUIRED",
+      "parity_state": "SAFETY_GAP",
+      "reason_code": "LEGACY_PASSED_INFORMATION_REQUIRED"
+    },
+    {
+      "scenario_id": "oem-conditional-safety-gap",
+      "status": "CONDITIONAL",
+      "state": null,
+      "legacy_passed": true,
+      "projected_outcome": "INFORMATION_REQUIRED",
+      "parity_state": "SAFETY_GAP",
+      "reason_code": "LEGACY_PASSED_INFORMATION_REQUIRED"
+    },
+    {
+      "scenario_id": "oem-negotiable-safety-gap",
+      "status": "NEGOTIABLE",
+      "state": null,
+      "legacy_passed": true,
+      "projected_outcome": "INFORMATION_REQUIRED",
+      "parity_state": "SAFETY_GAP",
+      "reason_code": "LEGACY_PASSED_INFORMATION_REQUIRED"
+    }
+  ]
+}

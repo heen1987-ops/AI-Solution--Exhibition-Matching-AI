@@ -1,0 +1,201 @@
+{
+  "schema_version": "hybrid-rrf-shadow-fixture-v1",
+  "fixture_version": "backjudaegan-hybrid-shadow-v1.0",
+  "thresholds": {
+    "recall_at_k_drop_max": 0.0,
+    "ndcg_at_k_drop_max": 0.0
+  },
+  "scenarios": [
+    {
+      "scenario_id": "natural-language-vector-available",
+      "k": 3,
+      "gold_relevance": {
+        "candidate-a": 3,
+        "candidate-b": 2,
+        "candidate-c": 1,
+        "candidate-d": 0,
+        "candidate-e": 0
+      },
+      "command": {
+        "contract_version": "hybrid-rrf-shadow-command-v1.0",
+        "candidate_ids": [
+          "candidate-a",
+          "candidate-b",
+          "candidate-c",
+          "candidate-d",
+          "candidate-e"
+        ],
+        "published_ranking": [
+          "candidate-b",
+          "candidate-c",
+          "candidate-d",
+          "candidate-a",
+          "candidate-e"
+        ],
+        "channels": [
+          {
+            "channel": "STRUCTURED",
+            "state": "AVAILABLE",
+            "ranked_candidate_ids": [
+              "candidate-b",
+              "candidate-c",
+              "candidate-a",
+              "candidate-d",
+              "candidate-e"
+            ]
+          },
+          {
+            "channel": "KEYWORD",
+            "state": "AVAILABLE",
+            "ranked_candidate_ids": [
+              "candidate-b",
+              "candidate-d",
+              "candidate-c",
+              "candidate-a",
+              "candidate-e"
+            ]
+          },
+          {
+            "channel": "VECTOR",
+            "state": "AVAILABLE",
+            "ranked_candidate_ids": [
+              "candidate-a",
+              "candidate-b",
+              "candidate-c",
+              "candidate-e",
+              "candidate-d"
+            ]
+          }
+        ],
+        "candidate_signals": [
+          {
+            "candidate_id": "candidate-a",
+            "unknown_signals": ["minimum_order_quantity"],
+            "missing_signals": []
+          },
+          {
+            "candidate_id": "candidate-e",
+            "unknown_signals": [],
+            "missing_signals": ["export_market"]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "vector-provider-unavailable",
+      "k": 3,
+      "gold_relevance": {
+        "candidate-a": 3,
+        "candidate-b": 2,
+        "candidate-c": 1,
+        "candidate-d": 0
+      },
+      "command": {
+        "candidate_ids": [
+          "candidate-a",
+          "candidate-b",
+          "candidate-c",
+          "candidate-d"
+        ],
+        "published_ranking": [
+          "candidate-a",
+          "candidate-b",
+          "candidate-c",
+          "candidate-d"
+        ],
+        "channels": [
+          {
+            "channel": "KEYWORD",
+            "state": "AVAILABLE",
+            "ranked_candidate_ids": [
+              "candidate-b",
+              "candidate-a",
+              "candidate-c",
+              "candidate-d"
+            ]
+          },
+          {
+            "channel": "VECTOR",
+            "state": "UNAVAILABLE",
+            "ranked_candidate_ids": []
+          },
+          {
+            "channel": "STRUCTURED",
+            "state": "AVAILABLE",
+            "ranked_candidate_ids": [
+              "candidate-a",
+              "candidate-b",
+              "candidate-c",
+              "candidate-d"
+            ]
+          }
+        ],
+        "candidate_signals": [
+          {
+            "candidate_id": "candidate-c",
+            "unknown_signals": ["annual_purchase_volume"],
+            "missing_signals": []
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "vector-not-invoked",
+      "k": 2,
+      "gold_relevance": {
+        "candidate-a": 2,
+        "candidate-b": 3,
+        "candidate-c": 0,
+        "candidate-d": 1
+      },
+      "command": {
+        "candidate_ids": [
+          "candidate-a",
+          "candidate-b",
+          "candidate-c",
+          "candidate-d"
+        ],
+        "published_ranking": [
+          "candidate-b",
+          "candidate-a",
+          "candidate-d",
+          "candidate-c"
+        ],
+        "channels": [
+          {
+            "channel": "VECTOR",
+            "state": "NOT_INVOKED",
+            "ranked_candidate_ids": []
+          },
+          {
+            "channel": "STRUCTURED",
+            "state": "AVAILABLE",
+            "ranked_candidate_ids": [
+              "candidate-b",
+              "candidate-a",
+              "candidate-d",
+              "candidate-c"
+            ]
+          },
+          {
+            "channel": "KEYWORD",
+            "state": "AVAILABLE",
+            "ranked_candidate_ids": [
+              "candidate-a",
+              "candidate-b",
+              "candidate-d",
+              "candidate-c"
+            ]
+          }
+        ],
+        "candidate_signals": [
+          {
+            "candidate_id": "candidate-d",
+            "unknown_signals": [],
+            "missing_signals": ["preferred_channel"]
+          }
+        ]
+      }
+    }
+  ]
+}

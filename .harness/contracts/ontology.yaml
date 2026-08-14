@@ -1,0 +1,36 @@
+# Ontology contract reference. This does NOT duplicate the catalog — it points to the single
+# source of truth and pins the version this contract snapshot was taken against.
+
+source_of_truth: src/meet_ai/ontology/catalog.v1.json
+python_package: meet_ai.ontology (backend depends on this via editable install of the root package)
+db_projection: ontology.* schema (see db/migrations/0001_ontology.sql, backend/alembic/versions/*_0002_ontology.py)
+cli: meet-ai-ontology (pyproject.toml [project.scripts]) — run `meet-ai-ontology validate`
+
+snapshot_taken_at: "2026-08-02"
+metadata:
+  name: "Backju Matching Ontology"
+  version: "1.0.0"
+  status: PUBLISHED
+  default_locale: "ko-KR"
+  requirement_levels: [REQUIRED, PREFERRED, ACCEPTABLE, EXCLUDED]
+  knowledge_states: [KNOWN, UNKNOWN, NOT_APPLICABLE]
+  source_precedence: [USER, OPERATOR_VERIFIED, VERIFIED_IMPORT, EXPLICIT_FEEDBACK, BEHAVIOR_INFERRED, AI_INFERRED, DEFAULT]
+
+counts:
+  concepts: 259
+  synonyms: 11
+  relations: 7
+  event_mappings: 9
+
+usage_rule: >
+  All business tables reference ontology concepts via a composite
+  (taxonomy_version_id, concept_id) foreign key into ontology.concept_revision — never a bare
+  string enum. See .harness/contracts/domain-model.md "Cross-cutting conventions".
+
+known_gap: >
+  This is the ORIGINAL 30-step-track ontology (stage 6). The web/kiosk-split redesign
+  (docs/redesign-web-kiosk-split.md, docs/vibe-coding-master-spec-v1.md §30) sketches a
+  simpler ad-hoc code list (INDUSTRY.*, TECH.*, PRODUCT.*, GOAL.*, CHANNEL.*, TRADE.*) for
+  a *general trade-show* domain, not specific to 백주대간/주류. CONTRACT-003 must decide
+  whether the redesign's codes are meant to REPLACE the 259-concept catalog or are just
+  illustrative examples from the source template — do not assume either without checking.

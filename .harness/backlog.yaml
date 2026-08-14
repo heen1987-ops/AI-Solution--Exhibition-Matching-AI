@@ -1,0 +1,1378 @@
+tasks:
+  # ---------- WAVE 0: FOUNDATION ----------
+  - id: FND-001
+    title: 병렬개발 하네스 초기화
+    wave: 0
+    track: FOUNDATION
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths: [".harness/**", "AGENTS.md", "PROJECT_SCOPE.md"]
+    acceptance:
+      - "필수 하네스 파일이 모두 존재한다"
+      - "state.json이 유효한 JSON이다"
+      - "backlog.yaml이 유효한 YAML이다"
+    evidence: "2026-08-02 이 커밋에서 .harness/**, AGENTS.md 병합, PROJECT_SCOPE.md 생성"
+
+  - id: FND-002
+    title: ARCHITECTURE.md 작성 (현재 리포 구조 스냅샷)
+    wave: 0
+    track: FOUNDATION
+    priority: P1
+    status: DONE
+    depends_on: [FND-001]
+    owned_paths: ["ARCHITECTURE.md"]
+    acceptance:
+      - "apps/api/, apps/user-web/, src/meet_ai/, netlify/, adapters/, db/ 각각의 역할이 문서화된다"
+      - "트랙↔실제 경로 매핑이 locks.yaml과 일치한다"
+    evidence: "CR-009 web-first runtime shape, active/inactive apps, engine/data/deployment boundaries, request flows, and locks-aligned ownership are documented in ARCHITECTURE.md."
+
+  - id: FND-003
+    title: 공통 CI 파이프라인 (lint+typecheck+test, apps/api/apps/user-web 둘 다)
+    wave: 0
+    track: FOUNDATION
+    priority: P1
+    status: DONE
+    depends_on: [FND-001]
+    owned_paths: [".github/workflows/**"]
+    acceptance:
+      - "PR마다 backend pytest, frontend typecheck+build가 자동 실행된다"
+    note: "Google Drive 동기화 경로에서 npm install이 깨지는 이슈가 있었음(apps/user-web/README.md 참고) — CI 러너는 문제 없음(로컬 개발 환경만의 이슈)"
+    evidence: "GitHub CI now runs root engine and full backend pytest plus fatal Ruff/pip checks, and pnpm 9.15 frozen install with active user-web/admin lint, typecheck, test, and production build on every PR. CR-009 excludes backju-kiosk. Fresh verification: root 72 passed, backend 219 passed/2 skipped, admin 13 routes and user-web 21 routes built."
+
+  - id: FND-004
+    title: CR-009 웹 중심 채널 전환과 키오스크 기본 빌드 제외
+    wave: 2
+    track: FOUNDATION
+    priority: P0
+    status: DONE
+    depends_on: [FND-001]
+    owned_paths:
+      - "PROJECT_SCOPE.md"
+      - "AGENTS.md"
+      - "ARCHITECTURE.md"
+      - "package.json"
+      - "apps/user-web/.eslintrc.json"
+      - "apps/admin/.eslintrc.json"
+      - "apps/admin/app/exhibitors/[exhibitorId]/edit/page.tsx"
+      - "apps/admin/app/exhibitors/[exhibitorId]/review/page.tsx"
+      - ".harness/**"
+    acceptance:
+      - "활성 채널을 REGISTERED_WEB/GUEST_WEB/BUYER_WEB/ADMIN_PARTNER_WEB로 고정"
+      - "전용 KIOSK를 MVP/v1.x 신규 개발·기본 빌드·배포 대상에서 제외"
+      - "기존 kiosk 코드/API는 삭제하지 않고 versioned 제거 결정 전 호환 자산으로 보존"
+      - "QR은 공유단말 인계가 아니라 GUEST_WEB 직접 진입 수단으로 정의"
+    evidence: "CR-009 approved; canonical scope and architecture are web-first; root lint/typecheck/test/build scripts exclude backju-kiosk while retaining source compatibility. Active user/admin typecheck and production builds PASS in clean NTFS workspace."
+
+  # ---------- WAVE 1: CONTRACTS (partially retro-completed) ----------
+  - id: CONTRACT-001-INFORMAL
+    title: "(소급 인정) DB ERD·API 인터페이스 명세 — docs/db-erd-table-spec.md, docs/frontend-backend-ai-interface-spec.md"
+    wave: 1
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths: ["docs/db-erd-table-spec.md", "docs/frontend-backend-ai-interface-spec.md"]
+    acceptance: ["기존 30단계 트랙에서 이미 작성·구현 완료됨"]
+    evidence: "apps/api/app/models/**, apps/api/alembic/** 15개 마이그레이션(86 테이블)이 이 문서 기준으로 구현되고 SQL 컴파일 검증됨"
+
+  - id: CONTRACT-002
+    title: 비공식 계약을 .harness/contracts/**로 정식 승격
+    wave: 1
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-001-INFORMAL]
+    owned_paths: [".harness/contracts/**"]
+    acceptance:
+      - "apps/api/app/api/v1/*.py 라우터를 스캔해 openapi.yaml을 생성하거나 FastAPI의 /openapi.json을 export해 고정한다"
+      - "domain-model.md에 핵심 엔터티(Tenant/Event/Visitor.../Exhibitor.../MatchResult...)를 요약한다"
+      - "error-codes.yaml에 현재 라우터가 실제로 던지는 오류코드를 수집한다"
+      - "ontology.yaml에 src/meet_ai/ontology/catalog.v1.json의 버전·개념수를 참조로 남긴다(원본 복제 아님)"
+    note: "이 작업 전까지는 docs/frontend-backend-ai-interface-spec.md + db-erd-table-spec.md가 사실상의 계약이다."
+
+  - id: CONTRACT-003
+    title: 신규 재설계 API 경로(§40, docs/vibe-coding-master-spec-v1.md)와 기존 apps/api/ 51개 엔드포인트 대조·조정
+    wave: 1
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-002]
+    owned_paths: [".harness/contracts/**", "docs/vibe-coding-master-spec-v1.md"]
+    acceptance:
+      - "경로 불일치 목록 작성(예: /api/v1/me/event-profile vs /api/v1/profiles/me)"
+      - "각 불일치에 대해 '기존 유지' 또는 'Change Request로 변경' 결정"
+      - "결정을 .harness/decisions.md에 기록"
+    note: >
+      이 작업이 끝나야 KIOSK/ADMIN 트랙이 확정된 API 계약으로 시작할 수 있다. Blocker Score
+      평가 대상(§5) — 재작업 비용이 크므로 질문 후보.
+      CONTRACT-002에서 발견: 온톨로지가 이중화되어 있다 — 기존 259개 개념 카탈로그(백주대간
+      주류 도메인 특화, ontology.yaml 참고)와 재설계 문서 §30의 예시 코드(INDUSTRY.MANUFACTURING
+      등 일반 산업박람회용으로 보임)가 서로 다른 도메인처럼 보인다. 재설계 문서의 코드가
+      "그대로 구현해야 할 명세"인지 "원본 프롬프트 템플릿의 예시일 뿐"인지 사용자 확인 필요
+      (Blocker Score 7점 이상 후보 — 도메인 자체가 바뀌는 문제라 되돌리기 어려움).
+
+  - id: CONTRACT-004
+    title: 검색 임베딩 모델·차원·pgvector 활성 계약 게시 (CR-004)
+    wave: 2
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-004-object-embedding.md"
+      - "apps/api/app/models/ai.py"
+      - "apps/api/alembic/**"
+      - "docs/db-erd-table-spec.md"
+      - ".harness/contracts/domain-model.md"
+    acceptance:
+      - "모델 버전·고정 차원·거리척도·활성 포인터·fallback이 승인된 CR에 기록된다"
+      - "ai.object_embedding이 tenant/event/recommendable 경계와 HNSW cosine 인덱스를 갖는다"
+      - "Alembic이 단일 head를 유지하고 upgrade/downgrade SQL이 컴파일된다"
+    evidence: "CR-004/DECISION-007, 0017_object_embedding, VECTOR(512), active SUMMARY partial-HNSW cosine, 원본변경 fail-closed trigger, ORM 94 tables, offline upgrade/downgrade SQL compile 통과"
+
+  - id: CONTRACT-005
+    title: 관심목록 영속 모델·API 계약 게시
+    wave: 2
+    track: CONTRACTS
+    priority: P1
+    status: READY
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-005-favorites.md"
+      - "apps/api/app/models/favorite.py"
+      - "apps/api/alembic/**"
+      - ".harness/contracts/domain-model.md"
+    acceptance:
+      - "즐겨찾기 소유자·행사·recommendable 경계와 중복·삭제 정책이 CR에 기록된다"
+      - "모델과 Alembic 마이그레이션 소유권을 CONTRACTS가 게시한 뒤 BACKEND-009에 인계한다"
+      - "Alembic 단일 head와 upgrade/downgrade SQL 컴파일을 유지한다"
+    note: "G1 동결 후 새 테이블이 필요하므로 BACKEND-009보다 먼저 처리한다."
+
+  - id: CONTRACT-006
+    title: 인증·세션·RBAC·관리자 MFA 계약 게시
+    wave: 2
+    track: CONTRACTS
+    priority: P1
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-006-auth-rbac.md"
+      - ".harness/contracts/openapi.json"
+      - ".harness/contracts/error-codes.yaml"
+    acceptance:
+      - "검증된 principal의 tenant/event/user/role claim과 세션·JWT 수명주기를 계약한다"
+      - "EVENT_ADMIN/EXHIBITOR_ADMIN/DATA_REVIEWER 권한표와 관리자 MFA·복구 정책을 계약한다"
+      - "임시 호출자 제공 식별 헤더의 제거·호환 전환과 401/403 오류 계약을 정의한다"
+    note: "RISK-003의 구현 선행 계약이며, BACKEND-010 게시 전 관리자·보호 API를 완료 처리하지 않는다."
+    evidence: "CR-006 APPROVED; OpenAPI 0.2.0에 BrowserSession/BearerJWT/GuestSession과 개인 링크·세션·MFA 5개 경로, 10개 Auth 스키마 게시. 오류코드 12개 경계 검증, 루트 72 및 API 219 passed/2 skipped."
+
+  - id: CONTRACT-010
+    title: Web guest session entry and personal My Event landing
+    wave: 2
+    track: CONTRACTS
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-006]
+    owned_paths:
+      - ".harness/handoffs/contracts/change-request-010-web-session-entry.md"
+      - ".harness/contracts/openapi.json"
+    acceptance:
+      - "POST /sessions creates only web guest continuity and never returns the raw credential"
+      - "Personal links exchange into a verified session and remove the token from browser history"
+      - "Kiosk entry and uncontracted phone OTP remain outside the active contract"
+    evidence: "CR-010 APPROVED; OpenAPI 0.2.1 publishes the public /api/v1/sessions operation and its strict request/response schemas."
+
+  # ---------- WAVE 2: BACKEND (substantially done) ----------
+  - id: BACKEND-001
+    title: FastAPI 코어 골격 + DB 세션 + Alembic
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths: ["apps/api/app/core/**", "apps/api/app/db/**", "apps/api/app/main.py"]
+    evidence: "apps/api/app import 성공, GET /healthz, lazy DB connection 확인됨"
+
+  - id: BACKEND-002
+    title: 프로파일·동의 API
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-001, CONTRACT-001-INFORMAL]
+    owned_paths: ["apps/api/app/api/v1/routers/profile.py", "apps/api/app/api/v1/routers/consent.py"]
+    evidence: "10개 프로파일/동의 엔드포인트, OpenAPI 스키마 생성 확인됨"
+
+  - id: BACKEND-003
+    title: 추천 API + 매칭엔진 12단계 파이프라인 스켈레톤
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-001, CONTRACT-001-INFORMAL]
+    owned_paths: ["apps/api/app/services/matching/**", "apps/api/app/api/v1/routers/recommendations.py"]
+    evidence: "12단계 파이프라인과 POST /recommendations가 구현됐다. 단계 10 Hard Filter 평가 ID를 필수로 받는 결정론적 B2C/B2B/양면 점수 정책, 결측 가중치 재정규화, 정책·입력 계산지문이 게시되어 균등가중치 TODO는 해소됐다."
+    followup: "재설계 §34의 단순화 산식으로 교체할지는 AISEARCH-003의 별도 CR에서만 결정한다. 현재 게시 정책은 임의 변경하지 않는다."
+
+  - id: BACKEND-004
+    title: 상담(미팅) API
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-001]
+    owned_paths: ["apps/api/app/api/v1/routers/meetings.py"]
+    evidence: "10개 엔드포인트, 조건부 UPDATE 기반 슬롯 원자적 점유 구현 확인됨"
+
+  - id: BACKEND-005
+    title: Import·웹훅·파트너포털 API
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-001]
+    owned_paths: ["apps/api/app/api/v1/routers/imports.py", "apps/api/app/api/v1/routers/webhooks.py", "apps/api/app/api/v1/routers/partner.py"]
+    evidence: "HMAC 웹훅 서명검증, source_record_id 멱등 upsert 구현 확인됨"
+
+  - id: BACKEND-008
+    title: 공개 업체·부스 목록/상세 + 자연어·카테고리 검색 API (DECISION-005에서 발견된 공백)
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths: ["apps/api/app/api/v1/routers/exhibitors.py", "apps/api/app/api/v1/routers/search.py", "apps/api/app/schemas/search.py"]
+    acceptance:
+      - "GET /events/{event_id}/exhibitors, GET /exhibitors/{exhibitor_id}, GET /exhibitors/{exhibitor_id}/products, GET /booths/{booth_id}, GET /events/{event_id}/map — 인증 없이 접근 가능한 공개 조회"
+      - "승인상태(approval_status=APPROVED)가 아닌 업체는 응답에서 제외"
+      - "POST /search, GET /search/{search_session_id} — 구조화 필터 + 키워드(PostgreSQL FTS) + (있으면) pgvector 결합, 로그인·프로파일 없이 동작"
+      - "search_session에 channel(WEB/KIOSK) 구분 필드 저장"
+    note: "KIOSK-002가 이 작업에 의존한다 — 순서상 최우선"
+    evidence: "완료 당시 공개 행사/업체/제품/부스/지도 7개 GET + 익명 검색 POST/GET, 승인·활성 필터, FTS/keyword fallback, Redis search_session을 검증했다. 당시 semantic=0 기록은 CR-004/AISEARCH-002의 pgvector 채널로 superseded."
+
+  - id: BACKEND-009
+    title: 관심목록(즐겨찾기) API
+    wave: 2
+    track: BACKEND
+    priority: P1
+    status: BLOCKED
+    depends_on: [CONTRACT-003, CONTRACT-005]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/favorites.py"
+      - "apps/api/app/schemas/favorite.py"
+    acceptance:
+      - "GET/POST/DELETE /me/favorites[/{favorite_id}]"
+      - "대상 유형: 업체/제품/부스/프로그램"
+      - "USERWEB-003이 참조하는 저장 버튼과 연결 가능한 스키마"
+    note: "모델·마이그레이션은 CONTRACT-005가 게시하며, 이 작업은 API와 서비스 연결만 소유한다."
+
+  - id: BACKEND-006
+    title: 키오스크 세션·QR API (신규 — 재설계에만 있고 기존 apps/api/에는 없음)
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths: ["apps/api/app/api/v1/routers/kiosk.py", "apps/api/app/models/kiosk.py", "apps/api/app/schemas/kiosk.py"]
+    acceptance:
+      - "POST /kiosk/sessions, POST /kiosk/sessions/{id}/search, POST /kiosk/sessions/{id}/handoff, POST /kiosk/sessions/{id}/close, GET /kiosk/config/{kiosk_id} 구현"
+      - "익명 세션 — 개인정보 컬럼 없음"
+      - "60~120초 무입력 세션 만료 로직(TTL)"
+      - "QR handoff 토큰은 서명+만료시각 포함, 페이로드에 개인정보 없음"
+    note: "PROJECT_SCOPE.md 제외목록과 충돌 없는지 반드시 확인 — 키오스크 로그인/개인정보는 여기 포함하지 않는다"
+    evidence: "Redis TTL 익명 세션, kiosk 스키마 감사 원장(PII 컬럼 없음), HMAC 서명 QR 발급·검증·게스트 resolve, 0016_kiosk_session 단일 Alembic head. tests/test_kiosk_api.py 통과."
+    lifecycle: INACTIVE_COMPATIBILITY
+    superseded_by: "CR-009 GUEST_WEB direct search; frozen routes retained pending a separate removal contract"
+
+  - id: BACKEND-007
+    title: 관리자 승인·통계 API (신규 — apps/admin 백엔드 지원)
+    wave: 2
+    track: BACKEND
+    priority: P1
+    status: READY
+    depends_on: [CONTRACT-003, BACKEND-010]
+    owned_paths: ["apps/api/app/api/v1/routers/admin.py"]
+    acceptance:
+      - "업체 승인/반려, 부스 상태 변경, 검색통계, 무결과 검색어 조회 엔드포인트"
+      - "RBAC 적용 (EVENT_ADMIN, DATA_REVIEWER)"
+    note: "BACKEND-010의 검증된 principal/RBAC 완료로 시작 가능. partner.py와 겹치는 기능은 통합 시 중복 제거한다."
+
+  - id: BACKEND-010
+    title: 세션/JWT principal·RBAC·관리자 MFA 백엔드 기반
+    wave: 2
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [CONTRACT-006]
+    owned_paths:
+      - "apps/api/app/core/auth.py"
+      - "apps/api/app/services/auth_rate_limit.py"
+      - "apps/api/app/core/config.py"
+      - "apps/api/app/api/v1/routers/auth.py"
+      - "apps/api/app/api/v1/api.py"
+      - "apps/api/app/schemas/auth.py"
+      - "apps/api/app/models/auth.py"
+      - "apps/api/app/models/__init__.py"
+      - "apps/api/alembic/env.py"
+      - "apps/api/alembic/versions/20260803_0018_auth_session_mfa.py"
+      - "apps/api/tests/test_auth.py"
+      - "apps/api/tests/test_auth_rate_limit.py"
+      - "apps/api/pyproject.toml"
+      - "apps/api/app/main.py"
+      - "apps/api/app/api/v1/routers/imports.py"
+      - "apps/api/app/api/v1/routers/meetings.py"
+      - "apps/api/app/api/v1/routers/partner.py"
+      - "apps/api/app/api/v1/routers/profile.py"
+      - "apps/api/app/api/v1/routers/recommendations.py"
+      - "apps/api/tests/test_batch_matching_export.py"
+      - "apps/api/tests/test_excel_import.py"
+      - "apps/api/tests/test_exhibitor_models.py"
+      - "apps/api/tests/test_recommendation_api.py"
+    acceptance:
+      - "CONTRACT-006의 세션/JWT 검증 결과만 request principal로 사용한다"
+      - "tenant/event 경계와 역할 기반 401/403 정책을 공통 dependency로 적용한다"
+      - "관리자 MFA 등록·검증·복구 흐름과 감사 이벤트를 구현한다"
+      - "보호 API의 호출자 제공 식별 헤더 스텁을 호환 계획에 따라 제거한다"
+    evidence: "0018 migration과 digest-only 개인 링크/세션, AEAD 비밀 저장, RS256 서비스 JWT, 명시적 event/exhibitor RBAC, WebAuthn/TOTP/일회 복구코드, 감사 이벤트를 구현했다. 보호 라우터는 검증된 principal/guest만 사용하고 호출자 identity 헤더 spoofing을 거부한다. 쿠키 변경 요청은 allowlist Origin+세션 결합 CSRF를 공통 검증한다. API 236 passed/2 skipped, 공통 엔진 72 passed, Alembic single head/offline full upgrade PASS."
+    note: "Magic-link+TOTP는 AAL2가 아니며, WebAuthn 또는 독립된 primary factor+TOTP만 AAL2로 승격한다."
+
+  - id: BACKEND-013
+    title: Web guest session entry and authentication remediation
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-010, BACKEND-010]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/sessions.py"
+      - "apps/api/app/schemas/session.py"
+      - "apps/api/app/api/v1/routers/auth.py"
+      - "apps/api/app/core/auth.py"
+      - "apps/api/tests/test_sessions.py"
+      - "apps/api/tests/test_auth.py"
+    acceptance:
+      - "Guest session, minimal profile, and visit session are committed atomically"
+      - "TOTP plaintext is absent from persisted JSON"
+      - "EXHIBITOR_ADMIN remains visible at AAL1 while privileged grants require AAL2"
+      - "Resent personal links revoke prior unconsumed same-purpose links"
+      - "Personal-link exchange is rate-limited by derived token, account, and network keys"
+    evidence: "API 246 passed/2 skipped; touched Ruff/format and OpenAPI reference validation PASS."
+
+  - id: USERWEB-007
+    title: Personal My Event landing and browser-session CSRF rehydration
+    wave: 2
+    track: USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-010, BACKEND-013]
+    owned_paths:
+      - "apps/user-web/app/e/**"
+      - "apps/user-web/app/start/**"
+      - "apps/user-web/components/InlinePhoneVerify.tsx"
+      - "apps/user-web/lib/auth-state.ts"
+      - "apps/user-web/lib/api-client.ts"
+      - "apps/user-web/lib/api-client.test.ts"
+    acceptance:
+      - "Opaque link token is removed from browser history after exchange"
+      - "Unsafe authenticated calls attach a runtime-only session-bound CSRF token"
+      - "Landing page does not index or send a referrer"
+      - "Uncontracted phone OTP controls are absent from active user flows"
+    evidence: "User web 4 tests, lint, typecheck, and 21-route production build PASS."
+
+  - id: DELIVERY-001
+    title: Read-only recommendation snapshot delivery on My Event
+    wave: 2
+    track: BACKEND_USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-010, BACKEND-010, BACKEND-003, USERWEB-007]
+    owned_paths:
+      - "apps/api/app/api/v1/routers/recommendations.py"
+      - "apps/api/app/schemas/recommendation.py"
+      - "apps/api/app/services/matching/errors.py"
+      - "apps/api/tests/test_recommendation_api.py"
+      - "apps/user-web/app/e/**"
+      - "apps/user-web/app/home/**"
+      - "apps/user-web/components/MyEventDashboard.tsx"
+      - "apps/user-web/lib/**"
+      - ".harness/contracts/openapi.json"
+      - ".harness/contracts/error-codes.yaml"
+      - "docs/frontend-backend-ai-interface-spec.md"
+    acceptance:
+      - "GET /home returns the newest owned persisted snapshot without running the matching orchestrator"
+      - "Missing snapshots return RECOMMENDATION_NOT_READY and never trigger implicit calculation"
+      - "The personal-link My Event route renders recommendations, saved/meeting entry points, and schedule content directly"
+      - "Kakao/email remain entry channels and no provider integration or kiosk feature is added"
+    note: "CR-011 is approved by the user's explicit calculation-versus-delivery direction."
+    evidence: "GET /api/v1/home delivers the newest owned ACTIVE snapshot without invoking the orchestrator; missing snapshots return RECOMMENDATION_NOT_READY. Personal-link and /home routes share MyEventDashboard, render up to ten grounded cards, and record explicit dismiss feedback. API 248 passed/2 skipped, common engine 72 passed, user web 5 passed plus typecheck/lint/21-route production build, OpenAPI 75-path local-reference validation, touched Ruff and diff check PASS."
+
+  - id: NOTIFY-001
+    title: Alimtalk-first informational delivery foundation
+    wave: 2
+    track: CONTRACTS_BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-006, CONTRACT-010, DELIVERY-001]
+    owned_paths:
+      - "apps/api/app/models/integration.py"
+      - "apps/api/alembic/versions/20260803_0019_notification_outbox.py"
+      - "apps/api/app/services/notification_delivery.py"
+      - "apps/api/app/api/v1/routers/auth.py"
+      - "apps/api/tests/test_notification_delivery.py"
+      - "apps/api/tests/test_auth.py"
+      - "apps/api/tests/test_exhibitor_models.py"
+      - "docs/db-erd-table-spec.md"
+      - ".harness/handoffs/contracts/change-request-012-alimtalk-notification-delivery.md"
+      - ".harness/handoffs/integration/NOTIFY-001.md"
+    acceptance:
+      - "Only approved informational triggers can enqueue a notification and rank-only changes cannot enqueue"
+      - "KAKAO_ALIMTALK is attempted first, SMS is fallback, and EMAIL is last-resort only"
+      - "Phone, email, name, raw personal token, and provider response bodies are absent from delivery/outbox persistence"
+      - "Notification delivery and a privacy-minimized Outbox event are created in one transaction boundary with stable dedupe"
+      - "A successful personal-link exchange records clicked_at using the link reference"
+      - "No external provider call is enabled before dealer/template/callback contracts and credentials exist"
+    note: "CR-012 is approved by the user's explicit Alimtalk-first delivery direction."
+    evidence: "CR-012, 0019 single-head migration, notification_delivery/attempt/outbox models, encrypted Magic Link enqueue, idempotent Snapshot dedupe, SKIP LOCKED lease recovery, Alimtalk→SMS→email adapter policy, and link-exchange click attribution implemented. Notification focused 9 passed; API 257 passed/2 skipped; common engine 72 passed; touched Ruff, compileall, pip check, Alembic full offline upgrade, and diff check PASS. No external provider is enabled pending dealer/template/callback/credential approval."
+
+  - id: USERWEB-008
+    title: Backju official-site visual language alignment
+    wave: 2
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [USERWEB-007, DELIVERY-001]
+    owned_paths:
+      - "apps/user-web/app/**"
+      - "apps/user-web/components/**"
+      - "apps/user-web/BRAND_ASSETS.md"
+      - ".harness/handoffs/contracts/change-request-013-backju-visual-language.md"
+    acceptance:
+      - "Global shell, My Event, recommendations, and guest search use the official site's bronze/ivory/pastel visual language"
+      - "Official image references keep source provenance and a visible credit without copying binaries into the repository"
+      - "Matching, snapshot delivery, personal-link, approval, and notification contracts remain unchanged"
+      - "Keyboard focus, 44px tap targets, responsive layout, and production build remain valid"
+    note: "CR-013 is approved by the user's explicit official-site tone-and-imagery direction."
+    evidence: "Official backju.kr home and visitor pages were inspected in-browser. Global bronze/ivory/pastel tokens, official logo, attributed common hero image, navigation, My Event, recommendation cards, and guest search were aligned without changing matching or delivery contracts. Clean NTFS frozen install, 5 user-web tests, typecheck, lint, and 21-route production build PASS; local browser landmarks/assets/5-tab navigation verified with zero console warnings/errors."
+
+  # ---------- WAVE 2: USER_WEB (substantially done) ----------
+  - id: USERWEB-001
+    title: Next.js 골격 + API 클라이언트 + 레이아웃
+    wave: 2
+    track: USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths: ["apps/user-web/app/layout.tsx", "apps/user-web/lib/**", "apps/user-web/components/TopBar.tsx", "apps/user-web/components/BottomNav.tsx"]
+    evidence: "npm run build 성공(20개 라우트), typecheck 에러 0건 확인됨(로컬 C: 드라이브에서 검증 — Google Drive 경로 이슈 있었음)"
+
+  - id: USERWEB-002
+    title: 온보딩 화면군 (7개)
+    wave: 2
+    track: USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [USERWEB-001]
+    owned_paths: ["apps/user-web/app/start/**", "apps/user-web/app/onboarding/**"]
+
+  - id: USERWEB-003
+    title: 추천홈·상세 화면군
+    wave: 2
+    track: USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [USERWEB-001, BACKEND-003]
+    owned_paths: ["apps/user-web/app/home/**", "apps/user-web/app/recommendations/**", "apps/user-web/app/booths/**", "apps/user-web/app/products/**"]
+
+  - id: USERWEB-004
+    title: 경로·상담·QR체크인 + 일정·MY 화면군
+    wave: 2
+    track: USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [USERWEB-001, BACKEND-004]
+    owned_paths: ["apps/user-web/app/route/**", "apps/user-web/app/meetings/**", "apps/user-web/app/check-in/**", "apps/user-web/app/visits/**", "apps/user-web/app/schedule/**", "apps/user-web/app/saved/**", "apps/user-web/app/profile/**", "apps/user-web/app/my/**"]
+
+  - id: USERWEB-005
+    title: 재설계 §40 API 경로 반영(기존 API-client가 가리키는 경로 재확인)
+    wave: 2
+    track: USER_WEB
+    priority: P1
+    status: READY
+    depends_on: [CONTRACT-003]
+    owned_paths: ["apps/user-web/lib/api-client.ts", "apps/user-web/lib/types.ts"]
+    note: "CONTRACT-003 완료 결과를 기준으로 현재 API client 경로를 재감사할 수 있다."
+
+  - id: USERWEB-006
+    title: GUEST_WEB 로그인 없는 자연어 업체·부스 탐색
+    wave: 2
+    track: USER_WEB
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-008, FND-004]
+    owned_paths:
+      - "apps/user-web/app/explore/**"
+      - "apps/user-web/app/start/**"
+      - "apps/user-web/lib/api-client.ts"
+      - "apps/user-web/lib/types.ts"
+      - "apps/user-web/lib/onboarding-state.ts"
+      - "apps/user-web/.env.example"
+      - "apps/user-web/README.md"
+    acceptance:
+      - "회원가입·사전등록 세션 생성 없이 /explore 직접 진입"
+      - "기존 POST /api/v1/search channel=WEB를 타입드 클라이언트로 호출"
+      - "승인 업체 결과·근거·부스 위치·운영상태와 무결과 clarification 표시"
+      - "행사 UUID 미설정 시 잘못된 요청 대신 사용자 안내로 fail-closed"
+      - "모바일 우선·키보드·레이블·44px 터치 기준 유지"
+    evidence: "Guest /explore route and typed WEB search client published. Start browse no longer creates a profile session. Active user/admin typecheck and production build PASS; /explore prerendered; browser DOM/keyboard form inspection PASS with zero console errors."
+
+  # ---------- WAVE 2: KIOSK (historical completed source; inactive under CR-009) ----------
+  - id: KIOSK-001
+    title: apps/kiosk Next.js 골격 (대기화면·언어선택·레이아웃)
+    wave: 2
+    track: KIOSK
+    priority: P0
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths: ["apps/kiosk/**"]
+    acceptance:
+      - "apps/kiosk가 독립 Next.js 앱으로 실행된다(apps/user-web/와 별도 프로세스)"
+      - "K00 대기화면, K01 언어선택(ko/en/ja/zh) 구현"
+      - "대형 터치 UI(44x44px 이상), 로그인 관련 UI 없음"
+      - "kiosk 설정(event_id, kiosk_id, session_timeout, supported_languages 등)을 GET /kiosk/config/{kiosk_id}에서 로드"
+    tests: [component, e2e]
+    prohibited: [로그인 추가, 전화번호/이메일 입력 필드]
+    evidence: "apps/kiosk 독립 Next.js 앱, K00/K01 4개 언어, 44px 이상 터치 UI, GET kiosk config 연동. typecheck 및 production build 통과."
+    lifecycle: INACTIVE_COMPATIBILITY
+
+  - id: KIOSK-002
+    title: 자연어/카테고리 검색 화면 + 세션 관리
+    wave: 2
+    track: KIOSK
+    priority: P0
+    status: DONE
+    depends_on: [KIOSK-001, BACKEND-006, BACKEND-008]
+    owned_paths: ["apps/kiosk/**"]
+    acceptance:
+      - "K02~K05(검색홈/자연어입력/카테고리선택/결과) 구현"
+      - "60~120초 무입력 시 자동 세션 초기화 및 화면 리셋"
+      - "이전 사용자의 검색어·결과가 다음 사용자에게 노출되지 않음(수동 테스트로 검증)"
+    evidence: "K02~K05 자연어/카테고리/결과 화면, sessionStorage 한정 익명 상태, 60~120초 IdleGuard 및 공통 resetAll 구현. production build 통과."
+    lifecycle: INACTIVE_COMPATIBILITY
+
+  - id: KIOSK-003
+    title: 업체 상세·지도·QR 인계
+    wave: 2
+    track: KIOSK
+    priority: P0
+    status: DONE
+    depends_on: [KIOSK-002]
+    owned_paths: ["apps/kiosk/**"]
+    acceptance:
+      - "K06~K08(업체상세/부스지도/QR전송) 구현"
+      - "QR 페이로드는 서명된 handoff_id + 만료시각만 포함, 개인정보 없음"
+      - "만료된 QR 토큰은 게스트 웹에서 거부된다"
+    evidence: "K06 업체상세, K07 부스지도, K08 로컬 QR 생성과 apps/user-web/kiosk-handoff 게스트 화면 연결. 토큰 서명·만료·서버 레코드 해시 결합 검증. 양쪽 Next.js production build 통과."
+    lifecycle: INACTIVE_COMPATIBILITY
+
+  - id: KIOSK-004
+    title: 저속망 대응 로컬 캐시 + 오류/결과없음 화면
+    wave: 2
+    track: KIOSK
+    priority: P1
+    status: DONE
+    depends_on: [KIOSK-003]
+    owned_paths: ["apps/kiosk/**"]
+    acceptance:
+      - "K09(결과없음), K10(네트워크오류) 구현"
+      - "기본화면/카테고리/업체 최소정보/정적지도가 로컬 캐시로 오프라인에도 표시된다"
+    evidence: "K09/K10 구현. 기본/카테고리는 정적 번들, 최근 결과·업체·지도 좌표는 휘발성 sessionStorage에만 캐시하고 세션 종료 시 완전 삭제."
+    lifecycle: INACTIVE_COMPATIBILITY
+
+  # ---------- WAVE 2: ADMIN (partially materialized; blocked on auth/backend) ----------
+  - id: ADMIN-001
+    title: apps/admin Next.js 골격 + 인증(MFA)
+    wave: 2
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [CONTRACT-003, BACKEND-010]
+    owned_paths: ["apps/admin/**"]
+    acceptance:
+      - "역할별(EVENT_ADMIN/EXHIBITOR_ADMIN/DATA_REVIEWER) 로그인 및 메뉴 분기"
+      - "A00 관리자 홈"
+    evidence: "localStorage 역할 스위처를 제거하고 서버 세션 조회/폐기, opaque link 교환, WebAuthn 등록·step-up, 일회 복구코드 표시, 역할별 메뉴·A00 홈 분기를 연결했다. 브라우저는 identity 헤더를 만들지 않고 mutation에 런타임 CSRF만 첨부한다. Admin 3 tests, lint/typecheck/build PASS."
+    note: "화면 역할 게이트는 표시 보조이며 모든 최종 권한 결정은 BACKEND-010 공통 dependency가 반복한다."
+
+  - id: ADMIN-002
+    title: 업체·제품 검수 + AI 추출 검수 화면
+    wave: 2
+    track: ADMIN
+    priority: P1
+    status: BLOCKED
+    depends_on: [ADMIN-001, BACKEND-007]
+    owned_paths: ["apps/admin/**"]
+    acceptance:
+      - "A03~A06 구현, 승인 전·후 데이터 구분, 변경 전·후 값 표시"
+      - "미승인 업체는 검색·추천에서 제외됨을 QA가 검증할 수 있도록 승인상태 필드가 명확히 노출됨"
+
+  - id: ADMIN-003
+    title: 키오스크 설정 + 검색통계 + 무결과 검색어 화면
+    wave: 2
+    track: ADMIN
+    priority: P2
+    status: CANCELLED
+    depends_on: [ADMIN-001, BACKEND-006, BACKEND-007]
+    owned_paths: ["apps/admin/**"]
+    note: "CR-009에서 전용 키오스크를 MVP/v1.x 범위에서 제외했다. 웹 검색통계·무결과 운영은 향후 별도 ADMIN 작업으로 재정의한다."
+
+  # ---------- WAVE 2: AI_SEARCH (informal partial) ----------
+  - id: AISEARCH-001-INFORMAL
+    title: "(소급 인정) 온톨로지 카탈로그 + 매칭엔진 12단계"
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths: ["src/meet_ai/ontology/**", "apps/api/app/services/matching/**"]
+    evidence: "259개 v1 개념 카탈로그, 12단계 매칭 파이프라인 구현·검증됨"
+
+  - id: AISEARCH-002
+    title: 공개 웹 카탈로그 검색점수 구현 — Catalog Search Score
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-008, AISEARCH-001-INFORMAL, CONTRACT-004]
+    owned_paths:
+      - "apps/api/app/services/matching/**"
+      - "apps/api/app/services/catalog_search.py"
+      - "apps/api/app/services/object_embeddings.py"
+      - "apps/api/scripts/backfill_catalog_embeddings.py"
+      - "apps/api/app/api/v1/routers/search.py"
+      - "apps/api/app/api/v1/routers/kiosk.py"
+    acceptance:
+      - "0.45×Semantic + 0.30×Keyword + 0.15×Category + 0.05×DataQuality + 0.05×BoothAvailability 산식 구현"
+      - "운영종료·미승인 업체 제외, 동일업체 반복 제한"
+    note: "CR-004에 따라 text-embedding-3-small dimensions=512, cosine, pgvector SUMMARY partial-HNSW를 게시했다. 외부 provider는 명시적 활성화 전까지 꺼져 있으며 장애 시 semantic만 0으로 낮추고 기존 검색을 유지한다. CR-009 이후 활성 소비자는 GUEST_WEB /api/v1/search다."
+    evidence: "SUMMARY semantic top-K→승인 candidate union→정확한 0.45/0.30/0.15/0.05/0.05 점수, semantic-only/CJK 결과, provider/pgvector/structured fallback, 동일업체 제한 테스트 통과. 제품명 우선·설명 공정예산, 원본변경 즉시 비활성화, global-lock snapshot 재검증·원자적 backfill 포함."
+
+  - id: AISEARCH-003
+    title: 웹 초개인화 점수(§34) 재설계판으로 교체 여부 결정 및 반영
+    wave: 2
+    track: AI_SEARCH
+    priority: P1
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths: ["apps/api/app/services/matching/**"]
+    note: "CONTRACT-003은 API 경로만 결정했으므로, 기존 12단계와 §34 산식 중 선택할 별도 CR 필요 여부부터 판단한다."
+    evidence: "RETAIN_CONSUMER_SCORE_V1. §34 current-query 입력은 추천 계약에 없고 booth availability는 context-rerank-v1.0에서 이미 처리되어 즉시 교체 시 임의 proxy·이중가중이 발생한다. consumer-score-v2는 승인 CR, 새 입력/개인정보 계약, 라벨 골든셋, shadow 비열등성 증거가 있을 때만 진행한다. 경계 회귀 3건 추가."
+
+  - id: AIENGINE-001
+    title: 공통 매칭엔진 프로파일 의미 후보회수 연결
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-003, AISEARCH-002]
+    owned_paths:
+      - "apps/api/app/services/matching/profile_semantic_recall.py"
+      - "apps/api/app/services/matching/candidate_generator.py"
+      - "apps/api/app/services/matching/orchestrator.py"
+      - "apps/api/tests/test_profile_semantic_recall.py"
+    acceptance:
+      - "식별자·자유문·숫자 거래조건 없이 게시 온톨로지 코드와 공개 라벨만 임베딩 입력에 사용"
+      - "벡터 유사도는 후보 회수에만 사용하고 Hard Filter·게시 점수 정책을 변경하지 않음"
+      - "공급자·pgvector 장애/비활성화 시 구조화·인기·탐색 후보 채널 유지"
+      - "참가업체별 후보 상한, 모델 버전·입력지문 계보, 결정론적 tie-break 보존"
+    evidence: "PROFILE_SEMANTIC_RECALL_V1 쿼리/지문, 기존 SUMMARY pgvector scorer 연결, 참가업체당 3개 cap과 VECTOR provenance 구현. backend 178 passed/2 skipped, root 24 passed."
+
+  - id: AIENGINE-002
+    title: 공통 매칭엔진 골든셋·오프라인 평가기 구축
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-001]
+    owned_paths:
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "일반 관람객·바이어·양면 매칭 대표 골든셋과 기대 Hard Filter 사유를 버전 관리"
+      - "동일 입력·정책·택소노미에서 후보/점수/설명 지문 재현"
+      - "Recall@K·NDCG@K·Hard Filter 위반 0건·업체 집중도 지표를 오프라인 산출"
+      - "벡터 비활성/장애 시 구조화 fallback 품질과 회귀 임계값을 비교"
+    evidence: "matching-golden-set-v1 JSON Schema와 visitor/buyer/reciprocal 3개 시나리오, matching-evaluator-v1.0 CLI를 게시했다. 기준선 Recall@3=1.0, NDCG@3=1.0, fallback Recall@3=0.666667, 필터·설명 위반 0. root 35 passed, backend 178 passed/2 skipped."
+
+  - id: AIENGINE-003
+    title: 공통 매칭엔진 입출력 계약·실행 facade 분리
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-002]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "apps/api/app/services/matching/engine_adapter.py"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/test_matching_engine_facade.py"
+    acceptance:
+      - "카탈로그 검색·일반 추천·바이어·양면 모드의 버전 고정 command/result 계약 제공"
+      - "순수 facade는 FastAPI·SQLAlchemy·외부 AI 공급자에 의존하지 않음"
+      - "웹·키오스크 어댑터는 동일 정책을 호출하며 점수 산식을 재구현하지 않음"
+      - "eligibility 평가 ID, 택소노미·정책·모델 버전, 입력·결과 지문을 결과에 보존"
+      - "AIENGINE-002 골든셋이 facade 출력의 회귀 계약으로 동작"
+
+    evidence: "matching-engine-command/result-v1.0 facade and four modes published; kiosk, directional, and reciprocal adapters call it without owning weights. matching-evaluator-v1.1 runs the golden set through facade commands. Root 42 passed; backend 180 passed/2 skipped; golden set 3/3 PASS."
+
+  - id: AIENGINE-004
+    title: 공통 매칭엔진 결정론적 추천근거·증거 계약
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-003, AISEARCH-003]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "apps/api/app/services/matching/engine_adapter.py"
+      - "apps/api/app/services/matching/explanation_generator.py"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+    acceptance:
+      - "점수 기여도·Hard Filter·양면 상태에서 allowlisted reason claim을 결정론적으로 생성"
+      - "각 claim은 어댑터가 제공한 실제 evidence_ref 없이는 게시되지 않으며 LLM이 사실을 추가하지 못함"
+      - "순수 facade는 FastAPI·SQLAlchemy·외부 AI 공급자에 의존하지 않고 근거 계약과 지문을 반환"
+      - "일반 추천·바이어·양면·카탈로그 검색 어댑터가 동일 근거 계약을 사용"
+      - "AIENGINE-002 골든셋이 입력된 설명이 아니라 facade가 생성한 설명을 검증"
+    evidence: "matching-engine-command/result-v1.1 and reason-claim-v1.0 published; score/catalog/reciprocal/filter claims require adapter evidence, runtime templates project facade claims, evaluator-v1.2 validates generated claims. Root 45 passed; backend 184 passed/2 skipped; Golden Set 3/3 PASS."
+
+  - id: AIENGINE-005
+    title: 하이브리드 후보결합 RRF shadow 평가·UNKNOWN 경계
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-004]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "BM25/구조화·VECTOR 후보순위를 결정론적 RRF shadow 결과로 결합하고 현재 게시 점수는 변경하지 않음"
+      - "VECTOR 장애·미호출 시 keyword/structured 결과와 순위가 재현 가능하게 유지"
+      - "UNKNOWN·미관측 신호를 불일치 0이나 거짓으로 바꾸지 않고 평가 결과에 별도 보존"
+      - "라벨된 검색 fixture에서 weighted-v1 대비 Recall@K/NDCG@K 비열등성과 지문 재현성을 보고"
+      - "승격은 별도 versioned contract 결정 전까지 금지"
+    evidence: "hybrid-rrf-shadow-command/result-v1.0 and evaluator-v1.0 published. Labeled fixture covers VECTOR AVAILABLE/UNAVAILABLE/NOT_INVOKED, preserves UNKNOWN/MISSING diagnostics without numeric coercion, and keeps weighted-v1 fallback order exact. Average Recall@K 0.777778->0.888889 and NDCG@K 0.795522->0.947609; root 54 passed, backend 197 passed/2 skipped. Promotion remains prohibited."
+
+  - id: AIENGINE-006
+    title: 자연어·엑셀 프로파일 공통 의도 정규화 계약
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-005, BACKEND-011]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "자연어 질의와 canonical Excel profile을 동일한 versioned intent 구조로 정규화"
+      - "MUST/PREFER/EXCLUDE와 UNKNOWN/UNRESOLVED를 분리하고 미확인 값을 false 또는 0으로 변환하지 않음"
+      - "온톨로지 코드·동의어는 게시 버전에만 매핑하며 모호한 용어를 임의 추정하지 않음"
+      - "PII 없이 입력·결과 fingerprint가 재현되고 한국어/영문/약어/부정어 fixture가 회귀 계약으로 동작"
+      - "LLM은 선택적 proposal adapter로만 허용하고 schema 검증 전 결과를 Hard Filter나 점수에 사용하지 않음"
+    evidence: "matching-intent-command/result-v1.0 and intent-normalization-v1.0 published. Natural-language and canonical Excel/profile inputs converge on MUST/PREFER/EXCLUDE plus explicit UNKNOWN/UNRESOLVED; only published assignable ontology codes resolve. PII is redacted before provider calls/fingerprints, ambiguous OEM/export terms remain unresolved, and schema-validated AI items remain proposal-only. Seven-scenario KO/EN/acronym/negation/Excel fixture PASS with parity fingerprint; root 62 passed, backend 197 passed/2 skipped."
+
+  - id: AIENGINE-007
+    title: 정규화 의도 기반 검색·Hard Filter 투영 계약
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-006, AIENGINE-003]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "정규화된 PREFER는 후보검색 feature로, 명시적 MUST/EXCLUDE만 검증 가능한 Hard Filter 입력으로 결정론적으로 투영"
+      - "UNKNOWN/UNRESOLVED와 proposal-only 항목은 pass, mismatch, 0점 또는 검색조건으로 변환하지 않음"
+      - "자연어와 canonical Excel profile의 동일 semantic intent가 동일한 retrieval/filter plan을 생성"
+      - "게시 온톨로지·정책 버전과 입력·결과 fingerprint를 보존하고 현재 weighted-v1 공개순위를 변경하지 않음"
+      - "검증 가능한 후보 필드가 없는 MUST는 자동 적격 처리하지 않고 INFORMATION_REQUIRED로 분리"
+    evidence: "intent-projection-result-v1.0, intent-projection-v1.0, and candidate-capability-v1.0 published. Confirmed PREFER becomes structured recall-only features; verifiable MUST/EXCLUDE becomes filter constraints whose UNKNOWN/MISSING outcome is INFORMATION_REQUIRED. Public scope blocks buyer-only trade features, unbound requirements stay information-required, and UNKNOWN/UNRESOLVED/proposal-only stay deferred. Seven-scenario fixture PASS with natural/Excel plan parity; weighted-v1 remains unchanged. Root 67 passed; backend 197 passed/2 skipped."
+
+  - id: AIENGINE-008
+    title: 후보 관측값 기반 Hard Filter 판정·정보확인 분리
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-007]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "src/meet_ai/evaluation/**"
+      - "tests/fixtures/matching/**"
+      - "tests/test_matching_engine_facade.py"
+      - "tests/test_matching_evaluation.py"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "투영된 constraint를 검증된 후보 관측값에만 적용해 ELIGIBLE, FILTERED_OUT, INFORMATION_REQUIRED를 결정론적으로 구분"
+      - "UNKNOWN/MISSING/STALE 후보값은 MUST와 EXCLUDE 모두 자동 통과·불일치·0점 처리하지 않고 INFORMATION_REQUIRED"
+      - "ONTOLOGY_MATCH, DERIVED_BAND_MATCH, TRADE_STATUS 판정을 게시 온톨로지와 capability version으로 재현"
+      - "모든 필수 constraint가 ELIGIBLE일 때만 기존 scoring EligibilityDecision으로 변환 가능"
+      - "평가 지문·reason code·evidence ref를 제공하되 PII·원문 질의·비공개 필드값은 결과에 포함하지 않음"
+
+    evidence: "constraint-evaluation-result-v1.0 deterministically evaluates verified observations into ELIGIBLE, FILTERED_OUT, or INFORMATION_REQUIRED. ONTOLOGY_MATCH, DERIVED_BAND_MATCH, and TRADE_STATUS plus UNKNOWN/MISSING/STALE/CONDITIONAL/NEGOTIABLE boundaries are covered by 14 fixture scenarios. Only fully ELIGIBLE results convert to scoring EligibilityDecision; private observed values are omitted. Root 72 passed; backend 197 passed/2 skipped; touched Ruff, compileall, pip check, and diff check PASS."
+
+  - id: AIENGINE-009
+    title: Canonical candidate observation adapter and runtime shadow parity
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-008]
+    owned_paths:
+      - "src/meet_ai/engine/**"
+      - "apps/api/app/services/matching/**"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/fixtures/matching/**"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "Map approved public catalog and verified buyer supply fields into CandidateFieldObservation without exposing private values"
+      - "Run the three-state constraint evaluator in shadow beside the existing runtime Hard Filter and report parity by stable reason codes"
+      - "UNKNOWN, MISSING, STALE, CONDITIONAL, and NEGOTIABLE never enter scoring through an automatic pass, mismatch, or zero"
+      - "Do not change the published weighted-v1 formula, public API response, database schema, or stored rank"
+      - "Define a separate change-controlled promotion gate for any runtime enforcement difference"
+
+    evidence: "candidate-observation-adapter-v1.0 and hard-filter-shadow-v1.0 map only approved public and verified buyer data into the AIENGINE-008 observation contract. The existing Hard Filter remains authoritative while PARITY, SAFETY_GAP, DIVERGENCE, NOT_COMPARABLE, NOT_APPLICABLE, and ADAPTER_ERROR are measured with privacy-minimized fingerprints. Seven fixture scenarios preserve UNKNOWN/MISSING/STALE/CONDITIONAL/NEGOTIABLE; focused 21 passed, root 72 passed, backend 211 passed/2 skipped. Enforcement remains false."
+
+  - id: AIENGINE-010
+    title: Constraint shadow quality gate and promotion evidence
+    wave: 2
+    track: AI_SEARCH
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-009]
+    owned_paths:
+      - "src/meet_ai/evaluation/**"
+      - "apps/api/app/services/matching/constraint_shadow.py"
+      - "apps/api/tests/test_matching_engine_adapter.py"
+      - "tests/fixtures/matching/**"
+      - ".harness/reports/integration/**"
+    acceptance:
+      - "Aggregate versioned PARITY, SAFETY_GAP, DIVERGENCE, ADAPTER_ERROR, and NOT_COMPARABLE metrics without candidate private values"
+      - "Fail promotion on any DIVERGENCE or ADAPTER_ERROR and keep safety gaps visible by stable reason code"
+      - "Publish a reproducible offline gate over fixed fixtures and runtime-safe aggregate inputs"
+      - "Do not enable three-state enforcement or change the published weighted-v1 rank until a separate approved promotion decision"
+      - "Record the minimum runtime sample and rollback evidence required for a later enforcement Change Request"
+
+    evidence: "constraint-shadow-gate-command/result-v1.0 and constraint-shadow-promotion-gate-v1.0 aggregate de-duplicated runtime-safe state/reason counts only. Any DIVERGENCE or ADAPTER_ERROR fails; 1,000 comparable unique results plus regression, rollback, and safety-gap review evidence are required for Change Request readiness. Enforcement remains false. Six fixtures pass; focused 25 passed, root 72 passed, backend 219 passed/2 skipped."
+
+  - id: BACKEND-011
+    title: 사전등록자·참여기업 XLSX 입력 어댑터와 표준 템플릿
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [AIENGINE-004]
+    owned_paths:
+      - "apps/api/app/services/excel_import.py"
+      - "apps/api/app/api/v1/routers/imports.py"
+      - "apps/api/app/schemas/imports.py"
+      - "apps/api/tests/test_excel_import.py"
+      - "apps/api/tests/fixtures/excel-import-v1-*.xlsx"
+      - "docs/templates/exhibition-matching-import-v1.xlsx"
+      - ".harness/handoffs/contracts/change-request-007-excel-import.md"
+    acceptance:
+      - "표준 XLSX의 사전등록자·참여기업 행을 기존 JSON import 계약으로 정규화"
+      - "게시된 259개 온톨로지 코드만 UUID 참조로 변환하고 미등록·상위 코드는 행 단위 격리"
+      - "dry-run을 기본으로 하고 수식·매크로·비정상 ZIP·추가 열·중복 ID·과대 파일을 차단"
+      - "행 오류에 이름·전화·이메일·원문 셀 값을 포함하지 않음"
+      - "업체 승인 및 공개 인덱스 경계를 우회하지 않고 자연어 검색은 기존 /api/v1/search 사용"
+    evidence: "meet-ai-excel-import-v1.0 parser/API/template published; focused tests 7 passed; workbook rendered and all five sheets visually inspected."
+
+  - id: BACKEND-012
+    title: 사전등록자별 Top-N 참여기업 일괄 매칭 XLSX export
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [BACKEND-011, AIENGINE-004]
+    owned_paths:
+      - "apps/api/app/services/batch_matching_export.py"
+      - "apps/api/app/api/v1/routers/imports.py"
+      - "apps/api/app/schemas/imports.py"
+      - "apps/api/tests/test_batch_matching_export.py"
+      - ".harness/handoffs/contracts/change-request-008-excel-match-export.md"
+    acceptance:
+      - "선택한 원천 사전등록 ID를 canonical profile로 해석하고 기존 EXHIBITOR 추천 파이프라인 실행"
+      - "개인화 동의·연령확인·승인 카탈로그·Hard Filter를 우회하거나 자동 완화하지 않음"
+      - "Top-N 결과에 점수·등급·근거·정책 버전·eligibility ID·계산지문을 포함"
+      - "실패 프로파일은 안정 오류코드로 격리하고 다른 프로파일 처리를 계속"
+      - "이름·전화·이메일·원문 프로파일 속성 없이 요약·매칭결과·처리상태 XLSX 제공"
+    evidence: "meet-ai-batch-match-export-v1.0 endpoint/service/workbook published; focused import/export tests 13 passed, full backend 197 passed/2 skipped, root 45 passed; all three output sheets rendered and visually inspected with zero formula errors."
+
+  - id: QA-003
+    title: Wave 2 계약·범위·보안 기준선 감사
+    wave: 2
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [CONTRACT-003]
+    owned_paths: [".harness/reports/wave2/**"]
+    evidence: "contract-compliance, scope-compliance, security-baseline 보고서 완료. 보고서의 과거 AISEARCH-002 명칭은 현재 semantic 작업 ID로 재사용되기 전 시점의 기록이다."
+
+  # ---------- WAVE 3: QA_SECURITY ----------
+  - id: QA-001
+    title: 기존 tests/ 커버리지를 재설계 스코프(PROJECT_SCOPE.md) 기준으로 재검토
+    wave: 3
+    track: QA
+    priority: P1
+    status: BLOCKED
+    depends_on: [FND-002]
+    owned_paths: ["tests/**", ".harness/reports/**"]
+    acceptance:
+      - "PROJECT_SCOPE.md 제외목록 위반이 없는지 현재 apps/api/apps/user-web 코드 스캔"
+      - "결과를 .harness/reports/integration/scope-audit.md로 저장"
+    note: "현재 리포 구조 스냅샷인 FND-002가 게시된 뒤 범위 감사를 수행한다."
+
+  # ---------- WAVE 2C/2D/2E: 31 parallel tracks (2026-08-03), ported 2026-08-11 from the
+  # worktree's own run-log/state.json summary + copied contracts/QA reports during the
+  # WAVE2C/2D/2E -> main unification merge. The worktree's own backlog.yaml never itemized these
+  # 31 tracks individually (it only carries the pre-WAVE2CDE task set above, byte-similar to
+  # main's); state.json rolled all 31 into one string per wave. Entries below individualize that
+  # string against .harness/handoffs/contracts/WAVE2{C,D,E}-CONTRACTS.md and the copied QA
+  # reports. depends_on is left empty where the source material does not state an explicit
+  # ordering; all statuses reflect the code actually merged into apps/api, apps/admin,
+  # apps/user-web, apps/worker, and ai/ by this integration, not aspirational scope.
+
+  - id: WAVE2C-BUYER-PROFILE
+    title: "WAVE2C: verified-buyer profile surface (profile.buyer_need extension + buyer_profile domain)"
+    wave: 2C
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/buyer_profile.py"
+      - "apps/api/alembic/versions/20260803_0022_buyer_profile.py"
+    acceptance:
+      - "Buyer profile fields extend the pre-existing profile.buyer_need table rather than duplicating it"
+    evidence: ".harness/contracts/buyer-matching.md; .harness/handoffs/contracts/WAVE2C-CONTRACTS.md item 4"
+
+  - id: WAVE2C-EXHIBITOR-PREFERENCE
+    title: "WAVE2C: exhibitor trade preference model + public preference read"
+    wave: 2C
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/exhibitor_preference.py"
+      - "apps/api/alembic/versions/20260803_0021_exhibitor_preference.py"
+      - "apps/api/app/api/v1/routers/exhibitor_preference.py"
+    acceptance:
+      - "GET /exhibitor-preference/{id} only surfaces availability for the row's own APPROVED master_approval_status (fixed during this merge — see the PUBLIC-tier data leaks resolved-conflict entry)"
+    evidence: ".harness/contracts/buyer-matching.md §4"
+
+  - id: WAVE2C-AI-BUYER-MATCH
+    title: "WAVE2C: deterministic B2B hard-filter/scoring engine (ai/buyer_matching/)"
+    wave: 2C
+    track: AI_SEARCH
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths: ["ai/buyer_matching/", "ai/evaluation/buyer_matching/"]
+    acceptance:
+      - "Reproducible hard-filter/scoring separate from the general /recommendations engine by design (DECISION-023)"
+    evidence: ".harness/contracts/buyer-matching.md §5"
+
+  - id: WAVE2C-BUYER-MATCH
+    title: "WAVE2C: POST /buyer/matches + POST /buyer/compare endpoints"
+    wave: 2C
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-AI-BUYER-MATCH]
+    owned_paths:
+      - "apps/api/app/models/buyer_match.py"
+      - "apps/api/alembic/versions/20260803_0023_buyer_match.py"
+      - "apps/api/app/api/v1/routers/buyer_match.py"
+    acceptance:
+      - "Coexists deliberately with /recommendations rather than replacing it (DECISION-023, supersedes DECISION-005's original mapping)"
+      - "Router identifies the caller via main's principal-derived dependency, not X-Actor-User-Id/X-Profile-Id headers (ROUTER AUTHENTICATION resolved conflict)"
+    evidence: ".harness/decisions.md DECISION-023; run-log.md 2026-08-03 WAVE2C/2D/2E entry"
+
+  - id: WAVE2C-MEETING
+    title: "WAVE2C: three-gate buyer<->exhibitor contact-disclosure service layer"
+    wave: 2C
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/services/meeting/buyer_matching.py"
+      - "apps/api/app/api/v1/routers/meetings.py"
+      - "apps/api/app/models/meeting.py"
+      - "apps/api/alembic/versions/20260803_0020_interaction_domain.py"
+    acceptance:
+      - "contact_reveal_allowed() gates on meeting.status == accepted AND buyer consent AND exhibitor_enabled_at/exhibitor_enabled_by_staff_id (all three), not main's pre-merge two-of-three check"
+      - "Collapsed into main's single routers/meetings.py surface; meeting_buyer_extension.py is not a second registered router (MEETING SURFACE resolved conflict)"
+    evidence: ".harness/contracts/meeting.md; .harness/decisions.md (meeting-surface collapse decision, this merge)"
+
+  - id: WAVE2C-USERWEB-BUYER
+    title: "WAVE2C: apps/user-web buyer profile + matches screens"
+    wave: 2C
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-BUYER-MATCH]
+    owned_paths: ["apps/user-web/app/buyer/", "apps/user-web/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md"
+
+  - id: WAVE2C-USERWEB-MEETING
+    title: "WAVE2C: apps/user-web meeting request/detail screens"
+    wave: 2C
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-MEETING]
+    owned_paths:
+      - "apps/user-web/app/meetings/"
+      - "apps/user-web/features/meeting/"
+    acceptance:
+      - "Meeting status values are the lowercase requested/accepted/... tuple matching models/meeting.py, not the uppercase set main's own pre-merge lib/types.ts used (MeetingStatus vocabulary resolved conflict, take-worktree)"
+    evidence: ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md; .harness/decisions.md MeetingStatus vocabulary entry"
+
+  - id: WAVE2C-ADMIN-BUYER
+    title: "WAVE2C: apps/admin buyer verification screens"
+    wave: 2C
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-BUYER-PROFILE]
+    owned_paths: ["apps/admin/app/buyers/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md item on /admin/buyers"
+
+  - id: WAVE2C-EXHIBITOR-MEETING
+    title: "WAVE2C: apps/admin partner-side meeting accept/reject screens"
+    wave: 2C
+    track: ADMIN
+    priority: P0
+    status: DONE
+    depends_on: [WAVE2C-MEETING]
+    owned_paths: ["apps/admin/app/meetings/", "apps/admin/app/partner/"]
+    acceptance:
+      - "Calls apiGet/apiPost from lib/api-client.ts (X-CSRF-Token + HttpOnly cookie); the worktree's own hand-rolled X-Staff-Id client (staff-session.ts/StaffSessionBar.tsx) was deleted during this merge, not ported (apps/admin/features/partner-meeting/api.ts resolved conflict)"
+    evidence: ".harness/decisions.md (apps/admin/features/partner-meeting/api.ts resolved-conflict entry, this merge)"
+
+  - id: WAVE2C-QA-BUYER
+    title: "WAVE2C: buyer/meeting privacy + e2e test suite"
+    wave: 2C
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2C-MEETING, WAVE2C-BUYER-MATCH]
+    owned_paths:
+      - "apps/api/tests/integration/test_buyer_meeting_e2e.py"
+      - "apps/api/tests/security/test_buyer_meeting_privacy.py"
+    evidence: ".harness/reports/buyer-matching/WAVE2C-QA.md — 44 passed/1 skipped (live-DB gated) at WAVE2C time; retargeted onto the merged /meetings and /buyer/matches surfaces during this merge, see the final pytest count in this merge's closing run-log entry"
+
+  - id: WAVE2C-CONTRACTS
+    title: "WAVE2C: buyer-matching.md + meeting.md contract docs"
+    wave: 2C
+    track: CONTRACTS
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - ".harness/contracts/buyer-matching.md"
+      - ".harness/contracts/meeting.md"
+      - ".harness/handoffs/contracts/WAVE2C-CONTRACTS.md"
+    note: "TL;DR items 3-4 in WAVE2C-CONTRACTS.md ('do not build /buyer/matches or /me/buyer-profile') were overtaken within the same wave — see the 2026-08-11 superseded-annotation in run-log.md."
+
+  - id: WAVE2D-DOCUMENT-UPLOAD
+    title: "WAVE2D: exhibitor document upload model + API"
+    wave: 2D
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/document.py"
+      - "apps/api/alembic/versions/20260803_0024_document_storage.py"
+      - "apps/api/app/api/v1/routers/document.py"
+    evidence: ".harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-PARSING
+    title: "WAVE2D: worker document parsing job (DOCX/XLSX/PDF text extraction)"
+    wave: 2D
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-DOCUMENT-UPLOAD]
+    owned_paths: ["apps/worker/worker/jobs/document_parsing.py"]
+    acceptance:
+      - "XlsxParser/PdfTextParser are openpyxl/pypdf-backed, not the worktree's stdlib-only versions that silently dropped inlineStr cells and mojibake'd CID Korean text (apps/worker dependency-policy resolved conflict, ASSUMPTION-005)"
+    evidence: "ASSUMPTION-005; .harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-AI-EXTRACTION
+    title: "WAVE2D: grounded AI attribute extraction (ai/extraction/)"
+    wave: 2D
+    track: AI_SEARCH
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-PARSING]
+    owned_paths: ["ai/extraction/", "ai/schemas/", "ai/prompts/", "apps/api/app/models/extraction.py"]
+    acceptance:
+      - "Extraction is evidence-linked and never auto-published — exhibitor confirm AND operator approve are both required (AI-output-is-a-proposal invariant)"
+    evidence: ".harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-EXTRACTION-REVIEW
+    title: "WAVE2D: exhibitor-confirm -> operator-approve extraction review pipeline"
+    wave: 2D
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on: [WAVE2D-AI-EXTRACTION]
+    owned_paths:
+      - "apps/api/app/models/extraction.py"
+      - "apps/api/alembic/versions/20260803_0025_extraction_review.py"
+      - "apps/api/app/api/v1/routers/extraction.py"
+    acceptance:
+      - "content_review_request/published_content_version enforce the exhibitor-confirm -> operator-approve gate at the DB level, not just in application code"
+      - "/admin/ai-review routes require require_roles('EVENT_ADMIN','DATA_REVIEWER') to inherit AAL2/MFA (ROUTER AUTHENTICATION resolved conflict)"
+    evidence: ".harness/contracts/document-structuring.md"
+
+  - id: WAVE2D-EXHIBITOR-REVIEW
+    title: "WAVE2D: exhibitor-facing confirm/edit screen for AI-extracted attributes"
+    wave: 2D
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths: ["apps/admin/app/partner/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2D-CONTRACTS.md"
+
+  - id: WAVE2D-ADMIN-AI-REVIEW
+    title: "WAVE2D: operator AI-review approval dashboard"
+    wave: 2D
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths: ["apps/admin/app/ai-review/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2D-CONTRACTS.md"
+
+  - id: WAVE2D-INDEXING
+    title: "WAVE2D: PUBLIC/VERIFIED_BUYER search-tier indexing model"
+    wave: 2D
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths:
+      - "apps/api/app/models/indexing.py"
+      - "apps/api/alembic/versions/20260803_0026_search_indexing.py"
+      - "apps/worker/worker/jobs/indexing.py"
+    acceptance:
+      - "Complementary to, not a duplicate of, main's ai.object_embedding vector recall layer (EMBEDDING/SEMANTIC SEARCH resolved conflict); its own stale docstring claiming no object_embedding implementation was corrected during this merge (DECISION-025)"
+    evidence: ".harness/decisions.md DECISION-025"
+
+  - id: WAVE2D-EMBEDDING
+    title: "WAVE2D: ai/embedding/ provider + versioning scaffold"
+    wave: 2D
+    track: AI_SEARCH
+    priority: P2
+    status: SUPERSEDED
+    depends_on: []
+    owned_paths: []
+    note: "Retired during this merge in favor of main's ai.object_embedding + services/object_embeddings.py + migration 0017 (DECISION-025). ai/embedding/{provider,service,versioning,types}.py and ai/evaluation/embedding/ were not ported — main's UnconfiguredEmbeddingProvider-class stub had no persistence layer and its own docstring's premise (no object_embedding implementation exists) was false against main."
+    evidence: ".harness/decisions.md DECISION-025"
+
+  - id: WAVE2D-QA-AI-STRUCTURING
+    title: "WAVE2D: document/extraction privacy + e2e test suite"
+    wave: 2D
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2D-EXTRACTION-REVIEW]
+    owned_paths:
+      - "apps/api/tests/integration/test_ai_structuring_e2e.py"
+      - "apps/api/tests/security/test_document_security.py"
+    evidence: ".harness/reports/ai-structuring/WAVE2D-QA.md"
+
+  - id: WAVE2D-CONTRACTS
+    title: "WAVE2D: document-structuring.md contract doc"
+    wave: 2D
+    track: CONTRACTS
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - ".harness/contracts/document-structuring.md"
+      - ".harness/handoffs/contracts/WAVE2D-CONTRACTS.md"
+
+  - id: WAVE2E-EVENT-COLLECTION
+    title: "WAVE2E: interaction-event ingestion model + privacy/abuse controls"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/interaction_event.py"
+      - "apps/api/alembic/versions/20260803_0030_event_ingestion_failure.py"
+      - "apps/api/app/api/v1/routers/recommendations.py"
+    acceptance:
+      - "PII masking, kiosk-forbidden-key checks, rate limiting, and the 256KB body cap are folded into main's authenticated POST /interactions/batch; the worktree's own anonymous POST /events/interaction[/batch] router is not registered as a second public write path (INTERACTION EVENT INGESTION resolved conflict)"
+    evidence: ".harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-WORKER-ANALYTICS
+    title: "WAVE2E: worker analytics aggregation + data-quality jobs"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-EVENT-COLLECTION]
+    owned_paths:
+      - "apps/worker/worker/jobs/analytics_aggregation.py"
+      - "apps/worker/worker/jobs/data_quality.py"
+      - "apps/worker/worker/sinks/analytics_sink.py"
+    acceptance:
+      - "SUPPRESSION_THRESHOLD = 5 and _suppress() preserved exactly; MetricSink/DataQualitySink/SegmentStore are async (main has no sync engine to implement them against)"
+    evidence: ".harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-ANALYTICS
+    title: "WAVE2E: k<5-suppressed analytics query/access layer"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-WORKER-ANALYTICS]
+    owned_paths:
+      - "apps/api/app/models/analytics.py"
+      - "apps/api/alembic/versions/20260803_0029_analytics_aggregation.py"
+      - "apps/api/app/services/analytics/"
+    acceptance:
+      - "DB-level CHECK '(suppressed=false) OR (event_count IS NULL AND distinct_actor_count IS NULL)' makes a suppressed row physically incapable of carrying counts"
+      - "X-Analytics-Role only narrows the actor's DB-derived permitted role set, never widens it"
+    evidence: ".harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-NOTIFICATION
+    title: "WAVE2E: in-app notification inbox (notification.* schema)"
+    wave: 2E
+    track: BACKEND
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - "apps/api/app/models/notification.py"
+      - "apps/api/alembic/versions/20260803_0027_notification.py"
+      - "apps/api/app/api/v1/routers/notification.py"
+    acceptance:
+      - "NotificationDelivery renamed to NotificationChannelDelivery to resolve the configure_mappers() class-name collision with integration.py's outbound NotificationDelivery (NotificationDelivery class-name collision resolved conflict)"
+      - "notification_templates carries CR-012's INFORMATIONAL-only, no-raw-contact rule (DECISION-024)"
+    evidence: ".harness/decisions.md DECISION-024; .harness/contracts/operations-analytics.md"
+
+  - id: WAVE2E-USERWEB-NOTIFICATION
+    title: "WAVE2E: apps/user-web notification bell + inbox screens"
+    wave: 2E
+    track: USER_WEB
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-NOTIFICATION]
+    owned_paths: ["apps/user-web/app/notifications/"]
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-ADMIN-ANALYTICS
+    title: "WAVE2E: apps/admin analytics dashboard screens"
+    wave: 2E
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-ANALYTICS]
+    owned_paths: ["apps/admin/app/analytics/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-ADMIN-OPERATIONS
+    title: "WAVE2E: apps/admin operations dashboard + event-message publishing"
+    wave: 2E
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-ANALYTICS]
+    owned_paths:
+      - "apps/admin/app/operations/"
+      - "apps/api/app/models/event_message.py"
+      - "apps/api/alembic/versions/20260803_0028_event_message.py"
+    acceptance:
+      - "event_message approve/schedule/publish require require_roles('EVENT_ADMIN', fresh_mfa=True), matching how main already treats bulk import (ROUTER AUTHENTICATION resolved conflict)"
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-ADMIN-NOTIFICATION
+    title: "WAVE2E: apps/admin event-message / notification operations screens"
+    wave: 2E
+    track: ADMIN
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-NOTIFICATION]
+    owned_paths: ["apps/admin/app/event-messages/", "apps/admin/features/"]
+    evidence: ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: WAVE2E-QA-OPERATIONS
+    title: "WAVE2E: analytics/notification privacy + operations e2e test suite"
+    wave: 2E
+    track: QA
+    priority: P1
+    status: DONE
+    depends_on: [WAVE2E-ANALYTICS, WAVE2E-NOTIFICATION]
+    owned_paths:
+      - "apps/api/tests/integration/test_operations_analytics_e2e.py"
+      - "apps/api/tests/security/test_analytics_notification_privacy.py"
+    evidence: ".harness/reports/operations/WAVE2E-QA.md"
+
+  - id: WAVE2E-CONTRACTS
+    title: "WAVE2E: operations-analytics.md contract doc"
+    wave: 2E
+    track: CONTRACTS
+    priority: P1
+    status: DONE
+    depends_on: []
+    owned_paths:
+      - ".harness/contracts/operations-analytics.md"
+      - ".harness/handoffs/contracts/WAVE2E-CONTRACTS.md"
+
+  - id: BACKEND-014
+    title: "Rewire ported WAVE2C/2D/2E routers onto main's principal-derived auth (post-merge follow-up)"
+    wave: 2
+    track: BACKEND
+    priority: P0
+    status: DONE
+    depends_on:
+      - WAVE2C-BUYER-MATCH
+      - WAVE2C-EXHIBITOR-MEETING
+      - WAVE2D-EXTRACTION-REVIEW
+      - WAVE2E-ADMIN-OPERATIONS
+    owned_paths:
+      - "apps/api/app/core/router_auth.py"
+      - "apps/api/app/api/v1/api.py"
+    acceptance:
+      - "All ten ported routers take identity from main's principal-derived dependency (app/core/router_auth.py), never from X-Actor-User-Id/X-Profile-Id/X-Staff-Id/X-Tenant-Id headers"
+      - "Authorization logic (legacy profile.role/user_role queries) is preserved unchanged — only the identity half is swapped"
+    evidence: "ROUTER AUTHENTICATION resolved conflict in this merge; see the individual WAVE2C/2D/2E router entries above for router-specific auth notes"

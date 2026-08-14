@@ -1,0 +1,37 @@
+{
+  "name": "backju-ai-sherpa-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "백주 AI 셀파 - 사용자·참가업체 웹 프론트엔드 (Next.js App Router)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "next": "15.5.22",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^20.14.9",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "autoprefixer": "10.5.4",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "15.5.22",
+    "jsdom": "^25.0.1",
+    "postcss": "8.5.25",
+    "tailwindcss": "3.4.19",
+    "typescript": "^5.5.3",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}

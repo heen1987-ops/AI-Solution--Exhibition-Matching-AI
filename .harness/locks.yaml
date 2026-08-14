@@ -1,0 +1,63 @@
+# Track ownership. A path may belong to exactly one track.
+# 2026-08-02: backend/ -> apps/api, frontend/ -> apps/user-web physically migrated
+# (DECISION-006). ASSUMPTION-001 is superseded; see .harness/assumptions.md.
+# 2026-08-11: rewritten against merged reality at the close of the WAVE2C/2D/2E -> main
+# unification merge. apps/worker and apps/admin are now materialized (apps/worker ships a real
+# jobs/sinks/backends tree with a `worker` import root per its own decision record; apps/admin
+# ships 8 features/ + 7 new app/ route groups on top of its pre-merge auth/session shell) — see
+# ".harness/backlog.yaml" WAVE2C/2D/2E entries for what actually landed in each. packages/** and
+# database/** were never materialized on either side of the merge (both trees use apps/api/app/
+# models/** + apps/api/alembic/** as the de facto contract/schema location instead) and are kept
+# here only as a reserved namespace for a future formal split, not as an active ownership claim.
+
+ownership:
+  FOUNDATION:
+    - ".harness/**"
+    - "AGENTS.md"
+    - "PROJECT_SCOPE.md"
+    - "ARCHITECTURE.md"
+    - "docker-compose.yml"
+    - "pnpm-workspace.yaml"
+    - "package.json"
+    - "pyproject.toml"
+
+  CONTRACTS:
+    - "packages/shared-types/**"   # RESERVED - NOT MATERIALIZED (see note above)
+    - "packages/ontology/**"       # RESERVED - NOT MATERIALIZED (see note above)
+    - "database/migrations/**"     # RESERVED - NOT MATERIALIZED (see note above)
+    - ".harness/contracts/**"
+    # Informal current equivalents (pending formalization under CONTRACT-002, done) — these are
+    # the de facto contract/schema location and remain the real ownership claim:
+    - "apps/api/app/models/**"
+    - "apps/api/alembic/**"
+    - "db/migrations/**"
+    - "docs/db-erd-table-spec.md"
+    - "docs/frontend-backend-ai-interface-spec.md"
+
+  BACKEND:
+    - "apps/api/app/api/**"
+    - "apps/api/app/schemas/**"
+    - "apps/api/app/services/**"
+    - "apps/api/app/core/**"
+    - "apps/api/app/db/**"
+    - "apps/api/app/main.py"
+    - "apps/api/pyproject.toml"
+    - "apps/worker/**"   # materialized 2026-08-03 (WAVE2E) / import-root-renamed 2026-08-11 (this merge)
+
+  USER_WEB:
+    - "apps/user-web/**"
+
+  KIOSK:
+    - "apps/kiosk/**"    # CR-009 inactive compatibility source; no new feature work
+
+  ADMIN:
+    - "apps/admin/**"    # materialized 2026-08-02 (ADMIN-001); WAVE2C/2D/2E features/routes added 2026-08-03
+
+  AI_SEARCH:
+    - "ai/**"                 # materialized: buyer_matching/, extraction/, prompts/, schemas/, evaluation/ (WAVE2C/2D)
+    - "packages/search/**"    # RESERVED - NOT MATERIALIZED (see note above)
+    - "src/meet_ai/ontology/**"   # informal current equivalent, pending migration
+
+  QA:
+    - "tests/**"
+    - ".harness/reports/**"

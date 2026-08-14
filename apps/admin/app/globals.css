@@ -1,0 +1,164 @@
+/**
+ * 전역 스타일. apps/user-web/app/globals.css의 접근성 원칙(본문 16px 이상, 터치영역
+ * 44x44px 이상, 포커스 링, 애니메이션 감소 대응)을 그대로 따르되, 관리자 앱은 데스크톱
+ * 표·폼이 중심이라 사이드바 레이아웃 변수를 추가로 둔다.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+
+  --color-bg: #f7f5f1;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1ede6;
+  --color-text: #201a12;
+  --color-text-muted: #5c5344;
+  --color-border: #e2d9c8;
+  --color-brand: #a65f1e;
+  --color-brand-contrast: #ffffff;
+  --color-focus-ring: #1a56db;
+  --color-danger: #b3261e;
+  --color-danger-bg: #fdecea;
+  --color-success: #146c2e;
+  --color-success-bg: #e8f5ea;
+  --color-warning: #9a6700;
+  --color-warning-bg: #fff6e0;
+
+  --side-nav-width: 232px;
+  --top-bar-height: 56px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --color-bg: #15130f;
+    --color-surface: #1f1c16;
+    --color-surface-muted: #262119;
+    --color-text: #f5efe6;
+    --color-text-muted: #c9bfae;
+    --color-border: #3a3226;
+    --color-brand: #e8ad70;
+    --color-brand-contrast: #201a12;
+    --color-focus-ring: #7cacf8;
+    --color-danger: #ff8a80;
+    --color-danger-bg: #3a1a17;
+    --color-success: #7fd99a;
+    --color-success-bg: #123420;
+    --color-warning: #f2c14e;
+    --color-warning-bg: #3a2c0c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1rem;
+  line-height: 1.6;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Apple SD Gothic Neo",
+    "Pretendard",
+    "Malgun Gothic",
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.skip-link {
+  position: fixed;
+  top: -100%;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background-color: var(--color-brand);
+  color: var(--color-brand-contrast);
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: top 0.15s ease-out;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+.tap-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 폼 필드 공용 스타일. 여러 등록/수정 폼(exhibitors, products, booths, events)이 공유한다. */
+.input,
+select.input,
+textarea.input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9375rem;
+}
+
+textarea.input {
+  min-height: 88px;
+  resize: vertical;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,215 @@
+{
+  "schema_version": "matching-golden-set-v1",
+  "golden_set_version": "backju-matching-gold-v1.0.0",
+  "taxonomy_version": "1.0.0",
+  "policy_versions": {
+    "consumer": "consumer-score-v1.0",
+    "buyer": "buyer-score-v1.0",
+    "exhibitor": "exhibitor-score-v1.0",
+    "reciprocal": "reciprocal-score-v1.0"
+  },
+  "thresholds": {
+    "recall_at_k_min": 1.0,
+    "ndcg_at_k_min": 0.9,
+    "fallback_recall_drop_max": 0.34,
+    "hard_filter_violations_max": 0,
+    "filter_decision_mismatches_max": 0,
+    "explanation_violations_max": 0,
+    "max_exhibitor_share_at_k_max": 0.67
+  },
+  "scenarios": [
+    {
+      "scenario_id": "visitor-gift-tasting",
+      "mode": "GENERAL_VISITOR",
+      "k": 3,
+      "candidates": [
+        {
+          "candidate_id": "visitor-candidate-a",
+          "exhibitor_id": "exhibitor-a",
+          "gold_relevance": 3,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["STRUCTURED", "VECTOR"],
+          "components": {"goal": "1", "category": "0.95", "sensory": "0.95", "price": "0.9", "alcohol": "0.9", "service": "0.9", "usage": "0.95", "behavior": "0.8", "trust": "0.95"},
+          "confidence": "0.95",
+          "allowed_reason_codes": ["GOAL_MATCH", "CATEGORY_MATCH"],
+          "explanations": [
+            {"code": "GOAL_MATCH", "evidence_refs": ["profile:goal", "candidate:usage"]},
+            {"code": "CATEGORY_MATCH", "evidence_refs": ["profile:category", "candidate:category"]}
+          ]
+        },
+        {
+          "candidate_id": "visitor-candidate-b",
+          "exhibitor_id": "exhibitor-b",
+          "gold_relevance": 2,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["STRUCTURED"],
+          "components": {"goal": "0.8", "category": "0.8", "sensory": "0.75", "price": "0.7", "alcohol": "0.8", "service": "0.7", "usage": "0.7", "behavior": null, "trust": "0.8"},
+          "confidence": "0.8",
+          "allowed_reason_codes": ["CATEGORY_MATCH"],
+          "explanations": [
+            {"code": "CATEGORY_MATCH", "evidence_refs": ["profile:category", "candidate:category"]}
+          ]
+        },
+        {
+          "candidate_id": "visitor-candidate-c",
+          "exhibitor_id": "exhibitor-c",
+          "gold_relevance": 1,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["VECTOR"],
+          "components": {"goal": "0.6", "category": "0.55", "sensory": "0.5", "price": "0.5", "alcohol": "0.55", "service": "0.5", "usage": "0.55", "behavior": null, "trust": "0.6"},
+          "confidence": "0.65",
+          "allowed_reason_codes": ["SEMANTIC_MATCH"],
+          "explanations": [
+            {"code": "SEMANTIC_MATCH", "evidence_refs": ["profile:ontology", "candidate:summary"]}
+          ]
+        },
+        {
+          "candidate_id": "visitor-candidate-blocked",
+          "exhibitor_id": "exhibitor-blocked",
+          "gold_relevance": 3,
+          "expected_eligibility": {"passed": false, "reason_codes": ["EXHIBITOR_NOT_APPROVED"]},
+          "observed_eligibility": {"passed": false, "reason_codes": ["EXHIBITOR_NOT_APPROVED"]},
+          "recall_channels": ["STRUCTURED"],
+          "components": {"goal": "1"},
+          "allowed_reason_codes": [],
+          "explanations": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "buyer-distribution-fit",
+      "mode": "BUYER_TO_EXHIBITOR",
+      "k": 3,
+      "candidates": [
+        {
+          "candidate_id": "buyer-candidate-a",
+          "exhibitor_id": "exhibitor-d",
+          "gold_relevance": 3,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["STRUCTURED", "VECTOR"],
+          "components": {"business_goal": "1", "product": "0.95", "channel": "1", "price": "0.9", "moq": "0.95", "capacity": "0.9", "region": "0.9", "cooperation": "0.9", "meeting": "1", "trust": "0.95"},
+          "confidence": "0.95",
+          "allowed_reason_codes": ["CHANNEL_MATCH", "MOQ_MATCH"],
+          "explanations": [
+            {"code": "CHANNEL_MATCH", "evidence_refs": ["buyer:channel", "trade:channel"]},
+            {"code": "MOQ_MATCH", "evidence_refs": ["buyer:moq", "trade:moq"]}
+          ]
+        },
+        {
+          "candidate_id": "buyer-candidate-b",
+          "exhibitor_id": "exhibitor-e",
+          "gold_relevance": 2,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["STRUCTURED"],
+          "components": {"business_goal": "0.8", "product": "0.8", "channel": "0.75", "price": "0.75", "moq": "0.75", "capacity": "0.7", "region": "0.8", "cooperation": "0.7", "meeting": "0.8", "trust": "0.8"},
+          "confidence": "0.8",
+          "allowed_reason_codes": ["PRODUCT_MATCH"],
+          "explanations": [
+            {"code": "PRODUCT_MATCH", "evidence_refs": ["buyer:product", "candidate:product"]}
+          ]
+        },
+        {
+          "candidate_id": "buyer-candidate-c",
+          "exhibitor_id": "exhibitor-f",
+          "gold_relevance": 1,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["VECTOR"],
+          "components": {"business_goal": "0.6", "product": "0.6", "channel": "0.55", "price": "0.5", "moq": "0.5", "capacity": "0.5", "region": "0.55", "cooperation": "0.5", "meeting": "0.6", "trust": "0.6"},
+          "confidence": "0.65",
+          "allowed_reason_codes": ["SEMANTIC_MATCH"],
+          "explanations": [
+            {"code": "SEMANTIC_MATCH", "evidence_refs": ["buyer:ontology", "candidate:summary"]}
+          ]
+        },
+        {
+          "candidate_id": "buyer-candidate-blocked",
+          "exhibitor_id": "exhibitor-g",
+          "gold_relevance": 3,
+          "expected_eligibility": {"passed": false, "reason_codes": ["MOQ_MISMATCH"]},
+          "observed_eligibility": {"passed": false, "reason_codes": ["MOQ_MISMATCH"]},
+          "recall_channels": ["STRUCTURED", "VECTOR"],
+          "components": {"business_goal": "1"},
+          "allowed_reason_codes": [],
+          "explanations": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "reciprocal-supplier-meeting",
+      "mode": "RECIPROCAL",
+      "k": 3,
+      "candidates": [
+        {
+          "candidate_id": "reciprocal-candidate-a",
+          "exhibitor_id": "exhibitor-h",
+          "gold_relevance": 3,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["STRUCTURED", "VECTOR"],
+          "buyer_components": {"business_goal": "0.95", "product": "0.95", "channel": "0.95", "price": "0.9", "moq": "0.9", "capacity": "0.9", "region": "0.9", "cooperation": "0.9", "meeting": "1", "trust": "0.95"},
+          "exhibitor_components": {"buyer_type": "0.95", "channel": "0.95", "order_volume": "0.9", "region": "0.9", "trade_type": "0.95", "portfolio": "0.9", "decision_timing": "0.9", "verification": "0.95", "meeting_readiness": "1"},
+          "buyer_confidence": "0.95",
+          "exhibitor_confidence": "0.95",
+          "acceptance_capacity_score": "0.9",
+          "allowed_reason_codes": ["MUTUAL_CHANNEL_MATCH", "MEETING_AVAILABLE"],
+          "explanations": [
+            {"code": "MUTUAL_CHANNEL_MATCH", "evidence_refs": ["buyer:channel", "exhibitor:channel"]},
+            {"code": "MEETING_AVAILABLE", "evidence_refs": ["candidate:meeting-slot"]}
+          ]
+        },
+        {
+          "candidate_id": "reciprocal-candidate-b",
+          "exhibitor_id": "exhibitor-i",
+          "gold_relevance": 2,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["STRUCTURED"],
+          "buyer_components": {"business_goal": "0.8", "product": "0.8", "channel": "0.75", "price": "0.75", "moq": "0.75", "capacity": "0.75", "region": "0.8", "cooperation": "0.7", "meeting": "0.8", "trust": "0.8"},
+          "exhibitor_components": {"buyer_type": "0.8", "channel": "0.75", "order_volume": "0.75", "region": "0.8", "trade_type": "0.75", "portfolio": "0.7", "decision_timing": "0.7", "verification": "0.8", "meeting_readiness": "0.8"},
+          "buyer_confidence": "0.8",
+          "exhibitor_confidence": "0.8",
+          "acceptance_capacity_score": "0.75",
+          "allowed_reason_codes": ["MUTUAL_PRODUCT_MATCH"],
+          "explanations": [
+            {"code": "MUTUAL_PRODUCT_MATCH", "evidence_refs": ["buyer:product", "exhibitor:portfolio"]}
+          ]
+        },
+        {
+          "candidate_id": "reciprocal-candidate-c",
+          "exhibitor_id": "exhibitor-j",
+          "gold_relevance": 1,
+          "expected_eligibility": {"passed": true, "reason_codes": []},
+          "observed_eligibility": {"passed": true, "reason_codes": []},
+          "recall_channels": ["VECTOR"],
+          "buyer_components": {"business_goal": "0.85", "product": "0.85", "channel": "0.8", "price": "0.8", "moq": "0.8", "capacity": "0.8", "region": "0.75", "cooperation": "0.75", "meeting": "0.8", "trust": "0.8"},
+          "exhibitor_components": {"buyer_type": "0.4", "channel": "0.35", "order_volume": "0.35", "region": "0.4", "trade_type": "0.35", "portfolio": "0.4", "decision_timing": "0.35", "verification": "0.5", "meeting_readiness": "0.4"},
+          "buyer_confidence": "0.8",
+          "exhibitor_confidence": "0.6",
+          "acceptance_capacity_score": "0.5",
+          "allowed_reason_codes": ["DIRECTION_IMBALANCE"],
+          "explanations": [
+            {"code": "DIRECTION_IMBALANCE", "evidence_refs": ["buyer:score", "exhibitor:score"]}
+          ]
+        },
+        {
+          "candidate_id": "reciprocal-candidate-blocked",
+          "exhibitor_id": "exhibitor-k",
+          "gold_relevance": 3,
+          "expected_eligibility": {"passed": false, "reason_codes": ["EXCLUSIVE_CONTRACT_CONFLICT"]},
+          "observed_eligibility": {"passed": false, "reason_codes": ["EXCLUSIVE_CONTRACT_CONFLICT"]},
+          "recall_channels": ["STRUCTURED"],
+          "buyer_components": {"business_goal": "1"},
+          "exhibitor_components": {"buyer_type": "1"},
+          "allowed_reason_codes": [],
+          "explanations": []
+        }
+      ]
+    }
+  ]
+}

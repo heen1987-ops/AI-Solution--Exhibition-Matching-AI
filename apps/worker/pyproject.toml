@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backju-worker"
+version = "0.1.0"
+description = "Backju AI matching service - async worker jobs (document structuring, embeddings, notifications, aggregation)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Import root is `worker`, deliberately NOT `app` - see worker/__init__.py's docstring for
+# why the rename is mandatory in the unified repo. Every job here writes against apps/api's
+# own models/DB session, so this package depends on it by name (already present in the
+# shared venv as an editable install - see the merge environment notes). The former
+# dependencies = [] rule is dropped: its stated premise (no openpyxl/pypdf in the shared
+# venv) is already false - openpyxl is an apps/api runtime dependency and pypdf has been
+# added alongside it for the document_parsing job (see worker/jobs/document_parsing.py).
+dependencies = [
+    "backju-backend",
+    "openpyxl>=3.1.5,<4.0.0",
+    "pypdf>=5.0.0,<6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["worker*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"

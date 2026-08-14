@@ -1,0 +1,24 @@
+{
+  "name": "backju-ai-matching",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:user-web": "pnpm --filter backju-ai-sherpa-frontend dev",
+    "dev:admin": "pnpm --filter backju-admin dev",
+    "dev:kiosk": "pnpm --filter backju-kiosk dev",
+    "lint": "pnpm -r --if-present run lint",
+    "typecheck": "pnpm -r --if-present run typecheck && tsc --noEmit",
+    "test": "pnpm -r --if-present run test",
+    "build": "pnpm -r --if-present run build"
+  },
+  "dependencies": {
+    "@netlify/functions": "4.3.0",
+    "openai": "6.49.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3"
+  }
+}

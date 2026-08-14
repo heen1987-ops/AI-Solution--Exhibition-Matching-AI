@@ -1,0 +1,213 @@
+{
+  "schema_version": "constraint-evaluation-fixture-v1.0",
+  "fixture_version": "backju-constraint-evaluation-2026-08-03",
+  "scenarios": [
+    {
+      "scenario_id": "ontology-required-match",
+      "command": {"must_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:takju-match",
+      "observations": [
+        {
+          "candidate_field": "candidate.category_codes",
+          "state": "KNOWN",
+          "ontology_codes": ["ALCOHOL.TAKJU"],
+          "evidence_refs": ["catalog:takju-match:categories"]
+        }
+      ],
+      "expected_outcome": "ELIGIBLE",
+      "expected_reason_codes": ["CONSTRAINT_SATISFIED"]
+    },
+    {
+      "scenario_id": "ontology-required-mismatch",
+      "command": {"must_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:takju-mismatch",
+      "observations": [
+        {
+          "candidate_field": "candidate.category_codes",
+          "state": "KNOWN",
+          "ontology_codes": ["ALCOHOL.YAKJU"],
+          "evidence_refs": ["catalog:takju-mismatch:categories"]
+        }
+      ],
+      "expected_outcome": "FILTERED_OUT",
+      "expected_reason_codes": ["MUST_CONSTRAINT_NOT_MATCHED"]
+    },
+    {
+      "scenario_id": "ontology-exclusion-match",
+      "command": {"exclude_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:excluded-takju",
+      "observations": [
+        {
+          "candidate_field": "candidate.category_codes",
+          "state": "KNOWN",
+          "ontology_codes": ["ALCOHOL.TAKJU"],
+          "evidence_refs": ["catalog:excluded-takju:categories"]
+        }
+      ],
+      "expected_outcome": "FILTERED_OUT",
+      "expected_reason_codes": ["EXCLUDED_CONCEPT_MATCHED"]
+    },
+    {
+      "scenario_id": "ontology-exclusion-absent",
+      "command": {"exclude_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:not-takju",
+      "observations": [
+        {
+          "candidate_field": "candidate.category_codes",
+          "state": "KNOWN",
+          "ontology_codes": ["ALCOHOL.YAKJU"],
+          "evidence_refs": ["catalog:not-takju:categories"]
+        }
+      ],
+      "expected_outcome": "ELIGIBLE",
+      "expected_reason_codes": ["CONSTRAINT_SATISFIED"]
+    },
+    {
+      "scenario_id": "unknown-is-information-required",
+      "command": {"must_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:unknown-category",
+      "observations": [
+        {
+          "candidate_field": "candidate.category_codes",
+          "state": "UNKNOWN",
+          "evidence_refs": ["catalog:unknown-category:categories"]
+        }
+      ],
+      "expected_outcome": "INFORMATION_REQUIRED",
+      "expected_reason_codes": ["CANDIDATE_VALUE_UNKNOWN"]
+    },
+    {
+      "scenario_id": "missing-observation-is-information-required",
+      "command": {"must_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:no-category-observation",
+      "observations": [],
+      "expected_outcome": "INFORMATION_REQUIRED",
+      "expected_reason_codes": ["CANDIDATE_OBSERVATION_MISSING"]
+    },
+    {
+      "scenario_id": "missing-value-is-information-required",
+      "command": {"must_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:missing-category",
+      "observations": [
+        {
+          "candidate_field": "candidate.category_codes",
+          "state": "MISSING",
+          "evidence_refs": ["catalog:missing-category:categories"]
+        }
+      ],
+      "expected_outcome": "INFORMATION_REQUIRED",
+      "expected_reason_codes": ["CANDIDATE_VALUE_MISSING"]
+    },
+    {
+      "scenario_id": "stale-is-information-required",
+      "command": {"must_codes": ["ALCOHOL.TAKJU"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:stale-category",
+      "observations": [
+        {
+          "candidate_field": "candidate.category_codes",
+          "state": "STALE",
+          "evidence_refs": ["catalog:stale-category:categories"]
+        }
+      ],
+      "expected_outcome": "INFORMATION_REQUIRED",
+      "expected_reason_codes": ["CANDIDATE_VALUE_STALE"]
+    },
+    {
+      "scenario_id": "derived-alcohol-band-match",
+      "command": {"must_codes": ["ALCOHOL_LEVEL.LOW"]},
+      "catalog_scope": "PUBLIC_CATALOG",
+      "candidate_ref": "candidate:low-abv",
+      "observations": [
+        {
+          "candidate_field": "candidate.alcohol_percentage",
+          "state": "KNOWN",
+          "numeric_value": 7.0,
+          "evidence_refs": ["catalog:low-abv:alcohol-percentage"]
+        }
+      ],
+      "expected_outcome": "ELIGIBLE",
+      "expected_reason_codes": ["CONSTRAINT_SATISFIED"]
+    },
+    {
+      "scenario_id": "trade-status-yes",
+      "command": {"must_codes": ["BIZ_GOAL.OEM"]},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "candidate_ref": "candidate:oem-yes",
+      "observations": [
+        {
+          "candidate_field": "supply_profile.trade_profile.oem_status",
+          "state": "KNOWN",
+          "status_value": "YES",
+          "evidence_refs": ["supply-profile:oem-yes:oem-status"]
+        }
+      ],
+      "expected_outcome": "ELIGIBLE",
+      "expected_reason_codes": ["CONSTRAINT_SATISFIED"]
+    },
+    {
+      "scenario_id": "trade-status-no",
+      "command": {"must_codes": ["BIZ_GOAL.OEM"]},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "candidate_ref": "candidate:oem-no",
+      "observations": [
+        {
+          "candidate_field": "supply_profile.trade_profile.oem_status",
+          "state": "KNOWN",
+          "status_value": "NO",
+          "evidence_refs": ["supply-profile:oem-no:oem-status"]
+        }
+      ],
+      "expected_outcome": "FILTERED_OUT",
+      "expected_reason_codes": ["MUST_CONSTRAINT_NOT_MATCHED"]
+    },
+    {
+      "scenario_id": "trade-status-conditional",
+      "command": {"must_codes": ["BIZ_GOAL.OEM"]},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "candidate_ref": "candidate:oem-conditional",
+      "observations": [
+        {
+          "candidate_field": "supply_profile.trade_profile.oem_status",
+          "state": "KNOWN",
+          "status_value": "CONDITIONAL",
+          "evidence_refs": ["supply-profile:oem-conditional:oem-status"]
+        }
+      ],
+      "expected_outcome": "INFORMATION_REQUIRED",
+      "expected_reason_codes": ["CANDIDATE_VALUE_CONDITIONAL"]
+    },
+    {
+      "scenario_id": "trade-status-negotiable",
+      "command": {"must_codes": ["BIZ_GOAL.OEM"]},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "candidate_ref": "candidate:oem-negotiable",
+      "observations": [
+        {
+          "candidate_field": "supply_profile.trade_profile.oem_status",
+          "state": "KNOWN",
+          "status_value": "NEGOTIABLE",
+          "evidence_refs": ["supply-profile:oem-negotiable:oem-status"]
+        }
+      ],
+      "expected_outcome": "INFORMATION_REQUIRED",
+      "expected_reason_codes": ["CANDIDATE_VALUE_CONDITIONAL"]
+    },
+    {
+      "scenario_id": "unverifiable-plan-is-information-required",
+      "command": {"must_codes": ["MEETING.SAMPLE"]},
+      "catalog_scope": "VERIFIED_BUYER_CATALOG",
+      "candidate_ref": "candidate:sample-request",
+      "observations": [],
+      "expected_outcome": "INFORMATION_REQUIRED",
+      "expected_reason_codes": ["NO_VERIFIABLE_CANDIDATE_FIELD"]
+    }
+  ]
+}

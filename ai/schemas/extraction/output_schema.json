@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GroundedExtractionOutput",
+  "description": "AI-EXTRACTION(WAVE 2D) 모델이 SOURCE TEXT로부터 산출해야 하는 유일한 응답 모양. 이 객체 하나만 출력한다 - 다른 텍스트, 설명, 마크다운 코드펜스를 덧붙이지 않는다.",
+  "type": "object",
+  "required": ["entities", "conflicts", "missing_critical_fields"],
+  "additionalProperties": false,
+  "properties": {
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["entity_type", "temporary_entity_id", "attributes"],
+        "additionalProperties": false,
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": ["EXHIBITOR", "PRODUCT"]
+          },
+          "temporary_entity_id": {
+            "type": "string",
+            "description": "이 추출 실행 안에서만 유효한 임시 식별자(예: e1, e2). 실제 DB id가 아니다."
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "attribute_code",
+                "value",
+                "fact_type",
+                "confidence",
+                "concept_codes",
+                "evidence_segment_ids"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "attribute_code": {
+                  "type": "string",
+                  "description": "ALLOWED SCHEMA 섹션에 나열된 attribute_code 중 하나여야 한다."
+                },
+                "value": {
+                  "description": "속성값. SOURCE TEXT에 실제로 등장한 사실만 담는다 - 추론/일반화 금지."
+                },
+                "fact_type": {
+                  "type": "string",
+                  "enum": ["CURRENT_CAPABILITY", "PAST_EXPERIENCE", "FUTURE_PLAN", "UNKNOWN"]
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "concept_codes": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "ALLOWED ONTOLOGY 섹션에 나열된 코드만. 카탈로그에 없는 코드는 통째로 버려진다."
+                },
+                "evidence_segment_ids": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 1,
+                  "description": "이 값을 직접 뒷받침하는 SOURCE TEXT 세그먼트 id(들). 비어 있으면 이 속성 전체가 버려진다."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["temporary_entity_id", "attribute_code", "values"],
+        "additionalProperties": false,
+        "properties": {
+          "temporary_entity_id": { "type": "string" },
+          "attribute_code": { "type": "string" },
+          "reason": { "type": "string" },
+          "values": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": ["value", "fact_type", "evidence_segment_ids"],
+              "properties": {
+                "value": {},
+                "fact_type": {
+                  "type": "string",
+                  "enum": ["CURRENT_CAPABILITY", "PAST_EXPERIENCE", "FUTURE_PLAN", "UNKNOWN"]
+                },
+                "evidence_segment_ids": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "missing_critical_fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["temporary_entity_id", "attribute_code"],
+        "additionalProperties": false,
+        "properties": {
+          "temporary_entity_id": { "type": "string" },
+          "attribute_code": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}
