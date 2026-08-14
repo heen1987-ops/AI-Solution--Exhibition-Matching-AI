@@ -67,7 +67,8 @@ def test_metadata_contains_published_supply_and_filter_tables() -> None:
     # + 1 (CONTRACT-005 interaction.favorite, 0032_favorite) = 136.
     # + 1 (BACKEND-016 interaction.check_in, 0033_check_in) = 137.
     # + 1 (BACKEND-017 interaction.feedback, 0034_feedback) = 138.
-    assert len(Base.metadata.sorted_tables) == 138
+    # + 3 (ROUTE-001 route/route_item/indoor_checkpoint_scan, 0036_route_positioning) = 141.
+    assert len(Base.metadata.sorted_tables) == 141
     assert "context_details" in Base.metadata.tables["matching.match_result"].c
     assert (
         "context_policy_version_id" in Base.metadata.tables["matching.match_result"].c
@@ -172,7 +173,7 @@ def test_alembic_chain_has_one_published_head() -> None:
     config.set_main_option("script_location", str(APP_ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0035_check_constraint_naming_fix"]
+    assert script.get_heads() == ["0036_route_positioning"]
 
 
 def test_object_embedding_migration_fail_closes_stale_catalog_summaries() -> None:

@@ -21,6 +21,7 @@ from app.models import (
     filtering,
     identity,
     indexing,
+    indoor_positioning,
     integration,
     interaction_event,
     kiosk,
@@ -31,6 +32,7 @@ from app.models import (
     ontology_refs,
     policy,
     profile,
+    route,
 )
 
 __all__ = [
@@ -54,6 +56,7 @@ __all__ = [
     "filtering",
     "identity",
     "indexing",
+    "indoor_positioning",
     "integration",
     "interaction_event",
     "kiosk",
@@ -64,4 +67,5 @@ __all__ = [
     "ontology_refs",
     "policy",
     "profile",
+    "route",
 ]

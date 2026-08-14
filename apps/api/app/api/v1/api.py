@@ -44,6 +44,7 @@ from app.api.v1.routers.extraction import build_extraction_router
 from app.api.v1.routers.favorites import build_favorites_router
 from app.api.v1.routers.feedback import build_feedback_router
 from app.api.v1.routers.notification import build_notification_router
+from app.api.v1.routers.route import build_route_router
 
 api_router = APIRouter()
 api_router.include_router(auth.router, tags=["authentication"])
@@ -89,3 +90,6 @@ api_router.include_router(build_favorites_router(), tags=["favorites"])
 api_router.include_router(build_checkin_router(), tags=["checkin"])
 api_router.include_router(build_feedback_router(), tags=["feedback"])
 api_router.include_router(build_admin_router(), tags=["admin"])
+
+# --- MERGE STEP 29: ROUTE-001 indoor route navigation (additive only) ------
+api_router.include_router(build_route_router(), tags=["indoor-route"])
